@@ -7,9 +7,10 @@ import { CELL_BORDER_SCALE } from '../components/SvgTokenShape';
  * Shared by the main tabletop drop handler (TabletopEventHandlers) and pool panel
  * drops (poolPlacement). Two mechanisms:
  *
- * - Rectangular (bounding box): cell edges snap flush to other cells' bounding boxes
- *   and to the container edges (game field / pool zone). Works for square cells and
- *   stays the behavior whenever a hex snap is not possible.
+ * - Rectangular (bounding box): cell edges snap to other cells' bounding boxes and
+ *   to the container edges (game field / pool zone), keeping the border strokes
+ *   touching. Works for square cells and stays the behavior whenever a hex snap is
+ *   not possible.
  *
  * - Hexagonal (apothem): a hex cell's sides are at angles, so instead of bounding
  *   boxes the snap works along the 3 apothem axes (one per pair of parallel sides).
@@ -18,20 +19,30 @@ import { CELL_BORDER_SCALE } from '../components/SvgTokenShape';
  *   shared apothem axis and slides along the side so both centers lie on one apothem
  *   line - the proper hex tiling position.
  *
- * Cell-to-cell snaps land exactly flush (zero gap between the object bounds). The
- * border stroke is centered on the object edge and drawn at a fixed screen thickness
- * (it does not scale with zoom), so flush bounds make the two strokes coincide on the
- * shared edge - they read as one border line at every zoom, and the stored world
- * positions do not depend on the zoom at drop time. (Offsetting the snap by half the
- * stroke thickness made the world-space gap zoom-dependent: cells dropped at high
- * zoom sat closer together than cells dropped at low zoom, and zooming after a drop
- * opened a background gap between the strokes.)
+ * Cell-to-cell snaps keep the border strokes together without a visible gap. The
+ * stroke is centered on the object edge and its thickness is stored in VU (the
+ * renderers scale it by pixelsPerVU, so the world-space thickness - and therefore
+ * the snap gap - is the same at every zoom and does not depend on the zoom at drop
+ * time). The snap leaves a gap between the object bounds equal to half my border +
+ * half the neighbour's border minus a small stroke overlap (STROKE_SEAM_OVERLAP_VU):
+ * the strokes overlap slightly instead of merely touching, covering the anti-aliasing
+ * seam a bare junction would show, and no background shows through.
  *
  * Both hex orientations are supported (HEX pointy-top, HEX_HORIZONTAL flat-top).
  * Hexes snap only to hexes with the same orientation: the other orientation has no
  * parallel sides (30°/90°/150° vs 60°/120°/0°). Object rotation is taken into
  * account - axes rotate with the cell, so two cells rotated equally still snap.
  */
+
+/**
+ * How much the two border strokes overlap at a cell-to-cell snap, in VU.
+ * Two strokes that merely touch leave an anti-aliasing seam at the junction
+ * (~1 screen px ≈ 1 VU at default zoom) that reads as a hairline gap between
+ * the cells; snapping 1 VU closer makes the strokes overlap and covers it.
+ * Clamped to the available stroke halves so cells with a thin or zero border
+ * still land flush instead of overlapping their fills.
+ */
+const STROKE_SEAM_OVERLAP_VU = 1;
 
 export interface CellEdgeSnapCell {
   id: string;
@@ -67,7 +78,6 @@ export interface CellEdgeSnapOptions {
   others: CellEdgeSnapCell[];
   /** Container bounds for edge snapping (game field / pool zone) */
   bounds?: CellEdgeSnapBounds;
-  pixelsPerVU: number;
   /** Snap tolerance in VU (default 10) */
   snapThreshold?: number;
   /** Apothem/center alignment tolerance in VU (default 10) */
@@ -137,17 +147,17 @@ export function applyCellEdgeMagnetism(options: CellEdgeSnapOptions): CellEdgeSn
   const { cell, position, others, bounds } = options;
   const snapThreshold = options.snapThreshold ?? 10;
   const centerAlignThreshold = options.centerAlignThreshold ?? 10;
-  const ppVU = options.pixelsPerVU > 0 ? options.pixelsPerVU : 1;
 
   const w = cell.width;
   const h = cell.height;
   const px = position.x;
   const py = position.y;
-  // The border is centered on the object edge and drawn at a fixed screen thickness
-  // (SvgTokenShape viewBox units = screen px). Convert to world units (VU) only for
-  // the container-edge inset below - cell-to-cell snaps are flush (see header), the
-  // neighbour's stroke is not part of the offset
-  const selfBorderVU = (cell.borderWidth ?? 2) * CELL_BORDER_SCALE / ppVU;
+  // Border thickness in VU. The stroke is centered on the object edge (half inside,
+  // half outside the bounds), and the renderers scale it by pixelsPerVU, so this VU
+  // value matches what is on screen at every zoom. Cell-to-cell snaps keep a
+  // half+half border gap between bounds (strokes touch, nothing overlaps);
+  // container-edge snaps align the outer stroke edge with the container edge
+  const selfBorderVU = (cell.borderWidth ?? 2) * CELL_BORDER_SCALE;
 
   const selfIsHex = isHexShape(cell.shape);
 
@@ -193,13 +203,21 @@ export function applyCellEdgeMagnetism(options: CellEdgeSnapOptions): CellEdgeSn
     const oh = other.height;
     cellBounds[other.id] = { x: other.x, y: other.y, width: ow, height: oh };
 
-    // Edge-to-edge (flush): my left to their right, my right to their left.
-    // No border offset - the centered strokes coincide on the shared edge
-    xCandidates.push({ value: other.x + ow, dist: Math.abs(px - (other.x + ow)), cellId: other.id });
-    xCandidates.push({ value: other.x - w, dist: Math.abs(px + w - other.x), cellId: other.id });
+    // Gap between bounds = half my border + half their border, reduced by the
+    // stroke overlap: the centered strokes extend borderWidth/2 out of each cell,
+    // so their outer halves fill the gap and overlap by STROKE_SEAM_OVERLAP_VU -
+    // no anti-aliasing seam, no background gap
+    const borderGap = Math.max(
+      0,
+      (selfBorderVU + (other.borderWidth ?? 2) * CELL_BORDER_SCALE) / 2 - STROKE_SEAM_OVERLAP_VU
+    );
+
+    // Edge-to-edge: my left to their right, my right to their left
+    xCandidates.push({ value: other.x + ow + borderGap, dist: Math.abs(px - (other.x + ow + borderGap)), cellId: other.id });
+    xCandidates.push({ value: other.x - w - borderGap, dist: Math.abs(px + w + borderGap - other.x), cellId: other.id });
     // My top to their bottom, my bottom to their top
-    yCandidates.push({ value: other.y + oh, dist: Math.abs(py - (other.y + oh)), cellId: other.id });
-    yCandidates.push({ value: other.y - h, dist: Math.abs(py + h - other.y), cellId: other.id });
+    yCandidates.push({ value: other.y + oh + borderGap, dist: Math.abs(py - (other.y + oh + borderGap)), cellId: other.id });
+    yCandidates.push({ value: other.y - h - borderGap, dist: Math.abs(py + h + borderGap - other.y), cellId: other.id });
   }
 
   const pickBest = (candidates: BboxCandidate[]): BboxCandidate | null => {
@@ -230,6 +248,12 @@ export function applyCellEdgeMagnetism(options: CellEdgeSnapOptions): CellEdgeSn
       const otherAxes = getHexApothemAxes(other.shape!, other.width, other.height, other.rotation);
       const dcx = other.x + other.width / 2 - myCx;
       const dcy = other.y + other.height / 2 - myCy;
+      // Strokes overlap by STROKE_SEAM_OVERLAP_VU: gap between the sides =
+      // half my border + half their border, minus the seam overlap
+      const borderGap = Math.max(
+        0,
+        (selfBorderVU + (other.borderWidth ?? 2) * CELL_BORDER_SCALE) / 2 - STROKE_SEAM_OVERLAP_VU
+      );
 
       for (let i = 0; i < myAxes.length; i++) {
         const n = myAxes[i];
@@ -240,9 +264,9 @@ export function applyCellEdgeMagnetism(options: CellEdgeSnapOptions): CellEdgeSn
           if (Math.abs(n.nx * m.nx + n.ny * m.ny) < 0.999) continue;
 
           // Flush: center distance along the shared apothem axis =
-          // my apothem + their apothem, either side of me (strokes coincide on
-          // the shared side, same as the rectangular flush snap)
-          const flush = n.apothem + m.apothem;
+          // my apothem + their apothem + border gap, either side of me
+          // (strokes touch on the shared side, same as the rectangular snap)
+          const flush = n.apothem + m.apothem + borderGap;
           const dn = dcx * n.nx + dcy * n.ny;
 
           for (const sign of [1, -1]) {

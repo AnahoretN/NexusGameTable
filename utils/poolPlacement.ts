@@ -541,7 +541,6 @@ export function dropObjectsToPool(
               right: poolZone.offsetX + poolZone.width,
               bottom: poolZone.offsetY + poolZone.height,
             },
-            pixelsPerVU,
           });
 
           finalPosX = snap.x;

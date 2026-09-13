@@ -484,7 +484,7 @@ const CursorSlotBoard: React.FC<CursorSlotItemProps & { item: BoardType }> = ({ 
 /**
  * Renders a battlefield cell in the cursor slot
  */
-const CursorSlotBattlefieldCell: React.FC<CursorSlotItemProps & { item: BattlefieldCell }> = ({ item, width, height, offsetX, offsetY, zIndex }) => {
+const CursorSlotBattlefieldCell: React.FC<CursorSlotItemProps & { item: BattlefieldCell }> = ({ item, width, height, offsetX, offsetY, zIndex, pixelsPerVU }) => {
   return (
     <div
       style={{
@@ -517,7 +517,8 @@ const CursorSlotBattlefieldCell: React.FC<CursorSlotItemProps & { item: Battlefi
         color={item.color || '#496179'}
         content="" // No text content for battlefield cells
         rotation={0}
-        borderWidth={(item.borderWidth ?? 2) * CELL_BORDER_SCALE}
+        // Border thickness is stored in VU - scale to screen px to match CellRenderer
+        borderWidth={(item.borderWidth ?? 2) * CELL_BORDER_SCALE * pixelsPerVU}
         borderColor={item.borderColor || '#212f3c'}
         opacity={item.opacity ?? 100}
         borderOpacity={item.borderOpacity ?? 100}

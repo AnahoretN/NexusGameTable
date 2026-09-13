@@ -1455,7 +1455,6 @@ const dropCursorSlot = (
           position: { x: finalX, y: finalY },
           others: nearbyCells,
           bounds: { left: 0, top: 0, right: PLAYABLE_AREA_SIZE, bottom: PLAYABLE_AREA_SIZE },
-          pixelsPerVU: props.pixelsPerVU,
         });
 
         finalX = snap.x;

@@ -119,7 +119,9 @@ export const CellRenderer = memo(({
           color={cell.color || '#496179'}
           content=""
           rotation={0}
-          borderWidth={(cell.borderWidth ?? 2) * CELL_BORDER_SCALE}
+          // Border thickness is stored in VU - scale to screen px like width/height
+          // so the border scales with zoom (cell magnetism relies on the VU thickness)
+          borderWidth={v2p((cell.borderWidth ?? 2) * CELL_BORDER_SCALE)}
           borderColor={cell.borderColor || '#212f3c'}
           opacity={cell.opacity ?? 100}
           borderOpacity={cell.borderOpacity ?? 100}

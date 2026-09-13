@@ -527,7 +527,9 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
           color={cell.color || '#496179'}
           content=""
           rotation={0}
-          borderWidth={(cell.borderWidth ?? 2) * CELL_BORDER_SCALE}
+          // Border thickness is stored in VU - scale to this panel's screen px,
+          // same as cellWidth/cellHeight above
+          borderWidth={(cell.borderWidth ?? 2) * CELL_BORDER_SCALE * pixelsPerVU}
           borderColor={cell.borderColor || '#212f3c'}
           opacity={cell.opacity ?? 100}
           borderOpacity={cell.borderOpacity ?? 100}
