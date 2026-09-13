@@ -1543,26 +1543,26 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                 <div className="grid grid-cols-2 gap-1.5">
                   <div className="bg-slate-900 rounded-lg overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{translate('Undo', language as Locale)}</span>
-                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl+Z</kbd>
+                      <span className="text-xs text-gray-300">{translate('Zoom in / out / reset', language as Locale)}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl +/−/0</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{translate('Close tooltip/menu', language as Locale)}</span>
-                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Esc</kbd>
+                      <span className="text-xs text-gray-300">{translate('Zoom', language as Locale)}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl+Wheel</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{translate('Add to cursor slot', language as Locale)}</span>
-                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl+Click</kbd>
+                      <span className="text-xs text-gray-300">{translate('Pan view (hold + drag)', language as Locale)}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Ctrl+Drag</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5">
-                      <span className="text-xs text-gray-300">{translate('Delete without confirmation', language as Locale)}</span>
-                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Delete</kbd>
+                      <span className="text-xs text-gray-300">{translate('Add to cursor slot', language as Locale)}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Click</kbd>
                     </div>
                   </div>
                   <div className="bg-slate-900 rounded-lg overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
-                      <span className="text-xs text-gray-300">{translate('Pan view (hold + drag)', language as Locale)}</span>
-                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Drag</kbd>
+                      <span className="text-xs text-gray-300">{translate('Quick delete', language as Locale)}</span>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Shift+Click</kbd>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700">
                       <span className="text-xs text-gray-300">{translate('Move the drawing', language as Locale)}</span>
@@ -1574,7 +1574,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                     </div>
                     <div className="flex items-center justify-between px-3 py-1.5">
                       <span className="text-xs text-gray-300">{translate('Normal cursor mode', language as Locale)}</span>
-                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Alt+Marker</kbd>
+                      <kbd className="px-2 py-1 bg-slate-700 rounded text-xs text-gray-400 font-mono">Alt (hold)</kbd>
                     </div>
                   </div>
                 </div>
