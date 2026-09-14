@@ -56,7 +56,6 @@ export function loadAndAdaptState(storedData: string, currentViewportWidth: numb
     const scaleY = currentViewportHeight / oldViewport.height;
 
     // Use average scale to preserve proportions
-    const avgScale = (scaleX + scaleY) / 2;
 
     if (newState.objects) {
       const adaptedObjects: Record<string, TableObject> = {};

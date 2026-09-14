@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Wifi, User, Package, Upload, Check, AlertCircle, X, Info, Play, Loader2 } from 'lucide-react';
+import { Wifi, User, Package, Upload, Check, AlertCircle, Play, Loader2 } from 'lucide-react';
 import { loadPackFromFile } from '../utils/assets/sources/packLoader';
 import { P2PLoadingStep } from '../store/usePeerConnection';
 import { Action } from '../store/gameActions';

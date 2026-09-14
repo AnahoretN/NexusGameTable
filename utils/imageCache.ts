@@ -193,7 +193,7 @@ export function extractImagesFromState(state: any, existingCache: ImageCache = {
   // Debug: check if extraction worked
   const stateJson = JSON.stringify(processedObjects);
   const hasBase64 = stateJson.includes('data:image/');
-  const hasRefs = stateJson.includes('img_ref://');
+ stateJson.includes('img_ref://');
 
   if (hasBase64) {
     console.warn('[P2P Debug] extractImagesFromState: State still has base64 data! Extraction failed.');

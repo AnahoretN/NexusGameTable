@@ -1,5 +1,5 @@
 import { t as translate, Locale } from '../utils/translations';
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback } from 'react';
 import { useGame } from '../store/GameContext';
 import { AppLanguage } from '../types';
 import { Pen, Eraser, Ruler, ZoomIn, ChevronDown, ChevronUp, MousePointer2 } from 'lucide-react';
@@ -50,12 +50,12 @@ interface MainToolsPanelProps {
 
 export const MainToolsPanel: React.FC<MainToolsPanelProps> = ({
   width = 280,
-  height = 400,
+  height: _height = 400,
   isCollapsed = false,
   onToggleCollapse,
   language = 'en'
 }) => {
-  const { dispatch, isHost } = useGame();
+  useGame();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Use shared tool settings context
@@ -275,7 +275,7 @@ interface PanelToolsPanelProps {
 }
 
 export const PanelToolsPanel: React.FC<PanelToolsPanelProps> = ({
-  width = 280,
+  width: _width = 280,
   isCollapsed = false,
   language = 'en'
 }) => {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { DiceObject, DiceValueOverride } from '../types';
 import { Locale, t as translate } from '../utils/translations';
-import { Image as ImageIcon, X, Upload, Link as LinkIcon, Smile, Trash2 } from 'lucide-react';
+import { Image as X, Link as Smile, Trash2 } from 'lucide-react';
 import { DICE_VALUE_ICONS, getAllDiceIcons } from './DiceValueIcons';
 import { FilePickerInput } from './FilePickerInput';
 
@@ -11,9 +11,6 @@ interface DiceValuesSettingsProps {
   language?: Locale;
 }
 
-interface ValueEditState {
-  [key: number]: DiceValueOverride | null;
-}
 
 export const DiceValuesSettings: React.FC<DiceValuesSettingsProps> = ({ dice, onChange, language = 'en' }) => {
   const sides = dice.sides || 6;

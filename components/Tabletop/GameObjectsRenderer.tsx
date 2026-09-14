@@ -1,16 +1,13 @@
-import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Card } from '../Card';
+import React, { memo, useState, useEffect, useRef } from 'react';
 import { SvgTokenShape } from '../SvgTokenShape';
-import { BoardWithResizeMemo, BoardBackgroundImageMemo } from './BoardWithResize';
+import { BoardWithResizeMemo } from './BoardWithResize';
 import { NexusBoardMemo } from '../NexusBoard';
 import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
-import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, Users, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Eye, EyeOff, Undo, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
-import { TableObject, Card as CardType, Token as TokenType, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, GridType, TokenSlider, TokenSliderPosition, TokenSliderDisplay, TokenShape, BattlefieldCell as BattlefieldCellType } from '../../types';
-import { TabletopRenderContext, ObjectRenderProps } from './types';
-import { useTokenWithState } from '../../hooks/useTokenWithState';
-import { TokenCountersDisplay } from './TokenCountersDisplay';
+import { Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, ArrowUp, ChevronsUp, ChevronsDown, Eye, EyeOff, Pin, RotateCw } from 'lucide-react';
+import { TableObject, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, TokenShape } from '../../types';
+import { TabletopRenderContext } from './types';
 import { TokenRenderer } from './TokenRenderer';
 import { CardRenderer } from './CardRenderer';
 import { CellRenderer } from './CellRenderer';
@@ -178,7 +175,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
         }
       });
 
-      Object.entries(effectIdCounts).forEach(([id, count]) => {
+      Object.entries(effectIdCounts).forEach(([_id, count]) => {
         if (count > 1) {
           // Duplicate DOM elements for effect found
         }
@@ -547,7 +544,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const isPermeable = hasSelectedLayers && !isLayerSelected;
 
     // Get inverse scale for this layer (to compensate zoom)
-    const inverseScale = getLayerInverseScale(objLayer);
+ getLayerInverseScale(objLayer);
 
     // Detect explosive dice trigger (when explosive roll value exists)
     const isExplosiveTriggered = dice.isExplosive && dice.explosiveRollValue !== undefined;
@@ -638,8 +635,6 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
               const PADDING = 1;
               const borderWidth = (obj as any).borderWidth ?? 2;
               const contentOffset = PADDING + borderWidth;
-              const svgWidth = diceWidth + borderWidth * 2 + PADDING * 2;
-              const svgHeight = diceHeight + borderWidth * 2 + PADDING * 2;
               // For triangle, shift text down to align with visual center (centroid)
               const triangleOffset = (dice.shape ?? TokenShape.SQUARE) === TokenShape.TRIANGLE ? diceHeight * 0.08 : 0;
 
@@ -650,7 +645,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
                   width={diceWidth}
                   height={diceHeight}
                 >
-                  <div xmlns="http://www.w3.org/1999/xhtml" style={{
+                  <div style={{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -755,7 +750,6 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             {(() => {
               const actionButtons = (obj as any).actionButtons || [];
               const dice = obj as DiceObject;
-              const isInGroup = !!dice.diceGroupId;
 
               const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
                 roll: {
@@ -920,9 +914,9 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
                 },
               };
 
-              let buttons = actionButtons
-                .map(action => buttonConfigs[action])
-                .filter(Boolean);
+              let buttons = ((actionButtons || []) as string[])
+                    .map(action => buttonConfigs[action as keyof typeof buttonConfigs])
+                .filter((btn: (typeof buttonConfigs)[keyof typeof buttonConfigs] | undefined): btn is (typeof buttonConfigs)[keyof typeof buttonConfigs] => Boolean(btn));
 
               // Limit to 4 buttons
               buttons = buttons.slice(0, 4);
@@ -944,7 +938,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     );
   };
 
-  const renderEffectTemplate = (obj: TableObject, globalZIndex: number) => {
+  const renderEffectTemplate = (obj: TableObject, _globalZIndex: number) => {
     const handlers = effectHandlersMap.get(obj.id);
     const styleData = effectStyleMap.get(obj.id);
 
@@ -967,10 +961,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
   };
 
   const renderGameObject = (obj: TableObject) => {
-    const isOwner = !(obj as any).ownerId || (obj as any).ownerId === activePlayerId || isGM;
-    const canDrag = !obj.locked;
+
     // 🔥 FIX: Don't add z-[100000] class - z-index is already set via globalZIndex prop
-    const draggingClass = draggingId === obj.id ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
 
     const layer = hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
     const layerMinZ = layer?.minZIndex ?? 3001;

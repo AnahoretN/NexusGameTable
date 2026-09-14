@@ -167,8 +167,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   }, [currentTool]);
 
   // Set canvas dimensions
+  const canvas = canvasRef.current;
   useEffect(() => {
-    const canvas = canvasRef.current;
     if (canvas) {
       canvas.width = width;
       canvas.height = height;
@@ -313,9 +313,6 @@ setEraserThickness(newThickness);
   }, [drawings, localDrawingsCache, offsetX, offsetY, currentTool, markerColor, markerThickness, eraserThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
 
   // Helper function to redraw with cache for immediate eraser feedback
-  const redrawCanvasWithCache = useCallback((ctx: CanvasRenderingContext2D) => {
-    redrawCanvas(ctx, true);
-  }, [redrawCanvas]);
 
   const getWorldPosition = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -535,8 +532,6 @@ setEraserThickness(newThickness);
     if (currentTool === 'eraser') {
       // Eraser implementation for Drawing objects
       // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-      const screenX = pos.x - offsetX;
-      const screenY = pos.y - offsetY;
 
       // Throttle eraser processing to prevent performance issues
       const now = Date.now();
@@ -572,7 +567,7 @@ setEraserThickness(newThickness);
         let strokesModified = false;
         const newStrokes: Stroke[] = [];
 
-        drawing.strokes.forEach((stroke, strokeIndex) => {
+        drawing.strokes.forEach((stroke, _strokeIndex) => {
           // Find points that should be erased (within eraser radius)
           const segments: StrokePoint[][] = [];
           let currentSegment: StrokePoint[] = [];
@@ -800,14 +795,12 @@ setEraserThickness(newThickness);
       setIsDrawing(false);
       setCurrentStroke([]);
 
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext('2d');
 
       // Store the modifications before clearing
       const finalModifications = Array.from(eraserModifiedDrawingsRef.current.entries());
 
       // Final dispatch to update Redux with eraser results
-      finalModifications.forEach(([drawingId, updatedDrawing]) => {
+      finalModifications.forEach(([_drawingId, updatedDrawing]) => {
         const originalDrawing = drawings.find(d => d.id === updatedDrawing.id);
 
         if (!originalDrawing && updatedDrawing.strokes.length > 0) {

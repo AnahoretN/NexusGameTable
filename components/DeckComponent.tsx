@@ -1,14 +1,11 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
-import { Layers, Lock, Unlock, Shuffle, Hand, Search, Undo, Copy, Trash2, RefreshCw, ArrowUp, ArrowDown, Eye, EyeOff, Pin, ChevronsUp, ChevronsDown } from 'lucide-react';
-import { useGame } from '../store/GameContext';
+import { Layers, Lock, Unlock, Shuffle, Hand, Search, Undo, Copy, Trash2, RefreshCw, ArrowUp, ArrowDown, EyeOff, Pin, ChevronsUp, ChevronsDown } from 'lucide-react';
 import { useObjectById } from '../store/objectStore';
-import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation, ContextAction } from '../types';
+import { Deck as DeckType, CardPile, Card as CardType, ItemType, CardShape, CardOrientation } from '../types';
 import { DECK_OFFSET } from '../constants';
 import { Tooltip } from './Tooltip';
 import { getCardShapeStyles } from '../utils/shapeUtils';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
-import { executeClickAction } from '../utils/objectActionHandlers';
-import { vuToPixels } from '../utils/vuSystem';
 import { useCursorSlotHover, useImageUrl } from '../hooks';
 
 // 🔥 OPTIMIZED: Zustand version of DeckComponent
@@ -17,26 +14,6 @@ import { useCursorSlotHover, useImageUrl } from '../hooks';
 // NOTE: Using useMemo instead of direct Zustand hooks to avoid infinite loop with GameContext sync
 
 // Submenu actions map to their parent section for permission checking
-const SUBMENU_TO_PARENT: Record<string, ContextAction> = {
-  'layerUp': 'layer',
-  'layerDown': 'layer',
-  'layerToTop': 'layer',
-  'layerToBottom': 'layer',
-  'rotateClockwise': 'rotate',
-  'rotateCounterClockwise': 'rotate',
-  'resetRotation': 'rotate',
-  'swingClockwise': 'rotate',
-  'swingCounterClockwise': 'rotate',
-  'draw': 'topDeck',
-  'playTopCard': 'topDeck',
-  'millTopCard': 'topDeck',
-  'toBottom': 'topDeck',
-  'showTop': 'topDeck',
-  'moveToHand': 'moveTo',
-  'moveToTopDeck': 'moveTo',
-  'moveToBottomDeck': 'moveTo',
-  'moveToDiscard': 'moveTo',
-};
 
 interface DeckComponentProps {
   deck: DeckType;
@@ -149,23 +126,6 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
   const canDropCard = !disableDeckHighlight && isCursorOver;
 
   // Helper to check if an action is allowed for the current user
-  const can = (action: ContextAction): boolean => {
-    const allowedActions = deck.allowedActions;
-    const allowedActionsForGM = deck.allowedActionsForGM;
-
-    // Check if this is a submenu action - if so, check parent section permission
-    const parentAction = SUBMENU_TO_PARENT[action];
-    const actionToCheck = parentAction || action;
-
-    if (isGM) {
-      // GM: check allowedActionsForGM
-      // undefined/null = all allowed, [] = none allowed, specific array = only those allowed
-      return allowedActionsForGM == null || (allowedActionsForGM.length > 0 && allowedActionsForGM.includes(actionToCheck));
-    }
-    // Player: check allowedActions
-    // undefined/null = all allowed, [] = none allowed, specific array = only those allowed
-    return allowedActions == null || (allowedActions.length > 0 && allowedActions.includes(actionToCheck));
-  };
 
   // Card shape and orientation for deck styling (not for deck dimensions)
   const cardShape = deck.cardShape ?? CardShape.POKER;

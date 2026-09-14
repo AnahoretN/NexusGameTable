@@ -142,9 +142,6 @@ class DataCompressionManager {
    * Print compression report to console
    */
   printReport(): void {
-    const stats = this.getStats();
-    const savedBytes = stats.totalOriginalSize - stats.totalCompressedSize;
-    const savedPercent = ((savedBytes / stats.totalOriginalSize) * 100).toFixed(1);
 
   }
 
@@ -158,11 +155,6 @@ class DataCompressionManager {
   /**
    * Format bytes to human-readable format
    */
-  private formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-  }
 
   /**
    * Estimate if compression is beneficial for data size

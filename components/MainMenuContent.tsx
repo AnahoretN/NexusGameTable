@@ -8,13 +8,12 @@ import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, usePlayerP
 import { AppLanguage } from '../types';
 import { logger } from '../utils/logger';
 import { findGM } from '../utils/playerUtils';
-import { findLocalFilePaths } from '../utils/imageCompat';
 import { saveSession, loadSession } from '../utils/sessionStorage';
 import { saveGameState } from '../utils/gameStorage';
-import { ItemType, TableObject, Token, Deck, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, PanelType, Board, WindowType, PanelObject, TokenType, Drawing, BattlefieldCell, NexusBoard, NexusCellObject, HexDirection, ContextAction } from '../types';
-import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target, AlertCircle, Shuffle, RefreshCw } from 'lucide-react';
-import { MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
-import { calculatePixelsPerVU, pixelsToVu } from '../utils/vuSystem';
+import { ItemType, TableObject, Deck, TokenShape, GridType, PanelType, WindowType, PanelObject, TokenType, Drawing, ContextAction } from '../types';
+import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target } from 'lucide-react';
+import { DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
+import { calculatePixelsPerVU } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
@@ -42,8 +41,7 @@ import {
   createNexusBoard,
   createFireConeEffect,
   createFireExplosionEffect,
-  createObject
-} from '../utils/objectFactories';
+  } from '../utils/objectFactories';
 
 // Get icon component for object type
 const getTypeIcon = (obj: TableObject): React.ReactElement => {
@@ -81,15 +79,15 @@ interface MainMenuContentProps {
   width: number;
 }
 
-export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
+export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width: _width }) => {
   const { state, dispatch, peerId, initializeHost, connectionMethod, ticket, roomId } = useGame();
   const { viewTransform } = useViewTransform();
   const { viewportToWorld, worldToViewport } = useCoordinateUtils();
-  const { settings: localSettings, updateSetting } = useLocalSettings();
+  useLocalSettings();
 
   // PlayerContext hooks - using new contexts
   const activePlayerId = useActivePlayerId();
-  const isGM = useIsGM();
+ useIsGM();
   const players = usePlayerList();
   const playerPermissions = usePlayerPermissions();
   const language = useLanguage();
@@ -127,7 +125,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
   // Use centralized tool settings context
   const { settings, setSelectedTool, updateCursorSettings, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings } = useToolSettings();
-  const currentDrawingTool = useDrawingTool();
+ useDrawingTool();
 
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   // Pack modal state
@@ -395,7 +393,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
         x: number;
         y: number;
         hasCards: boolean;
-        items?: { type: string }[];
+        items?: { type: string; source?: string }[];
       }>;
 
       const { x, y, hasCards, items } = customEvent.detail;
@@ -505,22 +503,6 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
     };
   }, [activeTab, mainMenuPanel, dispatch]);
 
-  const handleCreatePanel = (panelType: PanelType) => {
-    const x = window.innerWidth / 2 - MAIN_MENU_WIDTH / 2;
-    const y = window.innerHeight / 2 - 200;
-
-    dispatch({
-      type: 'CREATE_PANEL',
-      payload: {
-        panelType,
-        x,
-        y,
-        width: DEFAULT_PANEL_WIDTH,
-        height: DEFAULT_PANEL_HEIGHT,
-        title: panelType === PanelType.HAND ? 'Standard Hand Panel' : panelType,
-      }
-    });
-  };
 
   const handleInvite = useCallback(() => {
     // Determine identifier based on connection method
@@ -1010,17 +992,17 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
   };
 
   // Manual connection handlers
-  const handleCreateManualOffer = async () => {
+ async () => {
     const name = guestNameInput.trim() || 'Host';
     await manualConnection.createOffer(name);
   };
 
-  const handleJoinManualConnection = async (code: string) => {
+ async (code: string) => {
     const guestName = guestNameInput.trim() || 'Guest Player';
     await manualConnection.connectToHost(code, guestName, dispatch);
   };
 
-  const handleManualAnswer = async (code: string) => {
+ async (code: string) => {
     await manualConnection.handleGuestAnswer(code);
   };
 
@@ -1096,7 +1078,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width }) => {
       items: [
         { name: translate('Page', language as Locale), type: 'PAGE', disabled: true },
       ],
-      matcher: (obj: TableObject) => false // Pages not implemented yet
+      matcher: (_obj: TableObject) => false // Pages not implemented yet
     },
   ];
 
@@ -2310,7 +2292,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   hyperscaleLayers,
   selectedLayersFromContext,
   viewportToWorld,
-  worldToViewport,
+  worldToViewport: _worldToViewport,
 }) => {
   // Load expanded state from localStorage, default to false (collapsed)
   const [isExpanded, setIsExpanded] = useState(() => {

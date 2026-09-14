@@ -138,7 +138,7 @@ export function useUIStateAdapter() {
  * checkLegacyUsage('MyComponent', ['players', 'viewTransform']);
  * ```
  */
-export function checkLegacyUsage(componentName: string, usedFields: string[]) {
+export function checkLegacyUsage(_componentName: string, usedFields: string[]) {
   if (process.env.NODE_ENV === 'development') {
     const legacyFields = usedFields.filter(field =>
       ['players', 'activePlayerId', 'playerPermissions', 'viewTransform',
@@ -175,7 +175,7 @@ export function createMigrationPath(componentName: string, currentState: any) {
 
   if (requiredMigrations.length > 0) {
     console.group(`🔄 Migration Path for ${componentName}`);
-    requiredMigrations.forEach(migration => {
+    requiredMigrations.forEach(_migration => {
     });
     console.groupEnd();
   }

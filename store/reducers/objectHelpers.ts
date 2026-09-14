@@ -57,7 +57,7 @@ export function createNewObject(
  * Update an object with proper handling for special types
  */
 export function updateObject(
-  state: any,
+  _state: any,
   objects: Record<string, TableObject>,
   action: any
 ): Record<string, TableObject> {

@@ -1,5 +1,4 @@
 import { TableObject } from '../types';
-import { CursorSlotObject } from './poolPlacement';
 
 export interface PoolZone {
   offsetX: number;

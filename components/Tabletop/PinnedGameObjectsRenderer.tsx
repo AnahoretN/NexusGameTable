@@ -2,7 +2,7 @@ import React, { memo, useMemo, useCallback } from 'react';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { PinnedIndicator } from '../PinnedIndicator';
-import { Pin, RotateCw, RefreshCw, Trash2, Copy, Lock, Unlock, Eye, EyeOff, ChevronsUpDown, SkipForward, SkipBack, Rewind, Plus, Minus } from 'lucide-react';
+import { Pin, RefreshCw, Trash2, Copy, Lock, Unlock, Plus, Minus } from 'lucide-react';
 import { TableObject, Token as TokenType, ItemType, TokenSlider, TokenSliderDisplay, Counter, DiceObject, EffectTemplate, TokenShape } from '../../types';
 import { useTokenWithState } from '../../hooks/useTokenWithState';
 
@@ -36,11 +36,11 @@ const TokenCountersDisplay = memo(({
   counters,
   counterDisplay,
   tokenWidth,
-  tokenHeight,
+  tokenHeight: _tokenHeight,
   pixelsPerVU,
   isGM,
-  tokenId,
-  dispatch
+  tokenId: _tokenId,
+  dispatch: _dispatch
 }: TokenCountersDisplayProps) => {
   if (!isGM && counterDisplay?.showForPlayers === false) {
     return null;
@@ -56,7 +56,7 @@ const TokenCountersDisplay = memo(({
   const gap = useMemo(() => pixelsPerVU, [pixelsPerVU]);
 
   // Memoize render function for each slider
-  const renderBar = useCallback((slider: TokenSlider, index: number) => {
+  const renderBar = useCallback((slider: TokenSlider, _index: number) => {
     if ((counterDisplay as any)?.displayType === 'bars') {
       const maxValue = slider.maxValue || 100;
       const currentValue = slider.value || 0;
@@ -137,9 +137,9 @@ interface PinnedCounterRendererProps {
 const PinnedCounterRenderer = memo(({
   obj,
   pixelsPerVU,
-  isGM,
+  isGM: _isGM,
   activePlayerId,
-  draggingId,
+  draggingId: _draggingId,
   onContextMenu,
   onMouseDown,
   dispatch,
@@ -152,7 +152,6 @@ const PinnedCounterRenderer = memo(({
   // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
   // Only check if explicitly locked or being dragged by another player
   const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
-  const isDragging = draggingId === obj.id;
 
   const counterWidth = Math.max(counter.width || 60, 100) / pixelsPerVU;
   const counterHeight = 50 / pixelsPerVU;
@@ -203,9 +202,9 @@ const PinnedCounterRenderer = memo(({
   }, [obj, dispatch, pixelsPerVU]);
 
   const actionButtons = useMemo(() => {
-    const buttons = ((obj as any).actionButtons || [])
-      .map(action => buttonConfigs[action])
-      .filter(Boolean)
+    const buttons = (((obj as any).actionButtons || []) as string[])
+      .map(action => buttonConfigs[action as keyof typeof buttonConfigs])
+      .filter((btn: (typeof buttonConfigs)[keyof typeof buttonConfigs] | undefined): btn is (typeof buttonConfigs)[keyof typeof buttonConfigs] => Boolean(btn))
       .slice(0, 4);
 
     return buttons.map(btn => (
@@ -294,9 +293,9 @@ interface PinnedDiceRendererProps {
 const PinnedDiceRenderer = memo(({
   obj,
   pixelsPerVU,
-  isGM,
+  isGM: _isGM,
   activePlayerId,
-  draggingId,
+  draggingId: _draggingId,
   onContextMenu,
   onMouseDown,
   onDoubleClick,
@@ -310,7 +309,6 @@ const PinnedDiceRenderer = memo(({
   // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
   // Only check if explicitly locked or being dragged by another player
   const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
-  const isDragging = draggingId === obj.id;
 
   const diceWidth = dice.width * pixelsPerVU;
   const diceHeight = dice.height * pixelsPerVU;
@@ -381,9 +379,9 @@ const PinnedDiceRenderer = memo(({
   }, [obj, dispatch, pixelsPerVU]);
 
   const actionButtons = useMemo(() => {
-    const buttons = ((obj as any).actionButtons || [])
-      .map(action => buttonConfigs[action])
-      .filter(Boolean)
+    const buttons = (((obj as any).actionButtons || []) as string[])
+      .map(action => buttonConfigs[action as keyof typeof buttonConfigs])
+      .filter((btn: (typeof buttonConfigs)[keyof typeof buttonConfigs] | undefined): btn is (typeof buttonConfigs)[keyof typeof buttonConfigs] => Boolean(btn))
       .slice(0, 4);
 
     return buttons.map(btn => (
@@ -498,8 +496,8 @@ const PinnedTokenRenderer = memo(({
   allObjects,
   pixelsPerVU,
   isGM,
-  activePlayerId,
-  draggingId,
+  activePlayerId: _activePlayerId,
+  draggingId: _draggingId,
   viewTransform,
   onContextMenu,
   onMouseDown,
@@ -513,8 +511,6 @@ const PinnedTokenRenderer = memo(({
 
   // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
   // Only check if explicitly locked or being dragged by another player
-  const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
-  const isDragging = draggingId === obj.id;
 
   // Memoize counters
   const counters = useMemo(() => {
@@ -597,11 +593,11 @@ const PinnedTokenRenderer = memo(({
       }
     }
 
-    const buttonArray = buttons || [];
+    const buttonArray = (buttons || []) as string[];
 
     return buttonArray
-      .map(action => buttonConfigs[action])
-      .filter(Boolean)
+      .map(action => buttonConfigs[action as keyof typeof buttonConfigs])
+      .filter((btn: (typeof buttonConfigs)[keyof typeof buttonConfigs] | undefined): btn is (typeof buttonConfigs)[keyof typeof buttonConfigs] => Boolean(btn))
       .slice(0, 4)
       .map(btn => (
         <button
@@ -680,8 +676,8 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
   pinnedGameObjects,
   state,
   draggingId,
-  currentTool,
-  isCtrlPressed,
+  currentTool: _currentTool,
+  isCtrlPressed: _isCtrlPressed,
   isGM,
   activePlayerId,
   pixelsPerVU,

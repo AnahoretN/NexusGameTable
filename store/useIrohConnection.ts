@@ -116,7 +116,7 @@ export function useIrohConnection(
     return !params.has('ticket');
   };
 
-  const [isHost, setIsHost] = useState<boolean>(getInitialHostStatus());
+  const [isHost, _setIsHost] = useState<boolean>(getInitialHostStatus());
   const [nodeId, setNodeId] = useState<string | null>(irohSingleton.node?.nodeId || null);
   const [ticket, setTicket] = useState<string | null>(irohSingleton.node?.ticket || null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
@@ -210,7 +210,7 @@ export function useIrohConnection(
         // Check if we need to send PACKS_NEEDED or go straight to SYNC_STATE
         const usedPacks = stateRef.current?.usedPacks || {};
         const packList = Object.values(usedPacks);
-        const players = stateRef.current?.players || [];
+        const players: Player[] = stateRef.current?.players || [];
         const nonGMCount = players.filter(p => !p.isGM).length;
         const nextPlayerNumber = nonGMCount + 1;
 

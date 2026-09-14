@@ -17,85 +17,8 @@ const effectImageCache = new Map<string, HTMLImageElement>();
 const preloadPromises = new Map<string, Promise<void>>();
 
 // Calculate rotation marker position based on pivot, rotation, and width
-function calculateRotationMarkerPosition(
-  pivotX: number,
-  pivotY: number,
-  rotation: number,
-  width: number,
-  height: number
-): { x: number; y: number } {
-  // The rotation marker is at the top of the template
-  // When rotation = 0, it's directly above the pivot (upward)
-  // The distance is the full height (from bottom to top)
-  const fullHeight = height;
-  // Add -90 degrees offset so rotation 0 points upward
-  const angleRad = ((rotation - 90) * Math.PI) / 180;
-
-  // Calculate position relative to pivot (in percentage)
-  // At rotation 0, marker is at (pivotX, pivotY - fullHeight) = top center
-  const dx = fullHeight * Math.cos(angleRad);
-  const dy = fullHeight * Math.sin(angleRad);
-
-  return {
-    x: pivotX + dx,
-    y: pivotY + dy
-  };
-}
 
 // Generate tick marks for the ruler
-function generateRulerTicks(
-  pivotX: number,
-  pivotY: number,
-  markerX: number,
-  markerY: number,
-  pixelsPerVU: number
-): Array<{ x1: number; y1: number; x2: number; y2: number; isMajor: boolean }> {
-  const ticks: Array<{ x1: number; y1: number; x2: number; y2: number; isMajor: boolean }> = [];
-
-  const dx = markerX - pivotX;
-  const dy = markerY - pivotY;
-  const distance = Math.sqrt(dx * dx + dy * dy);
-  const distanceVU = distance / pixelsPerVU;
-
-  // Calculate unit vector along the line
-  const length = Math.sqrt(dx * dx + dy * dy);
-  if (length === 0) return ticks;
-
-  const ux = dx / length;
-  const uy = dy / length;
-
-  // Perpendicular vector
-  const px = -uy;
-  const py = ux;
-
-  // Major ticks every 1 VU, minor ticks every 0.5 VU
-  const tickSpacing = 0.5 * pixelsPerVU; // 0.5 VU in pixels
-  const numTicks = Math.floor(distanceVU * 2); // Number of 0.5 VU intervals
-
-  for (let i = 1; i <= numTicks; i++) {
-    const t = i * 0.5; // Distance in VU
-    const dist = t * pixelsPerVU;
-
-    // Don't draw tick at the very end (where marker is)
-    if (dist >= distance - 5) continue;
-
-    const tickX = pivotX + ux * dist;
-    const tickY = pivotY + uy * dist;
-
-    const isMajor = i % 2 === 0; // Every 1 VU is major
-    const tickLength = isMajor ? 12 : 6; // Pixels
-
-    ticks.push({
-      x1: tickX,
-      y1: tickY,
-      x2: tickX + px * tickLength,
-      y2: tickY + py * tickLength,
-      isMajor
-    });
-  }
-
-  return ticks;
-}
 
 /**
  * Preload an Effect Template image and cache it
@@ -119,7 +42,7 @@ async function preloadEffectImage(src: string): Promise<void> {
     return preloadPromises.get(src)!;
   }
 
-  const promise = new Promise<void>((resolve, reject) => {
+  const promise = new Promise<void>((resolve, _reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
@@ -145,44 +68,6 @@ export { preloadEffectImage };
  * Calculate the bounding box of a rotated rectangle
  * Returns { x, y, width, height } of the bounding box
  */
-function calculateRotatedBoundingBox(
-  width: number,
-  height: number,
-  rotation: number,
-  pivotX: number,
-  pivotY: number
-): { x: number; y: number; width: number; height: number } {
-  // Rectangle corners relative to pivot (unrotated)
-  const corners = [
-    { x: -pivotX, y: -pivotY },
-    { x: width - pivotX, y: -pivotY },
-    { x: width - pivotX, y: height - pivotY },
-    { x: -pivotX, y: height - pivotY }
-  ];
-
-  // Convert rotation to radians
-  const angleRad = (rotation * Math.PI) / 180;
-
-  // Rotate each corner around pivot
-  const rotatedCorners = corners.map(corner => {
-    const rx = corner.x * Math.cos(angleRad) - corner.y * Math.sin(angleRad);
-    const ry = corner.x * Math.sin(angleRad) + corner.y * Math.cos(angleRad);
-    return { x: rx + pivotX, y: ry + pivotY };
-  });
-
-  // Find bounding box
-  const minX = Math.min(...rotatedCorners.map(c => c.x));
-  const maxX = Math.max(...rotatedCorners.map(c => c.x));
-  const minY = Math.min(...rotatedCorners.map(c => c.y));
-  const maxY = Math.max(...rotatedCorners.map(c => c.y));
-
-  return {
-    x: minX,
-    y: minY,
-    width: maxX - minX,
-    height: maxY - minY
-  };
-}
 
 /**
  * Calculate the 4 corner points of a rotated rectangle
@@ -391,7 +276,6 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       // Use current values from obj (not saved state) since they don't change during pivot drag
       const rotation = obj.rotation ?? 0;
       const currentHeight = obj.height ?? 100;
-      const currentWidth = obj.width ?? 100;
 
       // Rotation Marker is at fixed world position (saved at drag start)
       const rotMarkerWorld = rotationMarkerWorldPosRef.current;
@@ -888,22 +772,6 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   };
 
   // Image container style
-  const imageStyle: React.CSSProperties = {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    width: '100%',
-    height: '100%',
-    minWidth: objWidth,
-    minHeight: objHeight,
-    backgroundSize: 'contain',
-    backgroundRepeat: 'no-repeat',
-    backgroundPosition: 'center',
-    pointerEvents: 'none',
-    userSelect: 'none',
-    // Ensure transparent background instead of black during loading
-    backgroundColor: 'transparent',
-  };
 
   // Hide pivot marker when dragging the object (but not when dragging the pivot itself)
   // Show to GM always, or to players when playerControlEnabled is true

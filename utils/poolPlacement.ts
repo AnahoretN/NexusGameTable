@@ -1,6 +1,5 @@
-import { TableObject, ItemType, CardLocation, Board as BoardType, HyperscaleLayer, BattlefieldCell } from '../types';
+import { TableObject, ItemType, CardLocation, Board as BoardType, HyperscaleLayer, BattlefieldCell, PoolPanelData } from '../types';
 import { STACKING_OFFSET_FACTOR, DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT } from '../constants/pool';
-import { logger } from './logger';
 import { allocateZIndexWithDefrag } from './zIndexAllocator';
 import { applyCellEdgeMagnetism, type CellEdgeSnapCell } from './cellEdgeMagnetism';
 import {
@@ -56,7 +55,7 @@ export function calculatePoolDropPosition(
   poolZone: PoolZone,
   panelRect: DOMRect,
   pixelsPerVU: number,
-  zoom: number = 1
+  _zoom: number = 1
 ): DropPosition {
   if (!panelRect) {
     throw new Error('Panel rect is required for calculating drop position');
@@ -97,7 +96,7 @@ export function calculatePoolDropPositionWithScroll(
   scrollLeft: number,
   scrollTop: number,
   pixelsPerVU: number,
-  zoom: number = 1
+  _zoom: number = 1
 ): DropPosition {
   // Calculate position relative to container
   // IMPORTANT: containerRect is the unscaled PoolTabletop container
@@ -180,7 +179,7 @@ export function dropObjectsToPool(
   dispatch: (action: any) => void,
   poolObjects: Record<string, TableObject>,
   pixelsPerVU: number = 1,
-  zoom: number = 1,
+  _zoom: number = 1,
   hyperscaleLayers?: HyperscaleLayer[],
   isFromHandOrDeck?: boolean  // NEW: Track if objects came from hand/deck for proper z-index handling
 ): void {
@@ -218,7 +217,6 @@ export function dropObjectsToPool(
     // - Objects get "stuck" to boards even when dropped far away
     // - Decks and other objects may disappear or behave incorrectly
     // Pool panels are for storage/organization, not for gameplay mechanics
-    const boardsInPool: BoardType[] = [];
 
     // Sort by zIndex in DESCENDING order to preserve layer relationships
     const sortedObjects = sortObjectsByLayerIndex(objects);
@@ -663,24 +661,16 @@ export function getCursorSlotObjects(objects: Record<string, TableObject>): Tabl
 export { DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT };
 
 /**
- * Pool panel data interface
- */
-export interface PoolPanelData {
-  offsetX?: number;
-  offsetY?: number;
-  width?: number;
-  height?: number;
-}
-
-/**
  * Create default pool zone from panel data
  * NOTE: This function is deprecated - use createPoolZoneFromTab instead
  */
 export function createPoolZoneFromPanel(poolData: PoolPanelData): PoolZone {
   // Get active tab coordinates
-  const activeTab = poolData.tabs?.find(tab => tab.id === poolData.activeTabId) || poolData.tabs?.[0];
+  const activeTab = poolData.tabs.find(tab => tab.id === poolData.activeTabId) || poolData.tabs[0];
 
   return {
+    panelId: poolData.activeTabId,
+    tabId: poolData.activeTabId,
     offsetX: activeTab?.offsetX ?? 0,
     offsetY: activeTab?.offsetY ?? 0,
     width: poolData.width || DEFAULT_POOL_WIDTH,
@@ -692,9 +682,11 @@ export function createPoolZoneFromPanel(poolData: PoolPanelData): PoolZone {
  * Create pool zone from specific tab
  */
 export function createPoolZoneFromTab(poolData: PoolPanelData, tabId: string): PoolZone {
-  const tab = poolData.tabs?.find(t => t.id === tabId);
+  const tab = poolData.tabs.find(t => t.id === tabId);
 
   return {
+    panelId: poolData.activeTabId,
+    tabId,
     offsetX: tab?.offsetX ?? 0,
     offsetY: tab?.offsetY ?? 0,
     width: poolData.width || DEFAULT_POOL_WIDTH,

@@ -16,16 +16,15 @@ import {
   CardLocation,
   EffectTemplate
 } from '../../types';
-import { filterVisibleObjects, calculateViewportBounds } from '../../utils/viewportCulling';
 import { intersectsPlayableArea } from '../../utils/viewportConstraints';
-import { isInCursorSlot, subscribeToCursorSlotChanges } from '../../utils/cursorSlotTracker';
+import { subscribeToCursorSlotChanges } from '../../utils/cursorSlotTracker';
 
 /**
  * Filter objects by various criteria for rendering optimization
  */
 export const useObjectFilters = (
   state: { objects?: Record<string, TableObject>; activePlayerId?: string },
-  hyperscaleLayers: Array<{ id: string; maxZIndex?: number }>
+  _hyperscaleLayers: Array<{ id: string; maxZIndex?: number }>
 ) => {
   const activePlayerId = state.activePlayerId;
 
@@ -39,7 +38,6 @@ export const useObjectFilters = (
 
   // All table objects (convert from object record to array)
   const tableObjects = useMemo(() => {
-    const PLAYABLE_AREA_SIZE = 5000;
 
     return (Object.values(state.objects || {}) as TableObject[]).filter((obj) => {
       // Exclude objects with isOnTable: false (hidden objects)
@@ -188,7 +186,7 @@ export const useObjectFilters = (
 
   // UI objects (panels and windows)
   const uiObjects = useMemo(() => {
-    return (Object.values(state.objects) as TableObject[])
+    return (Object.values(state.objects || {}) as TableObject[])
       .filter((obj) => {
         if (obj.type === ItemType.PANEL) {
           const panelObj = obj as PanelObject;
@@ -227,7 +225,7 @@ export const useObjectFilters = (
 
   // Separate pinned and unpinned decks
   const pinnedDecks = useMemo(() => {
-    return (Object.values(state.objects) as TableObject[])
+    return (Object.values(state.objects || {}) as TableObject[])
       .filter((obj) => {
         if (obj.type !== ItemType.DECK) return false;
         if (!(obj as any).isPinnedToViewport) return false;
@@ -243,7 +241,7 @@ export const useObjectFilters = (
   }, [state.objects, cursorSlotVersion]);
 
   const unpinnedDecks = useMemo(() => {
-    return (Object.values(state.objects) as TableObject[])
+    return (Object.values(state.objects || {}) as TableObject[])
       .filter((obj) => {
         if (obj.type !== ItemType.DECK) return false;
         if ((obj as any).isPinnedToViewport) return false;
@@ -261,7 +259,7 @@ export const useObjectFilters = (
   // Pinned game objects (tokens, cards, effects, etc. - but NOT decks, panels, or windows)
   // These are rendered in viewport coordinates, not world coordinates
   const pinnedGameObjects = useMemo(() => {
-    const result = (Object.values(state.objects) as TableObject[])
+    const result = (Object.values(state.objects || {}) as TableObject[])
       .filter((obj) => {
         // Must be pinned to viewport
         if (!(obj as any).isPinnedToViewport) return false;

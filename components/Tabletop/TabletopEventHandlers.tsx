@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, BattlefieldCell, CardOrientation, GridType, CardLocation, EffectTemplate, Drawing } from '../../types';
 import { clampScrollToPlayableArea, clampObjectPositionToPlayableArea } from '../../utils/viewportConstraints';
-import { SCROLLBAR_WIDTH_THICK, PLAYABLE_AREA_SIZE } from '../../constants';
+import { PLAYABLE_AREA_SIZE } from '../../constants';
 import { useIsSettingsModalOpen } from '../../store/contexts';
 import {
   parseGridCellKey,
@@ -21,6 +21,7 @@ import {
   allocateZIndexWithDefrag
 } from '../../utils/zIndexAllocator';
 import { applyPanelToPanelMagnetism, type PanelBounds, type MagnetismConfig, type GameSpaceBounds } from '../../utils/panelMagnetism';
+import type { LocalSettings } from '../../utils/localSettings';
 import { getTokenWithAppliedState } from '../../hooks/useTokenWithState';
 import { findDrawingAtPosition } from '../../utils/drawingUtils';
 import { addToCursorSlot, removeFromCursorSlot, isInCursorSlot, getCursorSlotObjects } from '../../utils/cursorSlotTracker';
@@ -69,7 +70,7 @@ interface TabletopEventHandlersProps {
   isGM: boolean;
   hyperscaleLayers: any[];
   localSettings: any;
-  updateSetting: (key: string | number | symbol, value: any) => void;
+  updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
   liveResizeSizeRef: React.MutableRefObject<{ width: number; height: number } | null>;
   setLivePreviewSize: React.Dispatch<React.SetStateAction<{ width: number; height: number } | null>>;
   isAddingTokenRef: React.RefObject<boolean>;
@@ -109,14 +110,14 @@ const addToCursorSlotLocal = (
   source: 'hold' | 'shift' = 'hold'
 ) => {
   const {
-    cursorSlot,
+    cursorSlot: _cursorSlot,
     cursorSlotRef,
     setCursorSlot,
     setCursorPosition,
     cursorPositionRef,
     setCursorSlotSource,
     cursorSlotLastAddedRef,
-    cursorSlotLastDroppedRef,
+    cursorSlotLastDroppedRef: _cursorSlotLastDroppedRef,
     unpinnedDuringDragRef,
     state,
     dispatch,
@@ -630,7 +631,7 @@ const dropCursorSlot = (
   skipPoolCheck: boolean = false
 ) => {
   const {
-    cursorSlot,
+    cursorSlot: _cursorSlot,
     cursorSlotRef,
     setCursorSlot,
     setCursorPosition,
@@ -724,7 +725,6 @@ const dropCursorSlot = (
   // If dropping to pool panel, don't process hand panel drop
   // Skip this check if skipPoolCheck is true (when event comes from pool panel)
   let isOverPoolPanel = false;
-  let matchedPoolPanelId: string | null = null;
   const poolPanel = elementAtCursor?.closest('[data-pool-panel]') as HTMLElement;
 
   if (!skipPoolCheck) {
@@ -736,7 +736,6 @@ const dropCursorSlot = (
       // Check if cursor is within the visible bounds of this pool panel
       if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
         isOverPoolPanel = true;
-        matchedPoolPanelId = element.getAttribute('data-pool-panel');
         break;
       }
     }
@@ -1726,11 +1725,11 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     dragThresholdRef,
     dragOffsetRef,
     cursorSlotLastAddedRef,
-    cursorSlotLastDroppedRef,
+    cursorSlotLastDroppedRef: _cursorSlotLastDroppedRef,
     unpinnedDuringDragRef,
-    setClickTooltip,
+    setClickTooltip: _setClickTooltip,
     setNexusBoardAddingCell,
-    setSettingsModalObj,
+    setSettingsModalObj: _setSettingsModalObj,
     setPileContextMenu,
     setPilesButtonMenu,
     setSearchModalDeck,
@@ -1790,7 +1789,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Mouse down handler
   const handleMouseDown = useCallback((e: React.MouseEvent, objId?: string) => {
-    const target = e.target as HTMLElement;
 
     // Check if cursor is over an EFFECT_TEMPLATE that might be stuck
     if (!objId) {
@@ -2294,7 +2292,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       // 🔥 FIX: Clear justPickedUpFromHand flag only after cursor moves sufficient distance
       // This prevents accidental drop when cursor jitters after Shift+click pickup
       const DRAG_THRESHOLD_PX = 20; // Minimum distance to clear the flag
-      let clearedFlag = false;
       cursorSlotRef.current.forEach(item => {
         if ((item as any).justPickedUpFromHand && (item as any).pickupPosition) {
           const pickupPos = (item as any).pickupPosition;
@@ -2303,7 +2300,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
           const distance = Math.sqrt(dx * dx + dy * dy);
           if (distance >= DRAG_THRESHOLD_PX) {
             (item as any).justPickedUpFromHand = false;
-            clearedFlag = true;
           }
         }
       });
@@ -2445,7 +2441,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         dragThresholdRef.current.skipLogCounter = 0;
       }
       dragThresholdRef.current.skipLogCounter++;
-      const shouldLogSkip = dragThresholdRef.current.skipLogCounter % 50 === 0;
 
     }
 
@@ -2535,7 +2530,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         const scrollY = viewTransform?.scroll?.y || 0;
         const zoom = viewTransform?.zoom || 1;
 
-        for (const [id, otherObj] of Object.entries(state.objects)) {
+        for (const [id, otherObj] of Object.entries(state.objects) as [string, TableObject][]) {
           if (id === currentDraggingId) continue;
           if ((otherObj as TableObject).type !== ItemType.PANEL && (otherObj as TableObject).type !== ItemType.WINDOW) continue;
           if (!((otherObj as any).visible)) continue;
@@ -3243,8 +3238,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Clear drag threshold when objects are dropped (from hand, deck, etc.)
   useEffect(() => {
-    const handleCursorSlotDropped = (e: Event) => {
-      const customEvent = e as CustomEvent<{ cardIds: string[] }>;
+    const handleCursorSlotDropped = (_e: Event) => {
       dragThresholdRef.current = {
         initialX: 0,
         initialY: 0,

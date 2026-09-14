@@ -4,7 +4,6 @@
  */
 
 import { logger } from './logger';
-import { TableObject, ItemType } from '../types';
 import { GameState } from '../store/gameState';
 
 // ============================================================
@@ -170,13 +169,13 @@ function validateSaveData(data: any): data is SaveFileData {
       throw new Error('Invalid save file: objects must be an object');
     }
 
-    for (const [objId, obj] of Object.entries(data.state.objects)) {
+    for (const [objId, obj] of Object.entries(data.state.objects as Record<string, { type?: string }>)) {
       if (!obj || typeof obj !== 'object') {
         throw new Error(`Invalid object ${objId}: not an object`);
       }
 
       // Validate object type if present
-      if (obj.type && !ALLOWED_OBJECT_TYPES.has(obj.type as string)) {
+      if (obj.type && !ALLOWED_OBJECT_TYPES.has(obj.type)) {
         logger.warn(`[SAVE_LOAD] Unknown object type "${obj.type}" in ${objId}`);
       }
     }

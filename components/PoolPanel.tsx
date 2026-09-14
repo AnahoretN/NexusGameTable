@@ -12,7 +12,7 @@
  * ✅ Исправлена работа кнопки "+" для добавления вкладок
  */
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import {
@@ -21,7 +21,7 @@ import {
   useIsGM
 } from '../store/contexts';
 import { PanelObject, PoolPanelData, PanelTab, AppLanguage, ItemType } from '../types';
-import { Plus, Trash2, Lock, X } from 'lucide-react';
+import { Plus, Trash2, Lock } from 'lucide-react';
 import { PoolTabletopOptimized as PoolTabletop } from './PoolTabletopOptimized';
 import { findAvailableTerritory } from '../utils/territoryManager';
 import { PoolTabSettingsModal } from './PoolTabSettingsModal';
@@ -106,7 +106,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
         // Check if we have old panel-level coordinates
         if (poolData.offsetX !== undefined && poolData.offsetY !== undefined) {
           // Migrate to tab-level coordinates
-          const migratedTabs = poolData.tabs.map((tab, index) => {
+          const migratedTabs = poolData.tabs.map((tab, _index) => {
             if (tab.offsetX === undefined || tab.offsetY === undefined) {
               return {
                 ...tab,
@@ -135,7 +135,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
   }, [poolData, panel.id, dispatch, state.objects]);
 
   // Get current player info
-  const currentPlayer = players.find(p => p.id === activePlayerId);
+ players.find(p => p.id === activePlayerId);
 
   // Active tab
   const activeTab = useMemo(() => {
@@ -201,7 +201,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
     return false;
   }, [activeTab, isGM, activePlayerId, poolData]);
 
-  const canManageTab = useMemo(() => {
+ useMemo(() => {
     if (!activeTab || !poolData) return false;
     if (isGM) return true;
 
@@ -211,7 +211,7 @@ export const PoolPanel: React.FC<PoolPanelProps> = ({
     return false;
   }, [activeTab, isGM, activePlayerId, poolData]);
 
-  const canEditTab = useMemo(() => {
+ useMemo(() => {
     if (!activeTab || !poolData) return false;
     if (isGM) return true;
 

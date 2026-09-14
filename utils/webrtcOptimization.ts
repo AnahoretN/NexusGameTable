@@ -185,7 +185,6 @@ interface ChangeSet {
 
 class DifferentialSyncManager {
   private pendingChanges: ChangeSet[] = [];
-  private lastSyncTime = 0;
   private syncInProgress = false;
 
   addChange(change: ChangeSet): void {
@@ -245,7 +244,7 @@ class DifferentialSyncManager {
 
         // 🔥 FIX: Only include the deck and the drawn card (not all cards in deck)
         // Find the card that was just drawn (location: HAND, ownerId: playerId, deckId: deckId)
-        Object.entries(currentState.objects).forEach(([id, obj]) => {
+        Object.entries(currentState.objects as Record<string, { type: string; deckId?: string }>).forEach(([id, obj]) => {
           if (obj.type === 'CARD' && (obj as any).deckId === deckId) {
             const card = obj as any;
             // Include card if it's the one just drawn (in HAND, owned by player)
@@ -373,7 +372,6 @@ class DifferentialSyncManager {
 
   clearChanges(): void {
     this.pendingChanges = [];
-    this.lastSyncTime = Date.now();
   }
 
   getChangeCount(): number {

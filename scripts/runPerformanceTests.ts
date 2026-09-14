@@ -74,9 +74,6 @@ async function testContextSelectorPerformance(): Promise<void> {
       const start = performance.now();
 
       // Simulate various context accesses
-      const playerData = { id: 'player1', name: 'Player', isGM: false };
-      const uiData = { language: 'en', theme: 'dark' };
-      const transformData = { zoom: 1.0, offset: { x: 0, y: 0 } };
 
       const end = performance.now();
       accessTimes.push(end - start);
@@ -200,18 +197,8 @@ async function testWebRTCSyncPerformance(): Promise<void> {
       const start = performance.now();
 
       // Simulate WebRTC sync operation
-      const mockSyncData = {
-        players: [{ id: 'player1', name: 'Player' }],
-        ui: { language: 'en' },
-        transform: { zoom: 1.0 }
-      };
 
       // Simulate processing sync data
-      const processedData = {
-        ...mockSyncData,
-        timestamp: Date.now(),
-        processed: true
-      };
 
       const end = performance.now();
       syncTimes.push(end - start);

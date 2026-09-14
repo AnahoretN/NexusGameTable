@@ -1,5 +1,4 @@
 import React, { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Plus, Minus } from 'lucide-react';
 import { TokenSlider, TokenSliderDisplay } from '../../types';
 import { broadcastTokenCounters } from '../../utils/directP2PSync';
 import { useActivePlayerId } from '../../store/contexts';

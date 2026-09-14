@@ -10,8 +10,7 @@ import {
   validateGameState,
   sanitizePackData,
   validatePack,
-  getPackSecurityWarning
-} from './packSecurity';
+  } from './packSecurity';
 import { isImageRef, isHashRef } from './imageCompat';
 
 const PACK_VERSION = 1;
@@ -26,23 +25,16 @@ const IMAGES_FOLDER = 'images/';
 /**
  * Create an img_ref:// URL (for backward compatibility)
  */
-function createImageRef(imageId: string): string {
-  return `img_ref://${imageId}`;
-}
 
 /**
  * Add an image to the managed cache (no-op in new system)
  * The new CAS system handles caching automatically
  */
-function addToManagedCache(imageId: string, base64: string): void {
-  // No-op - the new CAS system handles caching automatically
-  // Images are loaded on-demand and cached in memory as ObjectURLs
-}
 
 /**
  * Save a single image to IndexedDB using the new CAS system
  */
-async function saveSingleImageToIDB(imageId: string, base64: string): Promise<string> {
+async function saveSingleImageToIDB(_imageId: string, base64: string): Promise<string> {
   const { storeAssetFromDataURL } = await import('./assets');
   return storeAssetFromDataURL(base64, 'pack');
 }
@@ -114,11 +106,10 @@ async function extractImagesFromObjects(objects: Record<string, TableObject>): P
   let imageIndex = 0;
 
   // Store original blob URLs for conversion
-  const blobUrlsToConvert = new Map<string, string>(); // metadata -> blob URL
 
   // First pass: collect all blob URLs from metadata if available
   const collectBlobUrls = async (obj: any) => {
-    const checkField = async (url: string) => {
+ async (url: string) => {
       if (url === 'B' || (typeof url === 'string' && url.startsWith('{"t":"b"'))) {
         // This is blob metadata - we need to get actual blob URL
         // Try to restore from the actual blob URLs in memory
@@ -147,7 +138,7 @@ async function extractImagesFromObjects(objects: Record<string, TableObject>): P
       // Skip pack references
       if (url.startsWith('pack://')) return;
 
-      let dataUrl = url;
+      let dataUrl: string | null = url;
 
       // Resolve SHA-256 hashes to base64 (new CAS system)
       if (isHashRef(url)) {
@@ -623,8 +614,6 @@ export async function createPack(
           }
 
           // Extract MIME type from base64 data URL
-          const mimeMatch = img.data.match(/data:image\/(\w+);/);
-          const mimeType = mimeMatch ? `image/${mimeMatch[1]}` : 'image/jpeg';
 
           const binaryData = atob(base64Data);
           const bytes = new Uint8Array(binaryData.length);

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from "react";
 
 export interface LocalFileInfo {
   path: string;
@@ -23,7 +23,6 @@ export const LocalFileRestoreDialog: React.FC<LocalFileRestoreDialogProps> = ({
 }) => {
   const [fileMap, setFileMap] = useState<Map<string, File>>(new Map());
   const [pendingFiles, setPendingFiles] = useState<Map<string, File>>(new Map());
-  const fileInputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
   const [inputElements] = useState(() => new Map<string, HTMLInputElement>());
 
   // Group files by extension for better UX

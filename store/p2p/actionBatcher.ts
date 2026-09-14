@@ -304,7 +304,6 @@ interface QueuedAction {
  */
 export class ActionQueue {
   private queue: QueuedAction[] = [];
-  private processing = false;
   private maxQueueSize = 100;
 
   /**

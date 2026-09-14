@@ -1,4 +1,4 @@
-import { TableObject, ItemType, Deck as DeckType, CardLocation } from '../types';
+import { TableObject, Deck as DeckType } from '../types';
 import { executeContextMenuAction, ContextMenuActionParams } from './contextMenuActions';
 
 /**
@@ -11,7 +11,7 @@ export interface ActionButtonsHandlerContext {
   dispatch: (action: any) => void;
   setDeleteCandidateId?: (id: string | null) => void;
   setSearchModalDeck?: (deck: DeckType) => void;
-  setTopDeckModalDeck?: (deck: DeckType) => void;
+  setTopDeckModalDeck?: (deck: DeckType | null) => void;
   setSearchModalPile?: (pile: any) => void;
   setSettingsModalObj?: (obj: TableObject) => void;
   setContextMenu?: (menu: any) => void;

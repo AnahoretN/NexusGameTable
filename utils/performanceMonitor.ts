@@ -119,7 +119,7 @@ export class PerformanceMonitor {
    * Print memory usage
    */
   printMemoryUsage() {
-    const memory = this.getMemoryUsage();
+ this.getMemoryUsage();
     // Memory usage printing disabled
   }
 }
@@ -132,7 +132,7 @@ export const perfMonitor = new PerformanceMonitor();
  */
 import { useRef, useEffect } from 'react';
 
-export function useRenderCount(componentName: string) {
+export function useRenderCount(_componentName: string) {
   const renderCount = useRef(0);
 
   useEffect(() => {
@@ -145,11 +145,11 @@ export function useRenderCount(componentName: string) {
 /**
  * Custom hook to measure render time
  */
-export function useRenderTime(componentName: string) {
+export function useRenderTime(_componentName: string) {
   const renderStartTime = useRef<number>(performance.now());
 
   useEffect(() => {
-    const renderTime = performance.now() - renderStartTime.current;
+ performance.now() - renderStartTime.current;
     // Slow render warning disabled
   });
 }
@@ -189,7 +189,6 @@ export class FPSMonitor {
     const delta = now - this.lastTime;
 
     if (delta >= 1000) {
-      const fps = this.frames.length;
       this.frames = [];
 
       // FPS logging disabled

@@ -81,6 +81,14 @@ class DataChannelAdapter {
   private _handlers: { [event: string]: ((...args: any[]) => void)[] } = {};
   public peer: string;
   public open: boolean = false;
+
+  /**
+   * Remove all registered event handlers (used when replacing an adapter
+   * instance without tearing down the underlying data channel).
+   */
+  public clearHandlers(): void {
+    this._handlers = {};
+  }
   private static adapterMap = new WeakMap<RTCDataChannel, DataChannelAdapter>();
   private _openEventEmitted: boolean = false; // Track if open event was already emitted
 
@@ -109,7 +117,7 @@ class DataChannelAdapter {
       }
     };
 
-    this.dc.onclose = (event: any) => {
+    this.dc.onclose = (_event: any) => {
       this.open = false;
       DataChannelAdapter.adapterMap.delete(this.dc);
       this.emit('close');
@@ -331,7 +339,7 @@ export function useManualConnection() {
     if (connectionRef.current && connectionRef.current !== adapter) {
       // Remove our handlers from old adapter by removing all listeners
       // (we can't selectively remove only our handlers since on() uses anonymous functions)
-      connectionRef.current._handlers = {};
+      connectionRef.current.clearHandlers();
     }
 
     connectionRef.current = adapter;
@@ -378,7 +386,6 @@ export function useManualConnection() {
       };
 
       // Check for TURN servers
-      const hasTurnServers = rtcConfig.iceServers?.some(s => s.urls?.includes('turn'));
 
       const pc = new RTCPeerConnection(rtcConfig);
 
@@ -520,7 +527,6 @@ export function useManualConnection() {
       };
 
       // Check for TURN servers
-      const hasTurnServers = rtcConfig.iceServers?.some(s => s.urls?.includes('turn'));
 
       const pc = new RTCPeerConnection(rtcConfig);
 

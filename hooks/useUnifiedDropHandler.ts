@@ -86,7 +86,7 @@ export function clearDropHandlers(): void {
 export function useUnifiedDropHandler(options: UseUnifiedDropHandlerOptions) {
   const {
     getCursorSlotObjects,
-    getJustPickedUp,
+    getJustPickedUp: _getJustPickedUp,
     pickupCooldown = 150,
     debug = false
   } = options;

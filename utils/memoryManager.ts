@@ -3,7 +3,6 @@
  * Prevents memory leaks and optimizes memory usage for long-running sessions
  */
 
-import { logger } from './logger';
 
 // Memory manager configuration
 const MEMORY_MANAGER_CONFIG = {
@@ -28,11 +27,6 @@ interface MemoryStats {
 }
 
 // History entry interface
-interface HistoryEntry {
-  timestamp: number;
-  type: string;
-  data?: any;
-}
 
 // Memory Manager class
 export class MemoryManager {
@@ -91,7 +85,7 @@ export class MemoryManager {
     this.cleanupTemporalData();
 
     const afterMemory = this.getMemoryUsage();
-    const timeElapsed = performance.now() - startTime;
+ performance.now() - startTime;
 
     // Calculate memory freed (if available)
     if (beforeMemory && afterMemory) {
@@ -184,12 +178,10 @@ export class MemoryManager {
    * Clean up old temporal data (though WeakMap handles this automatically)
    */
   private cleanupTemporalData(): void {
-    const now = Date.now();
-    const maxAge = MEMORY_MANAGER_CONFIG.CACHE_ENTRY_MAX_AGE;
+ Date.now();
 
     // Note: WeakMap doesn't provide iteration, but we can clean up metadata
     // The actual data will be garbage collected automatically when objects are no longer referenced
-    let cleanedEntries = 0;
   }
 
   /**
@@ -237,7 +229,7 @@ export class MemoryManager {
    * Print memory statistics
    */
   printMemoryStats(): void {
-    const stats = this.getMemoryStats();
+ this.getMemoryStats();
     // Memory stats printing disabled
   }
 }

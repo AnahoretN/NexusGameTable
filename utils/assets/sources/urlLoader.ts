@@ -196,7 +196,7 @@ export async function loadFromURLsConcurrent(
       results.push(result);
       completed++;
 
-      loading.delete(loading.find(p => p === result)!);
+      
 
       if (onProgress) {
         onProgress({
@@ -227,7 +227,7 @@ export async function loadFromURLsConcurrent(
 
         return result;
       })
-      .catch(error => {
+      .catch(_error => {
         completed++;
 
         if (onProgress) {

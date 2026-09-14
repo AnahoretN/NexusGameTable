@@ -1,4 +1,4 @@
-import { TableObject, Player, PlayerPermissions, ContextAction, CardLocation, Card, Deck, Token, DiceRoll, PanelType, WindowType, DrawingData, Stroke, DrawingLayer, CardOrientation, AppLanguage } from '../types';
+import { TableObject, Player, PlayerPermissions, ContextAction, PanelType, WindowType, Stroke, DrawingLayer, AppLanguage } from '../types';
 import { GameState, ViewTransform } from './gameState';
 
 // Base action type with optional local-only flag
@@ -68,7 +68,7 @@ export type Action =
   | BaseAction<'UPDATE_PLAYER_PERMISSIONS', PlayerPermissions>
   | BaseAction<'UPDATE_LANGUAGE', AppLanguage>
   | BaseAction<'SET_ACTIVE_ID', string>
-  | BaseAction<'SYNC_STATE', GameState> // Network sync
+  | BaseAction<'SYNC_STATE', Partial<GameState>> // Network sync (partial payloads allowed; reducer merges over current state)
   | BaseAction<'RESTORE_IMAGES', Record<string, string>> // Restore images from cache (guest)
   | BaseAction<'UPDATE_VIEW_TRANSFORM', ViewTransform>
   | BaseAction<'SET_PIXELS_PER_VU', { pixelsPerVU: number }>

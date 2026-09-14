@@ -1,4 +1,3 @@
-import { Coordinates } from '../types';
 
 export interface Point {
   x: number;

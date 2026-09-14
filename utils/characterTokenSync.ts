@@ -39,7 +39,7 @@ export function findSliderBlock(character: CharacterTab): { block: any; subTab: 
   if (!character.subTabs) return null;
   for (const subTab of character.subTabs) {
     const sliderBlock = subTab.blocks.find((b: any) => b.type === 'SLIDER' && b.visible);
-    if (sliderBlock && sliderBlock.data?.sliders) {
+    if (sliderBlock && sliderBlock.data && "sliders" in sliderBlock.data) {
       return { block: sliderBlock, subTab, subTabId: subTab.id };
     }
   }
@@ -222,7 +222,7 @@ export function syncCharacterAvatarToTokens(
     }
     // If avatar was removed, clear token content
     if (!character.avatarUrl && token.content) {
-      newObjects[token.id] = { ...token, content: undefined };
+      newObjects[token.id] = { ...token, content: "" }; // empty string clears the image
     }
   }
 

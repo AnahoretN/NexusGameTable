@@ -1,8 +1,8 @@
 import React, { memo, useMemo } from 'react';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { PinnedIndicator } from '../PinnedIndicator';
-import { Layers, Lock, Unlock, RefreshCw, Trash2, Copy, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Eye, EyeOff, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
-import { TableObject, Token as TokenType, ItemType, TokenSlider, TokenSliderDisplay } from '../../types';
+import { Lock, Unlock, RefreshCw, Trash2, Copy, ArrowUp, ChevronsUp, ChevronsDown, Eye, EyeOff, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
+import { TableObject, Token as TokenType, ItemType } from '../../types';
 import { useTokenWithState } from '../../hooks/useTokenWithState';
 import { Tooltip } from '../Tooltip';
 import { TokenCountersDisplay } from './TokenCountersDisplay';
@@ -388,13 +388,13 @@ export const TokenRenderer = memo(({
       }
     }
 
-    const buttonArray = buttons || [];
+    const buttonArray = (buttons || []) as string[];
 
     return buttonArray
-      .map((action: any) => buttonConfigs[action])
-      .filter(Boolean)
+      .map((action: any) => buttonConfigs[action as keyof typeof buttonConfigs])
+      .filter((btn: (typeof buttonConfigs)[keyof typeof buttonConfigs] | undefined): btn is (typeof buttonConfigs)[keyof typeof buttonConfigs] => Boolean(btn))
       .slice(0, 4)
-      .map((btn: any) => (
+      .map(btn => (
         <button
           key={btn.key}
           onClick={(e) => { e.stopPropagation(); btn.action(); }}
@@ -511,10 +511,10 @@ export const TokenRenderer = memo(({
 
   // Compare actionButtons (important when buttons are added/removed in settings)
   const prevActionButtons = (prevToken as any).actionButtons ||
-                            ((prevToken as any).archetypeId && prevProps.allObjects[(prevToken as any).archetypeId]?.actionButtons) ||
+                            ((prevToken as any).archetypeId && (prevProps.allObjects as Record<string, any>)[(prevToken as any).archetypeId]?.actionButtons) ||
                             [];
   const nextActionButtons = (nextToken as any).actionButtons ||
-                            ((nextToken as any).archetypeId && nextProps.allObjects[(nextToken as any).archetypeId]?.actionButtons) ||
+                            ((nextToken as any).archetypeId && (nextProps.allObjects as Record<string, any>)[(nextToken as any).archetypeId]?.actionButtons) ||
                             [];
   const actionButtonsEqual = JSON.stringify(prevActionButtons) === JSON.stringify(nextActionButtons);
 

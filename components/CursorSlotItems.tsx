@@ -38,7 +38,7 @@ async function preloadEffectImage(src: string): Promise<void> {
     return preloadPromises.get(src)!;
   }
 
-  const promise = new Promise<void>((resolve, reject) => {
+  const promise = new Promise<void>((resolve, _reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
@@ -139,7 +139,7 @@ const CursorSlotToken = ({
   offsetY,
   zIndex,
   state,
-  pixelsPerVU
+  pixelsPerVU: _pixelsPerVU
 }: CursorSlotItemProps & { item: TokenType }) => {
   // Apply token state to get correct visual properties
   const tokenWithState = getTokenWithAppliedState(item, state.objects as Record<string, TableObject>);
@@ -404,7 +404,7 @@ const CursorSlotDice: React.FC<CursorSlotItemProps & { item: DiceObject }> = ({ 
           width={width}
           height={height}
         >
-          <div xmlns="http://www.w3.org/1999/xhtml" style={{
+          <div style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',

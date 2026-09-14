@@ -29,7 +29,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
   // Toggle layer selection
   const toggleLayer = (layerId: string) => {
     const isSelected = isLayerSelected(layerId);
-    const layer = hyperscaleLayers.find(l => l.id === layerId);
+ hyperscaleLayers.find(l => l.id === layerId);
     if (isSelected) {
       // Don't allow deselecting all layers
       if (selectedHyperscaleLayerIds.length > 1) {
@@ -49,10 +49,6 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
   };
 
   // Check if layer is visible in context menu
-  const isLayerVisibleInContextMenu = (layer: HyperscaleLayer) => {
-    if (isGM) return true;
-    return layer.playerCanView;
-  };
 
   // Add new hyperscale layer
   const addNewLayer = () => {

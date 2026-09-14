@@ -12,7 +12,7 @@
 
 import { useRef, useEffect } from 'react';
 
-export function useRenderCounter(componentName: string) {
+export function useRenderCounter(_componentName: string) {
   const renderCount = useRef(0);
   const previousProps = useRef<Record<string, any>>({});
 
@@ -40,12 +40,11 @@ export function useRenderCounter(componentName: string) {
 /**
  * Hook to measure render time
  */
-export function useRenderTime(componentName: string, threshold: number = 16) {
+export function useRenderTime(_componentName: string, _threshold: number = 16) {
   const startTime = useRef<number>(performance.now());
 
   useEffect(() => {
-    const endTime = performance.now();
-    const renderTime = endTime - startTime.current;
+    performance.now();
 
     // Slow render logging disabled
 

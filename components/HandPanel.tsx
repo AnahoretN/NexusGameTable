@@ -3,7 +3,7 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, WindowType, AppLanguage } from '../types';
+import { Card, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage } from '../types';
 import { Card as CardComponent } from './Card';
 import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions } from '../utils/cardUtils';
@@ -175,7 +175,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
     dispatch({ type: 'FLIP_CARD', payload: { cardId } });
   }, [dispatch]);
 
-  const handleRotate = useCallback((cardId: string) => {
+ useCallback((cardId: string) => {
     // Use card's rotationStep (or default 45) from settings
     const obj = state.objects[cardId] as any;
     const rotationStep = obj?.rotationStep ?? 45;
@@ -726,6 +726,7 @@ export const HandPanel: React.FC<HandPanelProps> = ({
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
+    return undefined;
   }, [contextMenu, scaleMenu, tabScaleMenu]);
 
   return (

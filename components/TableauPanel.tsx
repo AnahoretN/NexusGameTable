@@ -12,14 +12,13 @@
  * ✅ Сохранена вся функциональность оригинала
  */
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useEffect, useCallback, useMemo } from 'react';
 import { useObjectsData, useObjectActions } from '../store/objectStore';
 import {
   usePlayerList,
   useActivePlayerId,
-  useIsGM
-} from '../store/contexts';
-import { PanelObject, TableauPanelData, PanelTab, AppLanguage, ItemType } from '../types';
+  } from '../store/contexts';
+import { PanelObject, TableauPanelData, PanelTab, AppLanguage } from '../types';
 import { Plus, Trash2, Lock } from 'lucide-react';
 
 interface TableauPanelProps {
@@ -29,7 +28,7 @@ interface TableauPanelProps {
 
 export const TableauPanel: React.FC<TableauPanelProps> = ({
   panel,
-  language = 'en'
+  language: _language = 'en'
 }) => {
   // ✅ ИСПОЛЬЗУЕМ НОВЫЕ КОНТЕКСТЫ
 
@@ -40,7 +39,6 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
   // Player данные из PlayerContext v2.0
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
-  const containerRef = useRef<HTMLDivElement>(null);
 
   // Get tableau data from panel - use latest from objects to ensure reactivity
   const panelObject = objects[panel.id] as PanelObject | undefined;
@@ -95,7 +93,7 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
     return false;
   }, [activeTab, isGM, activePlayerId, tableauData]);
 
-  const canManageTab = useMemo(() => {
+ useMemo(() => {
     if (!activeTab || !tableauData) return false;
     if (isGM) return true;
 
@@ -105,7 +103,7 @@ export const TableauPanel: React.FC<TableauPanelProps> = ({
     return false;
   }, [activeTab, isGM, activePlayerId, tableauData]);
 
-  const canEditTab = useMemo(() => {
+ useMemo(() => {
     if (!activeTab || !tableauData) return false;
     if (isGM) return true;
 

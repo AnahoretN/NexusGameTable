@@ -218,7 +218,7 @@ export async function convertBlobsInObjects(
   const blobUrls: string[] = [];
 
   // First pass: collect all blob URLs
-  for (const [id, obj] of Object.entries(objects)) {
+  for (const [_id, obj] of Object.entries(objects)) {
     const collectBlobs = (item: any): void => {
       if (!item || typeof item !== 'object') return;
 
@@ -227,7 +227,7 @@ export async function convertBlobsInObjects(
         return;
       }
 
-      for (const [key, value] of Object.entries(item)) {
+      for (const [_key, value] of Object.entries(item)) {
         if (typeof value === 'string' && value.startsWith('blob:')) {
           blobUrls.push(value);
         } else if (typeof value === 'object' && value !== null) {

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { GameState } from './gameState';
 import { saveGameState } from '../utils/gameStorage';
-import { logger } from '../utils/logger';
 
 /**
  * Simple auto-save hook for game state

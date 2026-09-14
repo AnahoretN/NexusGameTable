@@ -25,7 +25,6 @@ import { PanelSettingsModal } from './PanelSettingsModal';
 import { HyperscaleLayerSettingsWindow } from './HyperscaleLayerSettingsWindow';
 import { useGame } from '../store/GameContext';
 import { useDragOverStore } from '../store/dragOverState';
-import { SCROLLBAR_WIDTH_THICK } from '../constants';
 import { DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT } from '../constants/pool';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { LocalSettings } from '../utils/localSettings';
@@ -101,7 +100,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   const playerPermissions = usePlayerPermissions();
   const language = useLanguage();
   const { setLanguage } = useLanguageActions();
-  const hyperscaleLayers = useHyperscaleLayers();
+ useHyperscaleLayers();
 
   const { isDragging: isDraggingOverPoolState, targetPoolPanelId } = useDragOverStore();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2027,7 +2026,7 @@ const HandPanelWithShiftDragDetection: React.FC<{ panel: PanelObject; effectiveP
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const [isCardDragTarget, setIsCardDragTarget] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const { state } = useGame();
+  const { state: _state } = useGame();
   const language = useLanguage();
 
   // Global mouse up handler to clear shift-drag state
@@ -2121,7 +2120,7 @@ const HandPanelWithShiftDragDetection: React.FC<{ panel: PanelObject; effectiveP
 const PoolPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel }) => {
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const { state } = useGame();
+  const { state: _state } = useGame();
   const language = useLanguage();
 
   // Global mouse up handler to clear shift-drag state
@@ -2294,7 +2293,7 @@ const DicePanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
 const ToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ panel: _panel, effectiveProps }) => {
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const { state } = useGame();
+  const { state: _state } = useGame();
   const language = useLanguage();
 
   // Global mouse up handler to clear shift-drag state
@@ -2352,7 +2351,7 @@ const ToolsPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProps
 const TokensPanelWithDragDetection: React.FC<{ panel: PanelObject; effectiveProps: any }> = ({ panel: _panel, effectiveProps }) => {
   const [isShiftDragging, setIsShiftDragging] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const { state } = useGame();
+  const { state: _state } = useGame();
   const language = useLanguage();
 
   // Global mouse up handler to clear shift-drag state

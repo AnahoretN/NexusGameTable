@@ -17,14 +17,13 @@ import { DrawingCanvas } from './DrawingCanvas';
 import { SvgTokenShape } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { BoardWithResizeMemo } from './BoardWithResize';
-import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, RotateCw, ChevronsUpDown } from 'lucide-react';
-import { CARD_SHAPE_DIMS, WORLD_SIZE_VU } from '../constants';
+import { Layers, Lock, Unlock, Minus, Plus, Search, RefreshCw, Trash2, Copy, ChevronsUpDown } from 'lucide-react';
+import { WORLD_SIZE_VU } from '../constants';
 import { generateUUID } from '../utils/uuid';
 import { vuToPixels, pixelsToVu } from '../utils/vuSystem';
 import { CursorSlotVisualization } from './CursorSlotVisualization';
 // import { RemoteObjectAnimation, useRemoteObjectAnimation } from './RemoteObjectAnimation';
 import { PinnedIndicator } from './PinnedIndicator';
-import { ObjectActionButtons } from './ObjectActionButtons';
 
 export const Tabletop: React.FC = () => {
   const { state, dispatch, isHost } = useGame();
@@ -160,6 +159,7 @@ export const Tabletop: React.FC = () => {
         container.removeEventListener('selectstart', handleSelectStart);
       };
     }
+    return undefined;
   }, []);
 
   // Listen for add-to-cursor-slot events from other components (e.g., HandPanel)
@@ -372,7 +372,6 @@ export const Tabletop: React.FC = () => {
   }, [state.objects]);
 
   // Refs to always have current values in event handlers
-  const draggingCardRef = useRef<CardType | null>(null);
   const hoveredDeckRef = useRef<string | null>(null);
   const hoveredPileRef = useRef<string | null>(null);
 
@@ -386,7 +385,6 @@ export const Tabletop: React.FC = () => {
   }, [hoveredPileId]);
 
   const dragStartRef = useRef<{ x: number; y: number; scrollLeft?: number; scrollTop?: number }>({ x: 0, y: 0 });
-  const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const handleMouseUpRef = useRef<(e?: MouseEvent | React.MouseEvent) => void>(() => {});
   const handleMouseMoveRef = useRef<(e: MouseEvent | React.MouseEvent) => void>(() => {});
@@ -1026,16 +1024,12 @@ export const Tabletop: React.FC = () => {
 
     // Clone the item to store it in the slot - deep copy to preserve all properties
     let itemClone: TableObject;
-    let baseWidth = item.width ?? 50;
-    let baseHeight = item.height ?? 50;
 
     if (item.type === ItemType.CARD) {
       const card = item as CardType;
       // Get deck to check orientation
       const deck = card.deckId ? state.objects[card.deckId] as DeckType | undefined : undefined;
       const isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
-      baseWidth = card.width ?? deck?.cardWidth ?? 63;
-      baseHeight = card.height ?? deck?.cardHeight ?? 88;
 
       itemClone = {
         id: card.id,
@@ -1143,8 +1137,6 @@ export const Tabletop: React.FC = () => {
       let isHorizontal = (item as any).isHorizontal;
       if (isCard) {
         const cardSettings = getCardSettings(item as CardType);
-        baseWidth = item.width ?? cardSettings.cardWidth ?? 63;
-        baseHeight = item.height ?? cardSettings.cardHeight ?? 88;
         isHorizontal = cardSettings.cardOrientation === CardOrientation.HORIZONTAL;
       }
 
@@ -2722,7 +2714,7 @@ export const Tabletop: React.FC = () => {
     };
   }, []); // Empty deps - handlers check refs for current state
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
+  const handleWheel = useCallback((_e: React.WheelEvent) => {
     // Zoom disabled - keeping scale at 1
   }, []);
 
@@ -3306,7 +3298,6 @@ export const Tabletop: React.FC = () => {
         <DrawingCanvas
           width={worldBounds.width}
           height={worldBounds.height}
-          zoom={zoom}
           offsetX={state.viewTransform.scroll.x}
           offsetY={state.viewTransform.scroll.y}
           cursorSlotLength={cursorSlot.length}
@@ -3953,7 +3944,7 @@ export const Tabletop: React.FC = () => {
                                     fontColor={(obj as any).fontColor || 'white'}
                                 />
 
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
                             {showGrid && (
                                 <svg className="absolute inset-0 pointer-events-none opacity-50" width="100%" height="100%">
                                     <defs>
@@ -4047,8 +4038,6 @@ export const Tabletop: React.FC = () => {
 
                 if (obj.type === ItemType.BATTLEFIELD_CELL) {
                     const cell = obj as BattlefieldCell;
-                    const magnetPointCount = cell.magnetPointCount ?? 1;
-                    const magnetRotation = cell.magnetRotation ?? 0;
 
                     return (
                         <Tooltip
@@ -4198,7 +4187,7 @@ export const Tabletop: React.FC = () => {
                                     zIndex: globalZIndex,
                                 }}
                             >
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: -1 }})}><Minus size={14}/></button>
                             <span className="text-xl font-bold">{counter.value}</span>
                             <button className="p-1 hover:bg-slate-700 rounded" onMouseDown={(e) => e.stopPropagation()} onClick={() => dispatch({type: 'UPDATE_COUNTER', payload: { id: obj.id, delta: 1 }})}><Plus size={14}/></button>
@@ -4449,7 +4438,7 @@ export const Tabletop: React.FC = () => {
                             onContextMenu={(e) => handleContextMenu(e, obj)}
                             className={`rounded-lg ${currentTool !== 'none' ? 'cursor-default' : draggingClass}`}
                         >
-                            {(obj as any).isPinnedToViewport && <PinnedIndicator zoom={zoom} />}
+                            {(obj as any).isPinnedToViewport && <PinnedIndicator />}
                             <div>
                               <Card
                                   card={card}
@@ -4562,9 +4551,7 @@ export const Tabletop: React.FC = () => {
                         <DeckComponent
                             deck={deckObj}
                             draggingId={draggingId}
-                            hoveredDeckId={hoveredDeckId}
                             hoveredPileId={hoveredPileId}
-                            setHoveredDeckId={setHoveredDeckId}
                             setHoveredPileId={setHoveredPileId}
                             isGM={isGM}
                             draggingClass={draggingClass}
@@ -4580,7 +4567,6 @@ export const Tabletop: React.FC = () => {
                             setPilesButtonMenu={setPilesButtonMenu}
                             setDeleteCandidateId={setDeleteCandidateId}
                             executeClickAction={executeClickAction}
-                            cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
                             allObjects={state.objects}
                             currentTool={currentTool}
                             pixelsPerVU={pixelsPerVU}
@@ -4661,9 +4647,7 @@ export const Tabletop: React.FC = () => {
                         <DeckComponent
                             deck={deckObj}
                             draggingId={draggingId}
-                            hoveredDeckId={hoveredDeckId}
                             hoveredPileId={hoveredPileId}
-                            setHoveredDeckId={setHoveredDeckId}
                             setHoveredPileId={setHoveredPileId}
                             isGM={isGM}
                             draggingClass={draggingClass}
@@ -4679,7 +4663,6 @@ export const Tabletop: React.FC = () => {
                             setPilesButtonMenu={setPilesButtonMenu}
                             setDeleteCandidateId={setDeleteCandidateId}
                             executeClickAction={executeClickAction}
-                            cursorSlotHasCards={cursorSlot.some(item => item.type === ItemType.CARD)}
                             allObjects={state.objects}
                             currentTool={currentTool}
                             pixelsPerVU={pixelsPerVU}

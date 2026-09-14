@@ -37,7 +37,9 @@ async function inputToArrayBuffer(input: HashInput): Promise<ArrayBuffer> {
   }
 
   if (input instanceof Uint8Array) {
-    return input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength);
+    // Uint8Array.buffer is ArrayBufferLike in newer lib.dom typings; the app
+    // never constructs views over SharedArrayBuffer, so the cast is safe.
+    return input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength) as ArrayBuffer;
   }
 
   if (input instanceof Blob) {

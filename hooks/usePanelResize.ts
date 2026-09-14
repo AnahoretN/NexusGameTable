@@ -9,7 +9,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   applyPositionMagnetism,
   applyResizeMagnetism,
-  getNearbyEdges,
   type MagnetismConfig,
 } from '../utils/panelMagnetism';
 
@@ -80,15 +79,15 @@ export function usePanelResize(options: PanelResizeOptions): {
 } {
   const {
     containerRef,
-    x,
-    y,
-    width,
-    height,
-    isPinnedToViewport = false,
+    x: _x,
+    y: _y,
+    width: _width,
+    height: _height,
+    isPinnedToViewport: _isPinnedToViewport = false,
     canResize = true,
     minWidth = 200,
     minHeight = 150,
-    pixelsPerVU = 1,
+    pixelsPerVU: _pixelsPerVU = 1,
     magnetism,
     onPositionChange,
     onSizeChange,
@@ -383,6 +382,7 @@ export function usePanelResize(options: PanelResizeOptions): {
         window.removeEventListener('mouseup', handleMouseUp);
       };
     }
+    return undefined;
   }, [isDragging, isResizing, minWidth, minHeight, onPositionChange, onSizeChange, onDragEnd, checkResizeHandle, magnetism]);
 
   return {

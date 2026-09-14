@@ -1,13 +1,11 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingLayer, Drawing, Stroke, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, HyperscaleLayer, NexusBoard, NexusCellObject, PanelTab, PoolPanelData, TableauPanelData } from '../types';
 import { CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, SCROLLBAR_WIDTH_THICK } from '../constants';
-import { PlayerNameModal } from '../components/PlayerNameModal';
-import { P2PLoadingModal } from '../components/P2PLoadingModal';
 import { GuestConnectionModal } from '../components/GuestConnectionModal';
 import { InitialLoadModal, InitialLoadStep } from '../components/InitialLoadModal';
 import { LocalFileRestoreDialog } from '../components/LocalFileRestoreDialog';
 import { generateUUID } from '../utils/uuid';
-import { loadGameStateWithLocalFiles, processUploadedLocalFiles, clearAllData, LocalFileInfo, initializeImageCache } from '../utils/gameStorage';
+import { loadGameStateWithLocalFiles, processUploadedLocalFiles, clearAllData, LocalFileInfo } from '../utils/gameStorage';
 import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition } from '../utils/localSettings';
 import { createStandardDeck } from './gameConstants';
 import { GameState, ViewTransform, initialState, PlayerPanelSettings } from './gameState';
@@ -22,14 +20,8 @@ import { isInCursorSlot, getOriginalPosition, removeFromCursorSlot } from '../ut
 import {
   initAssetDB,
   autoMigrate,
-  getAssetURL,
-  preloadAssets,
-  clearAssetCache,
-  getCacheStats,
   storeAssetFromDataURL,
-  hashDataURL,
-  assetDB
-} from '../utils/assets';
+  } from '../utils/assets';
 import {
   throttle,
   differentialSyncManager,
@@ -198,7 +190,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Check if this is a reconnection to the same session
         // If session ID matches, restore local panel settings; otherwise use host's settings
         const incomingSessionId = action.payload.sessionId;
-        const isReconnection = state.sessionId === incomingSessionId;
 
         // Don't save/restore local panel settings anymore
         // All panel settings should come from host's playerPanelSettings
@@ -209,7 +200,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             // 🔥 NEW: Convert board.content from base64 to sha256 hash (CAS system)
             // This prevents expensive extraction on every broadcast
             const objects = action.payload.objects;
-            for (const [id, obj] of Object.entries(objects)) {
+            for (const [_id, obj] of Object.entries(objects)) {
               if (obj?.type === ItemType.BOARD && obj?.content && obj.content.startsWith('data:image/')) {
                 // Hash the base64 data and store it in the asset database (CAS) for later
                 // restore. Hashing is async and the reducer must return synchronously,
@@ -898,7 +889,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         // Decks go to 'cards' layer if it exists
         const preferCards = isDeck;
         // Tokens and cards being created: use 'tokens' layer if it exists
-        const preferTokens = isToken || isCard;
 
         if (preferInterface && state.hyperscaleLayers.some(l => l.id === 'interface')) {
           newObj.hyperscaleLayerId = 'interface';
@@ -6793,9 +6783,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [connectionMethod]);
 
   // Select the active connection based on method
-  const activeConnection = connectionMethod === 'iroh' ? irohConn
-    : connectionMethod === 'trystero' ? trysteroConn
-    : peerJsConn;
 
   // Extract values with proper mapping for Iroh/Trystero compatibility
   const peerId = connectionMethod === 'iroh' ? irohConn.peerId
@@ -6832,10 +6819,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     : connectionMethod === 'trystero' ? trysteroConn.connectionsRef
     : peerJsConn.connectionsRef;
 
-  const roomRef = connectionMethod === 'iroh' ? irohConn.roomRef
-    : connectionMethod === 'trystero' ? trysteroConn.roomRef
-    : peerJsConn.roomRef;
-
   const p2pLoadingSteps = connectionMethod === 'iroh' ? irohConn.p2pLoadingSteps
     : connectionMethod === 'trystero' ? trysteroConn.p2pLoadingSteps
     : peerJsConn.p2pLoadingSteps;
@@ -6843,10 +6826,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const p2pLoadingProgress = connectionMethod === 'iroh' ? irohConn.p2pLoadingProgress
     : connectionMethod === 'trystero' ? trysteroConn.p2pLoadingProgress
     : peerJsConn.p2pLoadingProgress;
-
-  const isP2PLoadingModalOpen = connectionMethod === 'iroh' ? irohConn.isP2PLoadingModalOpen
-    : connectionMethod === 'trystero' ? trysteroConn.isP2PLoadingModalOpen
-    : peerJsConn.isP2PLoadingModalOpen;
 
   const requiredPacks = connectionMethod === 'iroh' ? irohConn.requiredPacks
     : connectionMethod === 'trystero' ? trysteroConn.requiredPacks
@@ -7641,7 +7620,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
               if (isOnlyPositionUpdates && changedObjects.length <= 2) {
                 // Filter out position updates for objects on individual objects layers
-                const filteredPositions = changedObjects.filter(([id, obj]: [string, any]) => {
+                const filteredPositions = changedObjects.filter(([id, _obj]: [string, any]) => {
                   const existingObj = stateForBroadcast.objects[id];
                   if (!existingObj || !existingObj.hyperscaleLayerId) return true;
 

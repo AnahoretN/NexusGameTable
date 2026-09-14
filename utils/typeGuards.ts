@@ -1,4 +1,4 @@
-import { TableObject, PanelObject, WindowObject, Deck, PanelType, ItemType } from '../types';
+import { TableObject, PanelObject, WindowObject, Deck, ItemType } from '../types';
 
 /**
  * Type guards for pinned objects

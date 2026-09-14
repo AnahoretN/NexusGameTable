@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, Search, Filter, RotateCcw, RotateCw, Clock, User, ChevronDown } from 'lucide-react';
+import { X, Download, Search, Filter, RotateCcw, RotateCw, Clock, User } from 'lucide-react';
 import { useGame } from '../store/GameContext';
 import { useActivePlayerId, usePlayerList, useIsGM, useLanguage } from '../store/contexts';
-import { AuditLogEntry, AuditActionType, ItemType, AppLanguage } from '../types';
+import { AuditActionType, AppLanguage } from '../types';
 import { t as translate, Locale } from '../utils/translations';
 import { filterAuditLog } from '../store/auditLogger';
 
@@ -142,8 +142,8 @@ const FilterPanel: React.FC<{
 
 export const LogViewer: React.FC<LogViewerProps> = ({ isOpen, onClose }) => {
   const { state, dispatch } = useGame();
-  const activePlayerId = useActivePlayerId();
-  const players = usePlayerList();
+ useActivePlayerId();
+ usePlayerList();
   const isGM = useIsGM();
   const language = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -439,7 +439,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ isOpen, onClose }) => {
             </div>
           ) : (
             <div className="divide-y divide-slate-700">
-              {filteredEntries.map((entry, idx) => {
+              {filteredEntries.map((entry, _idx) => {
                 const date = new Date(entry.timestamp);
                 const isSelected = selectedEntryId === entry.id;
 

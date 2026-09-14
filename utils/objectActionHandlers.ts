@@ -87,7 +87,7 @@ export function handleDraw(obj: TableObject, context: ActionHandlerContext) {
   if (obj.type === ItemType.DECK) {
     context.dispatch({
       type: 'DRAW_CARD',
-      payload: { deckId: obj.id, playerId: context.state.activePlayerId }
+      payload: { deckId: obj.id, playerId: context.state.activePlayerId || '' }
     });
   }
 }
@@ -275,7 +275,7 @@ export function handleTopDeck(obj: TableObject, context: ActionHandlerContext) {
   }
 }
 
-export function handlePiles(obj: TableObject) {
+export function handlePiles(_obj: TableObject) {
   // Open piles menu - handled by component state
 }
 
@@ -836,7 +836,7 @@ export function handlePreviousState(obj: TableObject, dispatch: Dispatch<Action>
 // ============================================
 
 export function canExecuteAction(
-  obj: TableObject,
+  _obj: TableObject,
   action: string,
   isGM: boolean,
   allowedActions?: string[]

@@ -177,7 +177,7 @@ export class IdleWorkScheduler {
   private executeTaskDuringIdle(
     task: WorkTask,
     scheduled: ScheduledTask,
-    deadline: IdleDeadline
+    _deadline: IdleDeadline
   ): void {
     const startTime = performance.now();
 
@@ -233,7 +233,7 @@ export class IdleWorkScheduler {
   /**
    * Complete task and process next
    */
-  private completeTask(task: WorkTask, scheduled: ScheduledTask): void {
+  private completeTask(task: WorkTask, _scheduled: ScheduledTask): void {
     this.pendingTasks.delete(task.id);
     this.processNext();
   }

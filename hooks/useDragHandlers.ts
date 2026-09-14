@@ -29,7 +29,7 @@ interface UseDragHandlersResult {
 export function useDragHandlers(options: UseDragHandlersOptions = {}): UseDragHandlersResult {
   const {
     onDragStart,
-    onDragMove,
+    onDragMove: _onDragMove,
     onDragEnd,
     onDragCancel
   } = options;

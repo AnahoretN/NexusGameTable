@@ -251,7 +251,7 @@ export const TabletopModals = memo(({
       // Clear search modal if deck properties changed significantly
       if (
         oldDeck.name !== newDeck.name ||
-        oldDeck.backImageUrl !== newDeck.backImageUrl ||
+        oldDeck.spriteConfig?.cardBackUrl !== newDeck.spriteConfig?.cardBackUrl ||
         oldDeck.cardIds.length !== newDeck.cardIds.length
       ) {
         setSearchModalDeck(null);
@@ -337,10 +337,7 @@ export const TabletopModals = memo(({
         <ObjectSettingsModal
           object={settingsModalObj}
           allObjects={state.objects}
-          state={state}
           dispatch={dispatch}
-          activePlayerId={activePlayerId}
-          isGM={isGM}
           language={language as AppLanguage}
           diceGroups={state.diceGroups}
           onSave={handleObjectSettingsUpdate}
@@ -376,10 +373,6 @@ export const TabletopModals = memo(({
         <SearchDeckModal
           deck={searchModalDeck}
           pile={searchModalPile}
-          state={state}
-          dispatch={dispatch}
-          activePlayerId={activePlayerId}
-          isGM={isGM}
           language={language as AppLanguage}
           onClose={handleCloseSearchModal}
         />
@@ -389,10 +382,6 @@ export const TabletopModals = memo(({
       {topDeckModalDeck && (
         <TopDeckModal
           deck={topDeckModalDeck}
-          state={state}
-          dispatch={dispatch}
-          activePlayerId={activePlayerId}
-          isGM={isGM}
           language={language as AppLanguage}
           onClose={handleCloseTopDeckModal}
         />

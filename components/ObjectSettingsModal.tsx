@@ -9,7 +9,6 @@ import { DiceValuesSettings } from './DiceValuesSettings';
 import { calculateHexHeight, calculateFlatHexHeight, clearBoardCellCache } from '../utils/gridUtils';
 import { CARD_SHAPE_DIMS } from '../constants';
 import { loadImageFromFile, analyzeImageForGridSmart, createDebugPreview, DetectedCell, GridAnalysisOptions } from '../utils/imageGridAnalyzer';
-import { generateUUID } from '../utils/uuid';
 import { useImageUrl } from '../hooks';
 
 // Hex grid constants
@@ -214,7 +213,7 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
 
   // Custom grid unlock state (triple 'i' press within 2 seconds to unlock)
   const [customGridUnlocked, setCustomGridUnlocked] = useState(false);
-  const [iPressCount, setIPressCount] = useState(0);
+  const [_iPressCount, setIPressCount] = useState(0);
   const iPressTimeoutRef = useRef<number | null>(null);
 
   // Translation helper for inline translation objects
@@ -2417,7 +2416,6 @@ setGridDebugInfo(null);
                       onChange={e => {
                         const newGridType = e.target.value as GridType;
                         const board = data as Board;
-                        const isCurrentlyHex = board.gridType === GridType.HEX || board.gridType === GridType.HEX_HORIZONTAL;
 
                         update('gridType', newGridType);
 

@@ -127,10 +127,10 @@ export class WebSocketSignaling {
  * This bypasses PeerJS entirely and uses pure WebRTC
  */
 export async function createDirectDataConnection(
-  roomId: string,
+  _roomId: string,
   isInitiator: boolean
 ): Promise<RTCDataChannel | null> {
-  const peerId = crypto.randomUUID();
+ crypto.randomUUID();
 
   // Create RTCPeerConnection with our ICE servers
   const config = {

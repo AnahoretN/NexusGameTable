@@ -1,5 +1,5 @@
 import { createStandardDeckWithCards } from '../utils/objectFactories';
-import { Card, Deck, ItemType, CardLocation, CardShape, CardOrientation } from '../types';
+import { Card, Deck } from '../types';
 
 // ============================================
 // GAME CONSTANTS

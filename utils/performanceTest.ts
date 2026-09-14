@@ -5,7 +5,7 @@
  * including render counts, memory usage, FPS, and operation timing.
  */
 
-import { perfMonitor, fpsMonitor, PerformanceStats } from './performanceMonitor';
+import { perfMonitor, PerformanceStats } from './performanceMonitor';
 
 export interface PerformanceTestResult {
   testName: string;
@@ -68,7 +68,7 @@ export class PerformanceTestSuite {
       duration,
       metrics: {
         renderCounts: this.getRenderCounts(),
-        memoryUsage: currentMemory,
+        memoryUsage: currentMemory!,
         fps: this.getCurrentFPS(),
         operationTimings: perfMonitor.getAllStats(),
       },
@@ -80,7 +80,7 @@ export class PerformanceTestSuite {
 
     console.log(`✅ Test completed: ${testName}`);
     console.log(`⏱️ Duration: ${duration.toFixed(2)}ms`);
-    console.log(`📊 Memory delta:`, this.calculateMemoryDelta(this.baselineMemory!, currentMemory));
+    console.log(`📊 Memory delta:`, this.calculateMemoryDelta(this.baselineMemory!, currentMemory!));
     console.log(`🎯 FPS:`, result.metrics.fps);
 
     return result;

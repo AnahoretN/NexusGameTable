@@ -49,7 +49,7 @@ export const TabletopCursorSlot = memo<TabletopCursorSlotProps>(({
       />
     </>
   );
-}, (prevProps, nextProps) => {
+}, (_prevProps, _nextProps) => {
   // 🔥 FIX: ALWAYS return false to prevent memo from blocking re-renders
   // We need to re-render on every parent update because cursorPositionRef.current changes
   return false;

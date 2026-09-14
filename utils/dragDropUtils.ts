@@ -10,7 +10,7 @@
  * 3. Single source of truth for offset calculation
  */
 
-import { TableObject, ItemType } from '../types';
+import { TableObject } from '../types';
 
 /**
  * Result of calculating pickup offset from a DOM element
@@ -52,7 +52,7 @@ export function calculatePickupOffset(
   startY: number,
   options?: PickupOffsetOptions
 ): PickupOffsetResult | null {
-  const { containerRef, debug = false } = options || {};
+  const { containerRef, debug: _debug = false } = options || {};
 
   // Try to find the element in the container if provided, otherwise in the document
   const element = containerRef?.current
@@ -266,7 +266,7 @@ export interface DropTarget {
 export function analyzeDropTarget(
   x: number,
   y: number,
-  currentPoolPanelId?: string
+  _currentPoolPanelId?: string
 ): DropTarget {
   // Check for deck/pile first
   const deckInfo = findDeckAtCursor(x, y);

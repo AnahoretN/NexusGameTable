@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
-import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage, HyperscaleLayer, NexusCellObject, TokenState, TokenType } from '../types';
+import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, CardPile, AppLanguage, HyperscaleLayer, NexusCellObject, TokenType } from '../types';
 import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, RotateCcw, Pin, ImageDown, CornerDownRight, Check, Plus, Users, Sparkles } from 'lucide-react';
 import { t as translate, Locale } from '../utils/translations';
 import { useGame } from '../store/GameContext';
@@ -100,7 +100,7 @@ const RegularMenuItem = memo<{
 RegularMenuItem.displayName = 'RegularMenuItem';
 
 const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey: _shiftKey, contextMenuType = 'tabletop' }) => {
-  const { state } = useGame();
+  const { state: _state } = useGame();
   const hyperscaleLayers = useHyperscaleLayers();
 
   // Early return if allObjects is not available
@@ -720,7 +720,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       if (states.length === 0) return [];
 
       const currentStateId = (token as any).currentStateId;
-      const currentState = states.find(s => s.id === currentStateId);
+ states.find(s => s.id === currentStateId);
 
       const stateSubmenuItems: MenuItem[] = [
         // Add "Default" option to clear current state

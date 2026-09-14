@@ -13,12 +13,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
-import { PanelObject, DicePanelData, DicePreset, AppLanguage, ItemType, DiceObject, TokenShape, RolledDice } from '../types';
+import { PanelObject, DicePanelData, DicePreset, AppLanguage, DiceObject, TokenShape, RolledDice, TableObject } from '../types';
 import { Plus, RotateCcw, Zap, Trash2, Settings } from 'lucide-react';
 import { t as translate, Locale } from '../utils/translations';
 import { createDice } from '../utils/objectFactories';
 import { generateUUID } from '../utils/uuid';
-import { DiceRenderer, DiceRenderData } from './DiceRenderer';
+import { DiceRenderer } from './DiceRenderer';
 import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { vuToPixels } from '../utils/vuSystem';
 
@@ -46,11 +46,6 @@ const DICE_MENU_MAX_HEIGHT_VU = 235; // Maximum height for dice menu (≈27px on
 // Convert DicePreset to temporary DiceObject for settings modal
 function presetToDiceObject(preset: DicePreset): DiceObject {
   // Get dice shape based on number of sides (local helper)
-  const getDiceShape = (sides: number): TokenShape => {
-    if (sides < 5) return TokenShape.TRIANGLE;
-    if (sides <= 12) return TokenShape.SQUARE;
-    return TokenShape.HEX;
-  };
 
   const dice = createDice({
     id: `temp-${preset.id}`,
@@ -59,7 +54,6 @@ function presetToDiceObject(preset: DicePreset): DiceObject {
     x: 0,
     y: 0,
     color: preset.color,
-    shape: preset.shape || getDiceShape(preset.sides),
     valueOverrides: preset.valueOverrides,
     isExplosive: preset.isExplosive,
     explosiveColor: preset.explosiveColor,
@@ -159,6 +153,7 @@ export const DicePanel: React.FC<DicePanelProps> = ({
       document.addEventListener('click', handleClick);
       return () => document.removeEventListener('click', handleClick);
     }
+    return undefined;
   }, [contextMenu]);
 
   // Handler: Increment dice count
@@ -301,37 +296,6 @@ export const DicePanel: React.FC<DicePanelProps> = ({
   }, [state, panel.id, panel.diceData, dispatch, rollSingleDice]);
 
   // Handler: Add new dice preset
-  const handleAddPreset = useCallback(() => {
-    // Always read fresh diceData from state to avoid stale closure
-    const panelObject = state.objects[panel.id] as PanelObject | undefined;
-    const currentDiceData = panelObject?.diceData || panel.diceData;
-
-    if (!currentDiceData) return;
-
-    // Pick a random color for new preset
-    const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899'];
-    const randomColor = colors[currentDiceData.presets.length % colors.length];
-
-    const newPreset: DicePreset = {
-      id: `custom-${Date.now()}`,
-      name: `d${currentDiceData.presets.length + 1}`,
-      sides: 6,
-      count: 0,
-      color: randomColor,
-    };
-
-    dispatch({
-      type: 'UPDATE_OBJECT',
-      _localOnly: true,
-      payload: {
-        id: panel.id,
-        diceData: {
-          ...currentDiceData,
-          presets: [...currentDiceData.presets, newPreset]
-        }
-      }
-    });
-  }, [state, panel.id, panel.diceData, dispatch]);
 
   // Handler: Remove dice preset
   const handleRemovePreset = useCallback((presetId: string) => {
@@ -438,7 +402,8 @@ export const DicePanel: React.FC<DicePanelProps> = ({
   }, []);
 
   // Handler: Save dice settings from ObjectSettingsModal
-  const handleSaveSettings = useCallback((updatedDice: DiceObject) => {
+  const handleSaveSettings = useCallback((obj: TableObject) => {
+    const updatedDice = obj as DiceObject;
     // Always read fresh diceData from state to avoid stale closure
     const panelObject = state.objects[panel.id] as PanelObject | undefined;
     const currentDiceData = panelObject?.diceData || panel.diceData;

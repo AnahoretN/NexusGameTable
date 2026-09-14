@@ -79,7 +79,7 @@ export function useImageUrl(url: string): string {
       }
       pendingResolves.delete(url);
       return resolvedUrl;
-    }).catch((error) => {
+    }).catch((_error) => {
       if (!cancelled) {
         setDisplayUrl(url); // Fallback to original URL
       }

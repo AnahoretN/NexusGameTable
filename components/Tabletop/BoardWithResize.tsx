@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Token as TokenType, Board as BoardType, GridType } from '../../types';
 import { Lock } from 'lucide-react';
-import { calculateFlexibleHexGrid, calculateHorizontalHexGrid, calculateFlatHexHeight } from '../../utils/gridUtils';
+import { calculateFlatHexHeight } from '../../utils/gridUtils';
 import { ResizeHandleMemo } from '../ResizeHandle';
 import { HexGridMemo } from '../HexGrid';
 import { SquareGridMemo } from '../SquareGrid';
@@ -130,8 +130,8 @@ const SimplifiedBoard: React.FC<{
     token,
     obj,
     isResizing,
-    actualWidth,
-    actualHeight,
+    actualWidth: _actualWidth,
+    actualHeight: _actualHeight,
     onContextMenu,
     onMouseDown,
     onResizeStart,
@@ -232,7 +232,7 @@ interface BoardWithResizeProps {
 export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     token,
     obj,
-    isOwner,
+    isOwner: _isOwner,
     isResizing,
     canResize,
     zoom,
@@ -242,10 +242,10 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
     onResizeStart,
     onResizeHandleEnter,
     onResizeHandleLeave,
-    gridSize,
-    gridWidth,
-    gridHeight,
-    showGrid,
+    gridSize: _gridSize,
+    gridWidth: _gridWidth,
+    gridHeight: _gridHeight,
+    showGrid: _showGrid,
     currentTool = 'none',
     livePreviewSize,
     cacheVersion,

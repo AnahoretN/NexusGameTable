@@ -7,8 +7,8 @@
  * - Components use useImageUrl() hook to resolve sha256: to displayable URLs
  */
 
-import type { TableObject, Player, PlayerPermissions, DiceRoll, DrawingData, UndoState, AppLanguage, DiceGroup } from '../types';
-import type { GameState, ViewTransform } from '../store/GameContext';
+import type { TableObject } from '../types';
+import type { GameState } from '../store/gameState';
 import { SCROLLBAR_WIDTH_THICK } from '../constants';
 import { logger } from './logger';
 import * as LZString from 'lz-string';
@@ -62,7 +62,7 @@ export function createImageRef(imageId: string): string {
  * @param base64 - Base64 data URL
  * @returns The SHA-256 hash of the stored image
  */
-export async function saveSingleImageToIDB(imageId: string, base64: string): Promise<string> {
+export async function saveSingleImageToIDB(_imageId: string, base64: string): Promise<string> {
   const { storeAssetFromDataURL } = await import('./assets');
   return storeAssetFromDataURL(base64, 'local');
 }
@@ -73,7 +73,7 @@ export async function saveSingleImageToIDB(imageId: string, base64: string): Pro
  * @param imageId - Legacy image ID (not used)
  * @param base64 - Base64 data URL (not used)
  */
-export function addToManagedCache(imageId: string, base64: string): void {
+export function addToManagedCache(_imageId: string, _base64: string): void {
   // No-op - the new CAS system handles caching automatically via assetCache
   // Images are loaded on-demand and cached in memory as ObjectURLs
 }
@@ -462,7 +462,26 @@ export const loadGameStateWithLocalFiles = async (
   }
 
   const localFilesMap = findLocalFilePaths(state.objects);
-  const localFiles: LocalFileInfo[] = Array.from(localFilesMap.values());
+  // Convert path-keyed references into the LocalFileInfo shape the restore
+  // dialog expects (grouped by file path with the owning object IDs).
+  // Keys look like "objects.<objectId>.<field>...".objectIds".
+  const filesByPath = new Map<string, LocalFileInfo>();
+  localFilesMap.forEach((ref, key) => {
+    const objectId = key.split('.')[1] ?? key;
+    const existing = filesByPath.get(ref.path);
+    if (existing) {
+      if (!existing.objectIds.includes(objectId)) existing.objectIds.push(objectId);
+      existing.fields.push(key);
+    } else {
+      filesByPath.set(ref.path, {
+        path: ref.path,
+        filename: ref.filename ?? ref.path.split('/').pop() ?? ref.path,
+        objectIds: [objectId],
+        fields: [key],
+      });
+    }
+  });
+  const localFiles: LocalFileInfo[] = Array.from(filesByPath.values());
 
   return { state, localFiles };
 };
@@ -501,7 +520,8 @@ export const processUploadedLocalFiles = async (
 
   return {
     ...state,
-    objects: updatedObjects
+    // The replace helper preserves object identity and only swaps path strings
+    objects: updatedObjects as Record<string, TableObject>
   };
 };
 
@@ -682,10 +702,10 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
       if (obj.type === 'DICE_OBJECT') {
         const dice = obj as any;
         if (dice.diceGroupId === undefined) {
-          migratedObj.diceGroupId = null;
+          (migratedObj as any).diceGroupId = null;
         }
         if (dice.fromPoolPanel === undefined) {
-          migratedObj.fromPoolPanel = null;
+          (migratedObj as any).fromPoolPanel = null;
         }
       }
 

@@ -1,6 +1,6 @@
 import { Action } from './gameActions';
 import { GameState } from './gameState';
-import { AuditLogEntry, AuditActionType, AuditLogState, ItemType } from '../types';
+import { AuditLogEntry, AuditActionType, ItemType } from '../types';
 import { generateUUID } from '../utils/uuid';
 
 // Helper function to round coordinates to 2 decimal places
@@ -38,7 +38,7 @@ type AuditMapperMap = {
 };
 
 const ACTION_TO_AUDIT_MAP: Partial<AuditMapperMap> = {
-  'ADD_OBJECT': (action, state) => {
+  'ADD_OBJECT': (action, _state) => {
     const obj = action.payload;
     return {
       actionType: AuditActionType.OBJECT_CREATED,
@@ -489,7 +489,7 @@ const ACTION_TO_AUDIT_MAP: Partial<AuditMapperMap> = {
       description: `Created new drawing`,
     };
   },
-  'ADD_PLAYER': (action, state) => {
+  'ADD_PLAYER': (action, _state) => {
     return {
       actionType: AuditActionType.PLAYER_JOINED,
       description: `Player "${action.payload.name}" joined`,
@@ -508,7 +508,7 @@ const ACTION_TO_AUDIT_MAP: Partial<AuditMapperMap> = {
       }
     };
   },
-  'UPDATE_PLAYER_PERMISSIONS': (action, state) => {
+  'UPDATE_PLAYER_PERMISSIONS': (action, _state) => {
     return {
       actionType: AuditActionType.SETTINGS_CHANGED,
       description: `Updated player permissions`,
@@ -517,7 +517,7 @@ const ACTION_TO_AUDIT_MAP: Partial<AuditMapperMap> = {
       }
     };
   },
-  'UPDATE_LANGUAGE': (action, state) => {
+  'UPDATE_LANGUAGE': (action, _state) => {
     return {
       actionType: AuditActionType.SETTINGS_CHANGED,
       description: `Changed language to ${action.payload}`,
@@ -526,7 +526,7 @@ const ACTION_TO_AUDIT_MAP: Partial<AuditMapperMap> = {
       }
     };
   },
-  'TOGGLE_CONNECTIONS_LOCKED': (action, state) => {
+  'TOGGLE_CONNECTIONS_LOCKED': (_action, state) => {
     return {
       actionType: AuditActionType.SETTINGS_CHANGED,
       description: `${state.connectionsLocked ? 'Unlocked' : 'Locked'} player connections`,
@@ -535,7 +535,7 @@ const ACTION_TO_AUDIT_MAP: Partial<AuditMapperMap> = {
       }
     };
   },
-  'CREATE_PANEL': (action, state) => {
+  'CREATE_PANEL': (action, _state) => {
     return {
       actionType: AuditActionType.OBJECT_CREATED,
       description: `Created panel: ${action.payload.panelType}`,
@@ -545,13 +545,13 @@ const ACTION_TO_AUDIT_MAP: Partial<AuditMapperMap> = {
       }
     };
   },
-  'CREATE_WINDOW': (action, state) => {
+  'CREATE_WINDOW': (_action, _state) => {
     return null;
   },
-  'CLOSE_UI_OBJECT': (action, state) => {
+  'CLOSE_UI_OBJECT': (_action, _state) => {
     return null;
   },
-  'SPAWN_TOKEN_FROM_ARCHETYPE': (action, state) => {
+  'SPAWN_TOKEN_FROM_ARCHETYPE': (action, _state) => {
     return {
       actionType: AuditActionType.OBJECT_CREATED,
       description: `Spawned token from archetype at (${action.payload.x}, ${action.payload.y})`,
@@ -759,7 +759,7 @@ export function createAuditLogEntry(
     }
   }
 
-  const mapper = ACTION_TO_AUDIT_MAP[action.type];
+  const mapper = ACTION_TO_AUDIT_MAP[action.type as MappedActionType];
   if (!mapper) {
     // For unmapped actions, create a generic entry
     return {
@@ -852,7 +852,6 @@ export function replayToIndex(baseState: GameState, entries: AuditLogEntry[], ta
 
   // Replay actions up to target index
   for (let i = 0; i <= targetIndex && i < entries.length; i++) {
-    const entry = entries[i];
     // Apply the action - this would need to use the reducer
     // For now, we'll store the actions and let the GameContext handle replay
     currentState = {

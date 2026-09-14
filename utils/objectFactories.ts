@@ -48,6 +48,7 @@ export interface BaseObjectParams extends PositionParams {
   rotation?: number;
   locked?: boolean;
   isOnTable?: boolean;
+  color?: string;
   actionButtons?: ContextAction[];
   allowedActions?: ContextAction[];
   allowedActionsForGM?: ContextAction[];
@@ -122,7 +123,6 @@ const COMMON_DECK_PROPS = {
  */
 export function createStandardDeck(params: DeckParams = {}): Deck {
   const { x = 0, y = 0, id = generateUUID(), name = 'Standard Deck', cardShape = CardShape.POKER, ...rest } = params;
-  const dims = CARD_SHAPE_DIMS[cardShape];
   const deckWidth = rest.cardWidth ?? DEFAULT_DECK_WIDTH;
   const deckHeight = rest.cardHeight ?? DEFAULT_DECK_HEIGHT;
 
@@ -265,7 +265,7 @@ function getDiceShape(sides: number): { shape: TokenShape; width: number; height
 /**
  * Create a dice object
  */
-export function createDice(params: BaseObjectParams & { sides?: number } = {}): DiceObject {
+export function createDice(params: BaseObjectParams & Partial<DiceObject> = {}): DiceObject {
   const { x = 0, y = 0, id = generateUUID(), name = 'Dice', sides = 6, actionButtons, allowedActions, allowedActionsForGM, ...rest } = params;
   const { shape, width, height } = getDiceShape(sides);
 
@@ -725,7 +725,7 @@ export function handleReturnAllAndShuffleAction(deckId: string, dispatch: Dispat
 export function handleCloneCardInDeck(
   card: { id: string; name: string; deckId?: string },
   deck: { id: string; cardIds: string[]; baseCardIds?: string[]; type?: string },
-  stateObjects: Record<string, any>,
+  _stateObjects: Record<string, any>,
   dispatch: Dispatch<any>
 ): void {
   // Create a copy of the card in the same deck
@@ -791,7 +791,7 @@ export function createObject(params: CreateParams): Deck | Token | TokenType | D
       return createTokenType(params);
 
     case ItemType.DICE_OBJECT:
-      return createDice(params);
+      return createDice(params as BaseObjectParams & Partial<DiceObject>);
 
     case ItemType.COUNTER:
       return createCounter({ ...params, isLifeCounter: params.name === 'Life Counter' });
@@ -803,7 +803,7 @@ export function createObject(params: CreateParams): Deck | Token | TokenType | D
       return createBattlefieldCell(params);
 
     case ItemType.NEXUS_BOARD: {
-      const { board, mainCell } = createNexusBoard(params);
+      const { board, mainCell: _mainCell } = createNexusBoard(params);
       // Note: caller needs to dispatch both objects
       return board;
     }

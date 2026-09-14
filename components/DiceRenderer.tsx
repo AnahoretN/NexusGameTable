@@ -130,6 +130,7 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
 
     // Update ref
     prevExplosiveRollRef.current = currentRoll;
+    return undefined;
   }, [dice.explosiveRoll]);
 
   // Auto-animate explosive dice (unless explicitly disabled)
@@ -192,7 +193,7 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
             width={baseContentWidth}
             height={contentHeight}
           >
-            <div xmlns="http://www.w3.org/1999/xhtml" style={{
+            <div style={{
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',

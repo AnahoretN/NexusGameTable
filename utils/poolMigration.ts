@@ -154,5 +154,5 @@ export function runPoolMigrationIfNeeded(objects: Record<string, any>): void {
     return;
   }
 
-  const result = migrateAllPoolPanels(objects);
+ migrateAllPoolPanels(objects);
 }

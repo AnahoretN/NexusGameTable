@@ -9,7 +9,7 @@
  * @stage 3 of Tabletop.tsx refactoring
  */
 
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { DrawingCanvas } from '../DrawingCanvas';
 
 /**

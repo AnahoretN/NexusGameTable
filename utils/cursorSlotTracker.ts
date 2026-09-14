@@ -110,7 +110,7 @@ export function getCursorSlotStats() {
 
 // Make available globally for debugging
 if (typeof window !== 'undefined') {
-  (window as any).__cursorSlotTracker = {
+  (window as any)._cursorSlotTracker = {
     addToCursorSlot,
     removeFromCursorSlot,
     isInCursorSlot,

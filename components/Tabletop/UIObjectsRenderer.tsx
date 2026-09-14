@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { DeckComponent } from '../DeckComponent';
 import { UIObjectRendererOptimizedMemo as UIObjectRendererMemo } from '../UIObjectRendererOptimized';
 import { PinnedIndicator } from '../PinnedIndicator';
-import { TableObject, Deck as DeckType, PanelObject, WindowObject, ItemType } from '../../types';
+import { TableObject, Deck as DeckType, PanelObject, WindowObject } from '../../types';
 import { TabletopRenderContext } from './types';
 
 interface UIObjectsRendererProps {
@@ -40,7 +40,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   state,
   hyperscaleLayers,
   draggingId,
-  activePlayerId,
+  activePlayerId: _activePlayerId,
   isGM,
   currentTool,
   onContextMenu,
@@ -49,7 +49,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   executeClickAction,
   handleContextMenu,
   handlePileContextMenu,
-  dispatch,
+  dispatch: _dispatch,
   setSearchModalDeck,
   setTopDeckModalDeck,
   setDeleteCandidateId,
@@ -93,14 +93,11 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
         >
           <DeckComponent
             deck={deckObj}
-            state={state}
             allObjects={state.objects}
-            activePlayerId={activePlayerId}
             isGM={isGM}
             executeClickAction={executeClickAction}
             handleContextMenu={handleContextMenu}
             handlePileContextMenu={handlePileContextMenu}
-            dispatch={dispatch}
             setSearchModalDeck={setSearchModalDeck}
             setTopDeckModalDeck={setTopDeckModalDeck}
             setDeleteCandidateId={setDeleteCandidateId}
@@ -135,14 +132,11 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
       >
         <DeckComponent
           deck={deckObj}
-          state={state}
           allObjects={state.objects}
-          activePlayerId={activePlayerId}
           isGM={isGM}
           executeClickAction={executeClickAction}
           handleContextMenu={handleContextMenu}
           handlePileContextMenu={handlePileContextMenu}
-          dispatch={dispatch}
           setSearchModalDeck={setSearchModalDeck}
           setTopDeckModalDeck={setTopDeckModalDeck}
           setDeleteCandidateId={setDeleteCandidateId}

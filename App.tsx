@@ -5,11 +5,11 @@ import { ViewTransformProvider, useViewTransform } from './store/contexts/ViewTr
 import { UIProvider } from './store/contexts/UIContext';
 import { LocalSettingsProvider, useLocalSettings } from './hooks/useLocalSettings.tsx';
 import { ToolSettingsProvider } from './contexts/ToolSettingsContext';
-import { memoryManager, perfMonitor } from './utils';
+import { memoryManager } from './utils';
 
 // Lazy load components for better initial load performance
 const Tabletop = lazy(() => import('./components/Tabletop/TabletopRefactored').then(m => ({ default: m.default })));
-const MainMenuContent = lazy(() => import('./components/MainMenuContent').then(m => ({ default: m.MainMenuContentMemoized })));
+ lazy(() => import('./components/MainMenuContent').then(m => ({ default: m.MainMenuContentMemoized })));
 
 // Theme applier component
 const ThemeApplier: React.FC = () => {

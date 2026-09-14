@@ -7,7 +7,7 @@ import { t as translate, Locale } from './translations';
 export type ButtonAction = ContextAction;
 
 // Mapping from button action to English text (used as translation key)
-const ACTION_LABELS: Record<ButtonAction, string> = {
+const ACTION_LABELS: Partial<Record<ButtonAction, string>> = {
   flip: 'Flip',
   rotateClockwise: 'Rotate Clockwise',
   rotateCounterClockwise: 'Rotate Counter-Clockwise',
@@ -86,7 +86,7 @@ export const BUTTON_STYLES: Partial<Record<ButtonAction, { className: string }>>
 };
 
 // Icon factory functions - return appropriate icon based on state
-export const ButtonIcons = {
+export const ButtonIcons: Partial<Record<ButtonAction, (...args: any[]) => React.ReactNode>> = {
   flip: (faceUp: boolean) => faceUp ? <EyeOff size={14} /> : <Eye size={14} />,
   rotate: () => <RefreshCw size={14} />,
   rotateClockwise: () => <RefreshCw size={14} />,
@@ -120,7 +120,6 @@ export const ButtonIcons = {
   moveToTopDeck: () => <ArrowUp size={14} />,
   moveToBottomDeck: () => <ArrowDown size={14} />,
   moveToDiscard: () => <Trash2 size={14} />,
-  mill: () => <Undo size={14} />,
   editNexusBoard: () => <Plus size={14} />,
   closeNexusBoardEditing: () => <Check size={14} />,
   deleteNexusBoard: () => <Trash2 size={14} />,
@@ -147,10 +146,10 @@ export function getCardButtonConfig(
   let icon: React.ReactNode;
 
   // Call icon factory with appropriate state
-  if (action === 'flip') {
-    icon = iconGetter(faceUp);
-  } else if (action === 'lock') {
-    icon = iconGetter(locked);
+  if (action === "flip") {
+    icon = iconGetter!(faceUp);
+  } else if (action === "lock") {
+    icon = iconGetter!(locked);
   } else {
     icon = (iconGetter as () => React.ReactNode)();
   }

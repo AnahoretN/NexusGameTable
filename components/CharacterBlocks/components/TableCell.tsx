@@ -32,7 +32,7 @@ export const TableCell: React.FC<TableCellProps> = ({
   });
 
   if (editable && isEditing) {
-    const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const handleBlur = (_e: React.FocusEvent<HTMLInputElement>) => {
       edit.handleBlur();
       onBlur();
     };

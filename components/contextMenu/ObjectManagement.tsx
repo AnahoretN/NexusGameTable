@@ -107,7 +107,7 @@ export const OBJECT_MANAGEMENT_ACTIONS: ContextAction[] = [
  * Check if object has any management actions available
  */
 export function hasManagementActions(
-  object: TableObject,
+  _object: TableObject,
   canPerformAction: (action: ContextAction) => boolean
 ): boolean {
   return OBJECT_MANAGEMENT_ACTIONS.some(action => canPerformAction(action));

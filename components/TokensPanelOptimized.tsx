@@ -15,9 +15,8 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useObjectActions } from '../store/objectStore';
 import { usePlayerPermissions, useIsGM } from '../store/contexts';
-import { ItemType, TokenType, TokenShape, AppLanguage } from '../types';
-import { SvgTokenShape } from './SvgTokenShape';
-import { ChevronDown, Settings } from 'lucide-react';
+import { ItemType, TokenType, AppLanguage } from '../types';
+import { ChevronDown } from 'lucide-react';
 import { VirtualizedTokensPanel, SimpleTokensPanel, useVirtualizedTokensPanel } from './VirtualizedTokensPanel';
 import { useGame } from '../store/GameContext';
 
@@ -34,7 +33,7 @@ export const TokensPanelOptimized: React.FC<TokensPanelProps> = ({
 }) => {
   // ✅ Use GameContext for objects (objectStore is not synced with TOKEN_TYPE objects)
   const { state } = useGame();
-  const { updateObject } = useObjectActions();
+  const { updateObject: _updateObject } = useObjectActions();
 
   const playerPermissions = usePlayerPermissions();
   const isGM = useIsGM();

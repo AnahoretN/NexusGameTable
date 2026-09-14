@@ -57,24 +57,6 @@ export const QuickAccessBlock: React.FC<QuickAccessBlockProps> = ({ block, edita
     setHoveredItem(null);
   }, []);
 
-  const handleAddItem = useCallback(() => {
-    if (!editable) return;
-
-    if (data.maxItems && data.items.length >= data.maxItems) {
-      return; // Max items reached
-    }
-
-    const newItem: QuickAccessItem = {
-      id: `item-${Date.now()}`,
-      name: 'New Item',
-      quantity: 1
-    };
-
-    onChange({
-      ...data,
-      items: [...data.items, newItem]
-    });
-  }, [data, editable, onChange]);
 
   const handleRemoveItem = useCallback((itemId: string) => {
     if (!editable) return;

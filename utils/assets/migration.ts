@@ -269,7 +269,7 @@ export async function migrateFromOldSystem(
  * Read all entries from old database
  */
 async function readOldDatabase(
-  onProgress?: MigrationProgressCallback
+  _onProgress?: MigrationProgressCallback
 ): Promise<OldIDBEntry[]> {
   return new Promise((resolve) => {
     const request = indexedDB.open(OLD_DB_NAME, OLD_DB_VERSION);

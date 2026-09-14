@@ -46,7 +46,6 @@ export const PanelSettingsModal: React.FC<PanelSettingsModalProps> = ({ panel, o
   const POOL_MAX_HEIGHT = DEFAULT_POOL_HEIGHT;
 
   // Convert VU to pixels for display
-  const vuToPx = (vu: number) => vu * pixelsPerVU;
   // Convert pixels to VU for storage
   const pxToVu = (px: number) => px / pixelsPerVU;
 

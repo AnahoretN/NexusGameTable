@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { LocalSettings, loadLocalSettings, saveLocalSettings } from '../utils/localSettings';
 
 // Context for Local Settings

@@ -6,7 +6,7 @@
  */
 
 import React, { useState } from 'react';
-import { AlertCircle, Image as ImageIcon, Link, Info, Download } from 'lucide-react';
+import { AlertCircle, Image as Link, Info, Download } from 'lucide-react';
 
 export interface MissingAssetPlaceholderProps {
   assetHash: string;

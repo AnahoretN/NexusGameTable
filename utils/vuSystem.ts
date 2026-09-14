@@ -25,7 +25,7 @@ export const VU_PER_SCREEN_HEIGHT = 1000; // 1000 vu = 100% of screen height
  *
  * pixelsPerVU = viewportHeight / 1000
  */
-export function calculatePixelsPerVU(viewportWidth: number, viewportHeight: number): number {
+export function calculatePixelsPerVU(_viewportWidth: number, viewportHeight: number): number {
   return viewportHeight / VU_PER_SCREEN_HEIGHT;
 }
 

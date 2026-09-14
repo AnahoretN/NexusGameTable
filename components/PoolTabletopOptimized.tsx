@@ -32,7 +32,6 @@ import {
 import {
   calculatePickupOffsetWithFallback,
   pixelsToVU,
-  type CursorSlotObject
 } from '../utils/dragDropUtils';
 import { allocateZIndexWithDefrag } from '../utils/zIndexAllocator';
 import { handleShuffleDeckAction } from '../utils/objectFactories';
@@ -64,10 +63,9 @@ interface DiceActionButtonsProps {
   players?: any[];
 }
 
-const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId, isGM, animateDiceRoll, setDeleteCandidateId, setSearchModalDeck, setTopDeckModalDeck, players, className = '' }: DiceActionButtonsProps) => {
+const DiceActionButtonsMemo = React.memo(({ obj, dispatch, state, activePlayerId, isGM, animateDiceRoll, setDeleteCandidateId, setSearchModalDeck: _setSearchModalDeck, setTopDeckModalDeck: _setTopDeckModalDeck, players, className = '' }: DiceActionButtonsProps) => {
   const actionButtons = 'actionButtons' in obj ? (obj.actionButtons || []) : [];
   const dice = obj as DiceObject;
-  const isInGroup = !!dice.diceGroupId;
 
   const buttonConfigs: Record<string, { key: string; action: () => void; className: string; title: string; icon: React.ReactNode }> = {
     roll: {
@@ -238,7 +236,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
   const activePlayerId = useActivePlayerId();
   const hyperscaleLayers = useHyperscaleLayers();
   const language = useLanguage();
-  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
+  const [_isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -522,8 +520,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
   // Listen for cursor-slot-dropped event to prevent immediate re-add
   useEffect(() => {
-    const handleCursorSlotDropped = (e: Event) => {
-      const customEvent = e as CustomEvent<{ cardIds: string[] }>;
+    const handleCursorSlotDropped = (_e: Event) => {
       // Update the timestamp to prevent immediate re-add
       cursorSlotLastAddedRef.current = Date.now();
     };
@@ -1575,7 +1572,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
       // Allocate z-indices for each layer
       const layerAllocations: Record<string, { allocatedZIndex: number; objectsToUpdate?: Record<string, number> }> = {};
-      for (const [layerId, layerItems] of Object.entries(layerGroups)) {
+      for (const [layerId, _layerItems] of Object.entries(layerGroups)) {
         const allocation = allocateZIndexWithDefrag(
           state.objects,
           layerId === 'default' ? undefined : layerId,
@@ -1696,7 +1693,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     const nonCardsInSlot = cursorSlotObjects.filter(item => item.type !== ItemType.CARD);
     if (nonCardsInSlot.length > 0 && deck && pile) {
       // Calculate pile position
-      const pileSize = pile.size ?? 1;
       let pileX: number, pileY: number;
 
       if (pile.position === 'free') {
@@ -1958,7 +1954,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
 
       // Check if cursor is over the VISIBLE pool panel window first
       // Use the same logic as handleGlobalMouseUp for consistency
-      const elementUnderCursor = document.elementFromPoint(e.clientX, e.clientY);
+ document.elementFromPoint(e.clientX, e.clientY);
 
       // IMPORTANT: Check if cursor is over hand panel FIRST
       // If dragging to hand panel, let hand panel handle it - don't drop to pool
@@ -2177,7 +2173,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
       // PRIMARY METHOD: Check if element under cursor or its ancestors is our pool panel
       // Use elementsFromPoint to get all elements at cursor position, not just the top one
       // This is more reliable when cursor slot visualization is under the cursor
-      const elementsAtCursor = document.elementsFromPoint(x, y);
+ document.elementsFromPoint(x, y);
 
       // IMPORTANT: Check if cursor is over hand panel FIRST
       // If dragging to hand panel, let hand panel handle it - don't drop to pool
@@ -2682,7 +2678,6 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
               const scale = Math.min(scaleX, scaleY);
 
               // Check if this object is being dragged (only for non-draggable items)
-              const isDraggingBoard = draggingObject?.id === obj.id;
 
               return (
                 <div
@@ -2743,7 +2738,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
                   setDraggingPile={() => {}}
                   pileDragStartRef={pileDragStartRef}
                   setTopDeckModalDeck={setTopDeckModalDeck}
-                  handleMouseDown={(e, id) => handleObjectMouseDown(e, obj)}
+                  handleMouseDown={(e, _id) => handleObjectMouseDown(e, obj)}
                   handleContextMenu={(e) => handleContextMenu(e, obj)}
                   handlePileContextMenu={handlePileContextMenu}
                   setSearchModalDeck={setSearchModalDeck}

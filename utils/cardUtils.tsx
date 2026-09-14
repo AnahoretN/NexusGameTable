@@ -1,5 +1,4 @@
-import { Card, Deck as DeckType, CardOrientation, CardShape, CardNamePosition, ContextAction } from '../types';
-import { isGeometricCardShape } from './shapeUtils';
+import { Card, Deck as DeckType, CardOrientation, CardNamePosition, ContextAction } from '../types';
 
 // Cache for card dimensions to avoid repeated calculations
 const cardDimensionsCache = new Map<string, { width: number; height: number }>();

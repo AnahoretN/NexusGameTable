@@ -44,10 +44,10 @@ export const CardRenderer = memo(({
   draggingId,
   currentTool,
   isCtrlPressed,
-  isGM,
+  isGM: _isGM,
   activePlayerId,
-  pixelsPerVU,
-  basePixelsPerVU,
+  pixelsPerVU: _pixelsPerVU,
+  basePixelsPerVU: _basePixelsPerVU,
   zoomMultiplier,
   onContextMenu,
   onMouseDown,
@@ -221,8 +221,8 @@ export const CardRenderer = memo(({
   // Memoize rendered buttons
   const actionButtons = useMemo(() => {
     const buttons = (deck?.cardActionButtons || [])
-      .map(action => buttonConfigs[action])
-      .filter(Boolean);
+      .map(action => buttonConfigs[action as keyof typeof buttonConfigs])
+      .filter((btn): btn is (typeof buttonConfigs)[keyof typeof buttonConfigs] => Boolean(btn));
 
     return buttons.map(btn => (
       <button

@@ -1,4 +1,4 @@
-import { TableObject, ItemType, CardLocation } from '../../types';
+import { ItemType, CardLocation } from '../../types';
 
 /**
  * Reducer functions for card and deck manipulation actions

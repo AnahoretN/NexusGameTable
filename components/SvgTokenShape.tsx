@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TokenShape } from '../types';
 import { generatePointyTopHexPath, generateFlatTopHexPath } from '../utils/shapePaths';
-import { getAssetURL, acquireAsset, releaseAsset, clearAssetCache } from '../utils/assets';
+import { getAssetURL, releaseAsset, clearAssetCache } from '../utils/assets';
 import { assetEvents, assetCache } from '../utils/assets/assetCache';
 
 // 🔥 FIX: Remove local cache - it gets out of sync with assetCache.evictLRU()
@@ -98,21 +98,6 @@ function calculateFontSizeForWidth(textLength: number, availableWidth: number): 
 /**
  * Calculate dynamic font size based on text length and token dimensions
  */
-function calculateFontSize(textLength: number, tokenWidth: number, tokenHeight: number, longestWordLength: number): number {
-  const baseSize = Math.min(tokenWidth, tokenHeight) / 6;
-
-  let size = baseSize;
-  if (textLength <= 3) size = baseSize;
-  else if (textLength <= 6) size = baseSize * 0.7;
-  else if (textLength <= 10) size = baseSize * 0.5;
-  else size = baseSize * 0.656;
-
-  if (longestWordLength > 9) size = size * 0.75;
-  else if (longestWordLength > 12) size = size * 0.6;
-  else if (longestWordLength > 15) size = size * 0.5;
-
-  return size;
-}
 
 /**
  * Split token name into lines for better display on tokens
@@ -315,7 +300,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
     return undefined;
   });
 
-  const [isLoaded, setIsLoaded] = useState(() => {
+  const [_isLoaded, setIsLoaded] = useState(() => {
     if (!content) return true;
     if (!isAssetHash(content)) return true;
     // Check if already in cache
@@ -407,7 +392,7 @@ export const SvgTokenShape: React.FC<SvgTokenShapeProps> = ({
         setResolvedContent(objectUrl);
         setIsLoaded(true);
       })
-      .catch((error) => {
+      .catch((_error) => {
         if (cancelled) return;
         setResolvedContent(undefined);
         setIsLoaded(true);

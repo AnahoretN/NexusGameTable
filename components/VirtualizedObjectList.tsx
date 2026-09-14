@@ -11,7 +11,7 @@
 
 import React, { useRef, useMemo, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { TableObject, ItemType } from '../types';
+import { TableObject } from '../types';
 import { ObjectRendererMemo } from './ObjectRenderer';
 
 export interface VirtualizedObjectListProps {
@@ -98,14 +98,14 @@ export const VirtualizedObjectList: React.FC<VirtualizedObjectListProps> = ({
   });
 
   // Memoized callbacks to prevent unnecessary re-renders
-  const handleMouseDown = useCallback((e: React.MouseEvent, obj: TableObject) => {
+ useCallback((_e: React.MouseEvent, _obj: TableObject) => {
     // Dispatch or handle mouse down
     if (dispatch) {
       // You can add custom logic here
     }
   }, [dispatch]);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent, obj: TableObject) => {
+ useCallback((e: React.MouseEvent, _obj: TableObject) => {
     e.preventDefault();
     // Handle context menu
   }, []);

@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Card } from '../Card';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { TableObject, Card as CardType, Token as TokenType, Deck as DeckType, ItemType } from '../../types';
@@ -16,7 +16,7 @@ export const RemoteObjectsRenderer = memo<RemoteObjectsRendererProps>(({
   remoteDraggingObjects,
   v2p,
   state,
-  pixelsPerVU
+  pixelsPerVU: _pixelsPerVU
 }) => {
   const renderRemoteToken = (token: TokenType, key: string, globalZIndex: number) => (
     <div

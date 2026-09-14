@@ -75,7 +75,7 @@ function getFileNames(): Record<string, string> {
       fileNameCache = {};
     }
   }
-  return fileNameCache;
+  return fileNameCache as Record<string, string>;
 }
 
 function rememberFileName(hash: string, name: string): void {

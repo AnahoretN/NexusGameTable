@@ -1,4 +1,4 @@
-import { TableObject, CardLocation, Deck as DeckType, Card, CardPile, TokenShape, ItemType, DiceObject, Counter, NexusCellObject, TokenState, TokenType } from '../types';
+import { TableObject, CardLocation, Deck as DeckType, Card, CardPile, ItemType, DiceObject, Counter, NexusCellObject, TokenState, TokenType } from '../types';
 import { handlePlayTopCard, handleShow, handleHide, handleSwingClockwise, handleSwingCounterClockwise } from './objectActionHandlers';
 import { handleCloneCardInDeck, handleShuffleDeckAction, handleReturnAllAndShuffleAction } from './objectFactories';
 
@@ -132,7 +132,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     state,
     activePlayerId,
     offset = { x: 0, y: 0 },
-    setContextMenu,
+    setContextMenu: _setContextMenu,
     setSettingsModalObj,
     setDeleteCandidateId,
     setSearchModalDeck,
@@ -140,7 +140,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
     setTopDeckModalDeck,
     setNexusBoardAddingCell,
     isShiftPressed = false,
-    isGM = false,
+    isGM: _isGM = false,
     isPoolPanel = false,
     animateDiceRoll
   } = params;
@@ -316,7 +316,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
       // Special handling for cards in decks - clone card within the same deck
       if (object.type === ItemType.CARD && (object as Card).deckId) {
         const card = object as Card;
-        const deck = state.objects[card.deckId] as DeckType;
+        const deck = (card.deckId ? state.objects[card.deckId] : undefined) as DeckType | undefined;
         if (deck && deck.type === ItemType.DECK) {
           handleCloneCardInDeck(card, deck, state.objects, dispatch);
         } else {
@@ -597,7 +597,7 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
           }
           // Remove from piles if card is in a pile
           if (deck.piles && deck.piles.length > 0) {
-            const updatedPiles = deck.piles.map(pile => ({
+            const updatedPiles = deck.piles.map((pile: CardPile) => ({
               ...pile,
               cardIds: pile.cardIds.filter((id: string) => id !== object.id)
             }));
@@ -849,9 +849,11 @@ export const executeContextMenuAction = (action: string, params: ContextMenuActi
         const token = object as TokenType;
 
         // Get states from archetype if this is a token copy
+        // (token copies carry the archetype's id in archetypeId at runtime)
         let states: TokenState[] = token.states || [];
-        if (token.archetypeId && state.objects[token.archetypeId]) {
-          const archetype = state.objects[token.archetypeId] as TokenType;
+        const archetypeId = (token as unknown as { archetypeId?: string }).archetypeId;
+        if (archetypeId && state.objects[archetypeId]) {
+          const archetype = state.objects[archetypeId] as TokenType;
           states = archetype.states || [];
         }
 

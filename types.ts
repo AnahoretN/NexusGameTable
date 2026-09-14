@@ -382,6 +382,9 @@ export interface Token extends GameItem {
   snapToGrid?: boolean; // If true, other objects snap to this
   // Reference to archetype if spawned from one
   archetypeId?: string;
+  // Character panel linkage (set when spawned from / synced with a character panel)
+  characterId?: string; // ID of the character this token represents
+  panelId?: string; // ID of the character panel this token is linked to
   // Show name on token (inherited from archetype for token-copies)
   showName?: boolean;
   // Grid cell magnetism optimization - store direct reference to snapped cell

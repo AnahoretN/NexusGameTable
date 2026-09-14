@@ -1,5 +1,4 @@
 import { Coordinates } from '../types';
-import { vuToPixels, pixelsToVu } from './vuSystem';
 
 /**
  * Convert viewport (screen) coordinates to world coordinates (vu)
@@ -124,7 +123,7 @@ export function batchWorldToViewport(
 export function viewportToUIWorld(
   viewportX: number,
   viewportY: number,
-  offset: Coordinates,
+  _offset: Coordinates,
   pixelsPerVU: number = 1
 ): Coordinates {
   return {

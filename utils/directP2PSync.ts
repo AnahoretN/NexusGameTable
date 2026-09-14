@@ -8,7 +8,7 @@
  * This bypasses the host for faster, more responsive updates.
  */
 
-import { Token, TokenSlider, PanelObject, CharacterTab, CharacterBlock, SliderBlockData } from '../types';
+import { Token, TokenSlider, PanelObject, CharacterTab } from '../types';
 
 // Types for direct P2P messages
 export interface DirectP2PMessage {

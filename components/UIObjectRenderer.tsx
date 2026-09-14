@@ -106,7 +106,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
   const shouldExpand = isMainMenu ? minimized : isCollapsed;
   const dualPosition = uiObject.type === ItemType.PANEL && (uiObject as PanelObject).dualPosition;
 
-  const handleToggleCollapse = useCallback((e?: React.MouseEvent) => {
+  const handleToggleCollapse = useCallback((_e?: React.MouseEvent) => {
     // Toggle between collapsed (200px wide, title only) and full size
 
     if (shouldExpand) {
@@ -300,7 +300,7 @@ export const UIObjectRenderer: React.FC<UIObjectRendererProps> = ({
       }
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = (_e: MouseEvent) => {
       if (!resizing) return;
 
       const rect = container.getBoundingClientRect();
@@ -1006,8 +1006,8 @@ const HandPanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
 };
 
 // Tableau panel content
-const TableauPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
-  const { state } = useGame();
+const TableauPanelContent: React.FC<{ panel: PanelObject }> = () => {
+  const { state: _state } = useGame();
 
   return (
     <div className="h-full flex flex-col">
@@ -1019,7 +1019,7 @@ const TableauPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
 };
 
 // Pool panel content
-const PoolPanelContent: React.FC<{ panel: PanelObject }> = ({ panel }) => {
+const PoolPanelContent: React.FC<{ panel: PanelObject }> = () => {
   return (
     <div className="h-full flex flex-col">
       <div className="p-4 text-slate-300 text-sm">

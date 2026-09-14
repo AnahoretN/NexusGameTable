@@ -1,4 +1,3 @@
-import { Coordinates } from '../../types';
 
 /**
  * Reducer functions for view transform and viewport actions
@@ -114,7 +113,7 @@ export function addPackToGameReducer(state: any, action: any): any {
   };
 
   // First pass: determine which objects need new IDs
-  for (const [id, obj] of Object.entries(packObjects)) {
+  for (const [id, _obj] of Object.entries(packObjects)) {
     if (existingObjects[id]) {
       const newId = generateUniqueId(id);
       idMappings.set(id, newId);

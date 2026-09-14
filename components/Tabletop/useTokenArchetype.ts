@@ -13,7 +13,7 @@
  */
 
 import { flushSync } from 'react-dom';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useGame } from '../../store/GameContext';
 import { useViewTransform } from '../../store/contexts';
 import { ItemType, TokenType, Token } from '../../types';
@@ -39,12 +39,12 @@ interface UseTokenArchetypeProps {
  */
 export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
   const {
-    cursorSlot,
+    cursorSlot: _cursorSlot,
     cursorSlotRef,
     setCursorSlot,
     setCursorPosition,
     cursorPositionRef,
-    cursorSlotLastAddedRef,
+    cursorSlotLastAddedRef: _cursorSlotLastAddedRef,
     setCursorSlotSource,
     scrollContainerRef,
     pixelsPerVU,
@@ -58,7 +58,6 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
   // 🔥 DEBUG: Track when cursorSlotRef.current is reset
   useEffect(() => {
     // Override cursorSlotRef.current setter to track changes
-    const originalRef = cursorSlotRef;
     let resetCount = 0;
 
     // Create a proxy to track when the ref is modified
@@ -110,7 +109,7 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       const newTokenId = generateUUID();
 
       const defaultSize = archetype.defaultSize || { width: 50, height: 50 };
-      const newToken: TokenType = {
+      const newToken: Token = {
         id: newTokenId,
         type: ItemType.TOKEN,
         // Use archetype name for token-copy (or auto-generated name)
@@ -165,7 +164,7 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
       });
 
       // Add to cursor slot
-      const tokenClone: TokenType = { ...newToken };
+      const tokenClone: Token = { ...newToken };
       (tokenClone as any).cursorSlotIndex = cursorSlotRef.current.length;
       (tokenClone as any).originalZIndex = newToken.zIndex ?? 0;
       (tokenClone as any).source = 'shift'; // Use 'shift' for Ctrl+click behavior
@@ -277,8 +276,8 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
         return;
       }
 
-      const baseX = p2v(clientX - rect.left + (viewTransform?.scroll?.x || 0));
-      const baseY = p2v(clientY - rect.top + (viewTransform?.scroll?.y || 0));
+      const baseX = p2v(clientX - rect.left + (viewTransform?.viewTransform?.scroll?.x || 0));
+      const baseY = p2v(clientY - rect.top + (viewTransform?.viewTransform?.scroll?.y || 0));
 
       // Determine zIndex behavior based on source
       const source = cursorSlotRef.current[0]?.source || 'hold';

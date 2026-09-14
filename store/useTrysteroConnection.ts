@@ -73,7 +73,7 @@ export function useTrysteroConnection(
   stateRef: React.RefObject<any>
 ): UseTrysteroConnectionReturn {
   const [peerId] = useState<string | null>(() => getPlayerId());
-  const [isHost, setIsHost] = useState<boolean>(() => {
+  const [isHost, _setIsHost] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     const params = new URLSearchParams(window.location.search);
     return !params.has('roomId');
@@ -95,10 +95,10 @@ export function useTrysteroConnection(
     { id: 'handshake', message: 'Handshaking with peer...', status: 'pending' },
   ]);
   const [p2pLoadingProgress, setP2pLoadingProgress] = useState(0);
-  const [isP2PLoadingModalOpen, setIsP2PLoadingModalOpen] = useState(false);
+  const [isP2PLoadingModalOpen, _setIsP2PLoadingModalOpen] = useState(false);
 
   // Packs
-  const [requiredPacks, setRequiredPacks] = useState<Array<{ name: string; hash: string; size: number }>>([]);
+  const [requiredPacks, _setRequiredPacks] = useState<Array<{ name: string; hash: string; size: number }>>([]);
 
   // Pending player name
   const pendingPlayerNameRef = useRef<string | null>(null);
@@ -209,7 +209,7 @@ export function useTrysteroConnection(
 
     console.log('[Trystero] Creating room:', newRoomId);
 
-    const room = joinRoom(config, newRoomId);
+    const room = joinRoom(config, newRoomId) as unknown as TrysteroRoom;
     roomRef.current = room;
 
     // Create messaging action using Trystero's makeAction
@@ -217,7 +217,7 @@ export function useTrysteroConnection(
     sendRef.current = send;
 
     // Handle incoming data from any peer
-    const unsubscribeData = getData((data: any, peerId: string) => {
+ getData((data: any, peerId: string) => {
       handleNetworkData(data, peerId);
     });
 
@@ -255,7 +255,7 @@ export function useTrysteroConnection(
     };
 
     try {
-      const room = joinRoom(config, roomIdToJoin);
+      const room = joinRoom(config, roomIdToJoin) as unknown as TrysteroRoom;
       roomRef.current = room;
       setRoomId(roomIdToJoin);
 

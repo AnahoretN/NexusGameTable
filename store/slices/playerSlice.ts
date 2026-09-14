@@ -68,9 +68,15 @@ export const playerSlice = (state: GameState, action: Action): GameState => {
     }
 
     case 'UPDATE_PERMISSIONS': {
+      // Per-object permissions: { id, actions } — mirrors the GameContext reducer
+      const obj = state.objects[action.payload.id];
+      if (!obj) return state;
       return {
         ...state,
-        playerPermissions: action.payload
+        objects: {
+          ...state.objects,
+          [action.payload.id]: { ...obj, allowedActions: action.payload.actions } as GameState['objects'][string]
+        }
       };
     }
 

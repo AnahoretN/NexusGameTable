@@ -13,12 +13,11 @@
  * @reduction 95%
  */
 
-import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useGame } from '../store/GameContext';
 import { useActivePlayerId, useIsGM, usePlayerList, useViewTransform, useHyperscaleLayers, useLayerSelection, useLanguage, useSettingsModalState } from '../store/contexts';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { useDragOverStore } from '../store/dragOverState';
-import { clampScrollToPlayableArea } from '../utils/viewportConstraints';
 import { executeContextMenuAction } from '../utils/contextMenuActions';
 import { handleShuffleDeckAction } from '../utils/objectFactories';
 import { ClickTooltip } from './Tabletop/ClickTooltip';
@@ -89,18 +88,18 @@ import { ItemType, TokenShape } from '../types';
 
 export const Tabletop: React.FC = () => {
   // === Game Context & Player Info ===
-  const { state, dispatch, isHost } = useGame();
+  const { state, dispatch, isHost: _isHost } = useGame();
   const { viewTransform, setZoom } = useViewTransform();
   const { settings: localSettings, updateSetting } = useLocalSettings();
-  const { setDraggingOver, clearDraggingOver } = useDragOverStore();
+  const { setDraggingOver: _setDraggingOver, clearDraggingOver } = useDragOverStore();
 
   const activePlayerId = useActivePlayerId();
   const isGM = useIsGM();
-  const players = usePlayerList();
+ usePlayerList();
   const hyperscaleLayers = useHyperscaleLayers();
-  const [selectedHyperscaleLayerIds, setLayerSelection] = useLayerSelection();
+  const [selectedHyperscaleLayerIds, _setLayerSelection] = useLayerSelection();
   const language = useLanguage();
-  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
+  const [_isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
 
   // === Positioning & View Transforms ===
   const {
@@ -119,7 +118,7 @@ export const Tabletop: React.FC = () => {
     visibleTableObjects,
     remoteCursorSlotObjects,
     remoteDraggingObjects,
-    uiObjects,
+    uiObjects: _uiObjects,
     pinnedUIObjects,
     unpinnedUIObjects,
     pinnedDecks,
@@ -175,7 +174,7 @@ export const Tabletop: React.FC = () => {
 
   // Dragging state
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [draggingPile, setDraggingPile] = useState<{ pile: CardPile; deck: DeckType } | null>(null);
+  const [_draggingPile, _setDraggingPile] = useState<{ pile: CardPile; deck: DeckType } | null>(null);
 
   // Resizing state
   const [resizingId, setResizingId] = useState<string | null>(null);
@@ -184,18 +183,18 @@ export const Tabletop: React.FC = () => {
   const liveResizeSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   // Dice state
-  const [rollingDice, setRollingDice] = useState<Record<string, number>>({});
+  const [_rollingDice, _setRollingDice] = useState<Record<string, number>>({});
 
   // Hover state
-  const [hoveredDeckId, setHoveredDeckId] = useState<string | null>(null);
-  const [hoveredPileId, setHoveredPileId] = useState<string | null>(null);
+  const [_hoveredDeckId, _setHoveredDeckId] = useState<string | null>(null);
+  const [_hoveredPileId, _setHoveredPileId] = useState<string | null>(null);
 
   // Additional UI state
   const [nexusBoardAddingCell, setNexusBoardAddingCell] = useState<string | null>(null);
   const [clickTooltip, setClickTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const clickTooltipTimerRef = useRef<number | null>(null);
   const clickTooltipBoundsRef = useRef<{ left: number; right: number; top: number; bottom: number } | null>(null);
-  const [pilesButtonMenu, setPilesButtonMenu] = useState<{ x: number; y: number; deck: DeckType } | null>(null);
+  const [_pilesButtonMenu, setPilesButtonMenu] = useState<{ x: number; y: number; deck: DeckType } | null>(null);
 
   // Refs
   const isAddingTokenRef = useRef(false);
@@ -211,6 +210,10 @@ export const Tabletop: React.FC = () => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const cursorSlotLastAddedRef = useRef<number>(0);
   const cursorSlotLastDroppedRef = useRef<number>(0);
+  // Source-of-truth mirrors of cursorSlot / draggingId used by the event handlers
+  // (they update both the ref and the state via setCursorSlotWithRef)
+  const cursorSlotRef = useRef<(CardType | Token | Board)[]>([]);
+  const draggingIdRef = useRef<string | null>(null);
 
   // Track pinned objects that were unpinned during drag
   const unpinnedDuringDragRef = useRef<Map<string, { x: number; y: number }>>(new Map());
@@ -220,6 +223,10 @@ export const Tabletop: React.FC = () => {
     state,
     dispatch,
     cursorSlot,
+    cursorSlotRef,
+    draggingIdRef,
+    resizingId,
+    resizeStart,
     setCursorSlot,
     setCursorPosition,
     cursorPositionRef,
@@ -256,7 +263,7 @@ export const Tabletop: React.FC = () => {
     localSettings,
     updateSetting,
     liveResizeSizeRef,
-    setLiveResizeSize,
+    setLivePreviewSize: setLiveResizeSize,
     isAddingTokenRef,
     longPressTimerRef,
     clickTooltipTimerRef,
@@ -295,11 +302,12 @@ export const Tabletop: React.FC = () => {
     getLayerZoomScale,
     getLayerInverseScale,
     createPositionedStyle,
+    rulerStep,
   };
 
 
   // === executeClickAction function for DeckComponent ===
-  const executeClickAction = useCallback((obj: TableObject, action: string, event?: React.MouseEvent) => {
+  const executeClickAction = useCallback((obj: TableObject, action: string, _event?: React.MouseEvent) => {
     if (!action || action === 'none') return;
     if (currentTool === 'marker' || currentTool === 'eraser') return;
 
@@ -336,7 +344,11 @@ export const Tabletop: React.FC = () => {
         break;
       case 'millTopCard':
         if (obj.type === ItemType.DECK) {
-          dispatch({ type: 'MILL_CARD_TO_BOTTOM', payload: { deckId: obj.id, count: 1 } });
+          const millDeck = obj as DeckType;
+          const topCardId = millDeck.cardIds[millDeck.cardIds.length - 1];
+          if (topCardId) {
+            dispatch({ type: 'MILL_CARD_TO_BOTTOM', payload: { cardId: topCardId, deckId: millDeck.id } });
+          }
         }
         break;
       case 'returnAll':
@@ -346,7 +358,7 @@ export const Tabletop: React.FC = () => {
             o.type === ItemType.CARD && (o as any).deckId === obj.id
           );
           allCards.forEach(card => {
-            dispatch({ type: 'RETURN_TO_DECK', payload: { cardId: card.id, deckId: obj.id, faceUp: false } });
+            dispatch({ type: 'RETURN_TO_DECK', payload: { cardId: card.id } }); // deck resolved from card.deckId in the reducer
           });
         }
         break;
@@ -515,7 +527,7 @@ export const Tabletop: React.FC = () => {
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
-      onWheel={handleWheel}
+      onWheel={handleWheel as unknown as React.WheelEventHandler<HTMLDivElement>} // native (passive:false) listener above is the real handler
       onContextMenu={(e) => e.preventDefault()}
       onDragOver={(e) => {
         e.preventDefault();
@@ -694,6 +706,7 @@ export const Tabletop: React.FC = () => {
         v2p={v2p}
         cursorSlotLength={cursorSlot.length}
         rulerStep={rulerStep}
+        language={language}
       />
 
       {/* Remote Objects Layer */}
@@ -701,6 +714,7 @@ export const Tabletop: React.FC = () => {
         remoteCursorSlotObjects={remoteCursorSlotObjects}
         remoteDraggingObjects={remoteDraggingObjects}
         v2p={v2p}
+        pixelsPerVU={pixelsPerVU}
         state={state}
       />
 
@@ -709,6 +723,7 @@ export const Tabletop: React.FC = () => {
         visibleTableObjects={visibleTableObjects}
         context={renderContext}
         state={state}
+        livePreviewSize={liveResizeSize}
         hyperscaleLayers={hyperscaleLayers}
         selectedHyperscaleLayerIds={selectedHyperscaleLayerIds}
         draggingId={draggingId}
@@ -734,6 +749,7 @@ export const Tabletop: React.FC = () => {
         unpinnedDecks={unpinnedDecks}
         context={renderContext}
         state={state}
+        hyperscaleLayers={hyperscaleLayers}
         draggingId={draggingId}
         activePlayerId={activePlayerId}
         isGM={isGM}

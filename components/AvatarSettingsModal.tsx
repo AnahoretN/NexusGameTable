@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import { forwardRef, useState, useImperativeHandle } from 'react';
 import { CharacterTab } from '../types';
 import { FilePickerInput } from './FilePickerInput';
 import { useLanguage } from '../store/contexts';

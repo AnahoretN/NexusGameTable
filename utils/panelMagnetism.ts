@@ -335,8 +335,8 @@ export function applyDualResizeMagnetism(
   height: number,
   rightEdge: number,
   bottomEdge: number,
-  viewportWidth: number,
-  viewportHeight: number,
+  _viewportWidth: number,
+  _viewportHeight: number,
   config: MagnetismConfig = {}
 ): DualResizeMagnetismResult {
   const cfg = { ...DEFAULT_CONFIG, ...config };
@@ -864,7 +864,7 @@ export function applyResizePanelToPanelMagnetism(
         snappedEdges.right = viewportWidth;
       } else {
         snappedToPanel = {
-          panelId: closestRightEdge.panelId!,
+          panelId: (closestRightEdge as { panelId: string }).panelId,
           edge: 'right',
           at: closestRightEdge.edge,
         };
@@ -881,7 +881,7 @@ export function applyResizePanelToPanelMagnetism(
         snappedEdges.bottom = viewportHeight;
       } else {
         snappedToPanel = {
-          panelId: closestBottomEdge.panelId!,
+          panelId: (closestBottomEdge as { panelId: string }).panelId,
           edge: 'bottom',
           at: closestBottomEdge.edge,
         };

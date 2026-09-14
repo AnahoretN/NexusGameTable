@@ -19,9 +19,9 @@ interface PoolTabSettingsModalProps {
 export const PoolTabSettingsModal: React.FC<PoolTabSettingsModalProps> = ({
   tab,
   players,
-  activePlayerId,
-  isGM,
-  onSave,
+  activePlayerId: _activePlayerId,
+  isGM: _isGM,
+  onSave: _onSave,
   onTabChange,
   language = 'en'
 }) => {

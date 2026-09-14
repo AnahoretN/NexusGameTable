@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { createPortal } from 'react-dom';
-import { LucideIcon } from 'lucide-react';
 
 interface MenuItem {
   name: string;

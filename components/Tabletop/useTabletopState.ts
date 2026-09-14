@@ -12,7 +12,6 @@ import {
   CardPile,
   Deck as DeckType
 } from '../../types';
-import { CursorSlotState, RulerState, ModalStates, ToolStates, DraggingStates, ResizeStates } from './types';
 
 /**
  * Manage tool-related state (current tool, modifier keys)

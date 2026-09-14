@@ -2,7 +2,7 @@ import React, { memo, useMemo } from 'react';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { BoardBackgroundImageMemo } from './BoardWithResize';
 import { PinnedIndicator } from '../PinnedIndicator';
-import { TableObject, BattlefieldCell as BattlefieldCellType, ItemType, TokenShape } from '../../types';
+import { TableObject, BattlefieldCell as BattlefieldCellType } from '../../types';
 import { Tooltip } from '../Tooltip';
 import { getGlobalCacheVersion, CELL_BORDER_SCALE } from '../SvgTokenShape';
 
@@ -39,17 +39,16 @@ export const CellRenderer = memo(({
   getLayerInverseScale,
   draggingId,
   currentTool,
-  isGM,
+  isGM: _isGM,
   activePlayerId,
-  pixelsPerVU,
-  state,
+  pixelsPerVU: _pixelsPerVU,
+  state: _state,
   onContextMenu,
   onMouseDown,
-  dispatch,
+  dispatch: _dispatch,
 }: CellRendererProps) => {
   const cell = obj as BattlefieldCellType;
   const objLayer = obj.hyperscaleLayerId || 'none';
-  const viewTransform = state.viewTransform;
 
   const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
   const isDragging = draggingId === obj.id;

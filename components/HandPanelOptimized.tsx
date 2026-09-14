@@ -22,18 +22,14 @@ import {
   useIsGM,
   usePlayerPermissions,
   useSettingsModalState,
-  useIsSettingsModalOpen
-} from '../store/contexts';
+  } from '../store/contexts';
 import { useGame } from '../store/GameContext';
 import { Card, Token, Deck as DeckType, ItemType, CardShape, CardLocation, TableObject, AppLanguage, Player, TokenShape } from '../types';
 import { Card as CardComponent } from './Card';
-import { ObjectRenderer } from './ObjectRenderer';
 import { SvgTokenShape } from './SvgTokenShape';
-import { ContextMenu } from './ContextMenu';
 import { getCardSettings, getCardDimensions } from '../utils/cardUtils';
 import { useCursorSlotHover } from '../hooks';
 import { getCardButtonConfigsWithActions } from '../utils/buttonConfig';
-import { MAIN_MENU_WIDTH } from '../constants';
 import { Settings, ArrowUp, ArrowDown, Shuffle, ChevronRight, RotateCw } from 'lucide-react';
 import { useTabCardScale } from '../hooks/useTabCardScale';
 import { HandTabSettingsModal } from './HandTabSettingsModal';
@@ -94,7 +90,7 @@ const calculateSafeMenuPosition = (
 };
 
 const HandCardContextMenu: React.FC<HandCardContextMenuProps> = ({
-  x, y, card, deck, onClose, onFlip, onMoveToTop, onMoveToBottom, onMill, onMoveToPile, onOpenSettings, language
+  x, y, card: _card, deck, onClose, onFlip, onMoveToTop, onMoveToBottom, onMill, onMoveToPile, onOpenSettings, language
 }) => {
   const [moveSubmenuOpen, setMoveSubmenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -454,8 +450,8 @@ const TokenStackItem = memo(({
   groupOffset,
   isDragging,
   isDragOver,
-  isGM,
-  activePlayerId,
+  isGM: _isGM,
+  activePlayerId: _activePlayerId,
   cardScale,
   onMouseDown,
   onContextMenu
@@ -643,12 +639,12 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   }, [dispatch]);
 
   // Для операций, которые еще не мигрированы, используем objectStore
-  const { deleteObject, addObject } = useObjectActions();
+  const { deleteObject: _deleteObject, addObject } = useObjectActions();
 
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
   const isGM = useIsGM();
-  const playerPermissions = usePlayerPermissions();
+ usePlayerPermissions();
   const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -661,7 +657,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
 
   // Get both CARDS and TOKENS that can be in hand
   const allHandObjects = Object.values(objects).filter(obj => obj.type === ItemType.CARD || obj.type === ItemType.TOKEN) as (Card | Token)[];
-  const allCards = allHandObjects.filter(obj => obj.type === ItemType.CARD) as Card[];
+ allHandObjects.filter(obj => obj.type === ItemType.CARD) as Card[];
 
   // Use per-tab scale hook for the currently selected player
   const { scale: cardScale, setTabCardScale } = useTabCardScale(selectedPlayerId);
@@ -672,7 +668,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
   }, [cardScale]);
 
   // Get current player info
-  const currentPlayer = players.find(p => p.id === activePlayerId);
+ players.find(p => p.id === activePlayerId);
 
   // Context menu state for cards in hand
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; object: TableObject } | null>(null);
@@ -1107,11 +1103,11 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     updateCard(cardId, { swinging: (obj?.swinging || 0) - 15 });
   }, [objects, updateCard]);
 
-  const handleLayerUp = useCallback((cardId: string) => {
+  const handleLayerUp = useCallback((_cardId: string) => {
     // Implement layer up logic
   }, []);
 
-  const handleLayerDown = useCallback((cardId: string) => {
+  const handleLayerDown = useCallback((_cardId: string) => {
     // Implement layer down logic
   }, []);
 
@@ -1169,15 +1165,15 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     });
   }, [updateCard, selectedPlayerId]);
 
-  const handleMoveToTopDeck = useCallback((cardId: string) => {
+  const handleMoveToTopDeck = useCallback((_cardId: string) => {
     // Implement deck logic
   }, []);
 
-  const handleMoveToBottomDeck = useCallback((cardId: string) => {
+  const handleMoveToBottomDeck = useCallback((_cardId: string) => {
     // Implement deck logic
   }, []);
 
-  const handleMoveToDiscard = useCallback((cardId: string) => {
+  const handleMoveToDiscard = useCallback((_cardId: string) => {
     // Implement discard logic
   }, []);
 
@@ -1220,7 +1216,7 @@ export const HandPanelOptimized: React.FC<HandPanelProps> = ({
     return { x: safeX, y: safeY };
   }, []);
 
-  const handlePanelContextMenu = useCallback((e: React.MouseEvent) => {
+ useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const safePos = getSafeMenuPosition(e.clientX, e.clientY);
     setScaleMenu(safePos);

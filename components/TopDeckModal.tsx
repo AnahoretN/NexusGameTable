@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useGame } from '../store/GameContext';
 import { usePixelsPerVU, usePlayerList, useActivePlayerId, useSettingsModalState } from '../store/contexts';
 import { useObjectActions } from '../store/objectStore';
-import { Deck, Card, CardPile, ContextAction, AppLanguage, TableObject, CardLocation } from '../types';
+import { Deck, Card, ContextAction, AppLanguage, TableObject, CardLocation } from '../types';
 import { X, ArrowUp, Eye, EyeOff, Hand, ArrowDown, Trash2, RefreshCw, Copy } from 'lucide-react';
 import { logger } from '../utils/logger';
 import { Card as CardComponent } from './Card';
@@ -42,7 +42,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   const pixelsPerVU = usePixelsPerVU();
   const players = usePlayerList();
   const activePlayerId = useActivePlayerId();
-  const [isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
+  const [_isSettingsModalOpen, openSettingsModal, closeSettingsModal] = useSettingsModalState();
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
   const currentPlayerId = activePlayerId;
@@ -199,7 +199,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   }, [dispatch, cardOrder, deck.id, millPile]);
 
   // Move to Top Deck
-  const handleMoveToTopDeck = useCallback((cardId: string) => {
+  const handleMoveToTopDeck = useCallback((_cardId: string) => {
     // Card is already at top in Top Deck modal, just keep it there
     // No action needed
   }, []);
@@ -253,7 +253,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
 
         dispatch({
           type: 'ADD_OBJECT',
-          payload: { object: newCard }
+          payload: newCard
         });
 
         // Immediately update cardOrder to show the new card
@@ -355,7 +355,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
   }, [contextMenu, handleFlip, handleToHand, handleMoveToTopDeck, handleMoveToBottomDeck, handleMill, handleClone, updateObjectViaContext, deleteObject, cardOrder, objects, deck.id, deck.baseCardIds]);
 
   // Modal resize handlers
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+ useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     resizeStartRef.current = {
@@ -394,7 +394,6 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
 
   // Action buttons for each card - based on deck.cardActionButtons
   const getCardButtons = useCallback((card: Card) => {
-    const actionButtons = deck.cardActionButtons || [];
 
     // Button configurations
     const buttonConfigs: Partial<Record<ContextAction, { className: string; title: string; icon: JSX.Element; onClick: () => void }>> = {
@@ -488,7 +487,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
         ref={modalContainerRef}
         data-modal="top-deck"
         className="bg-slate-900 border border-slate-700 flex flex-col relative overflow-hidden"
-        style={{ width: `${vuToPixels(modalWidth)}px`, height: `${vuToPixels(DEFAULT_MODAL_HEIGHT)}px` }}
+        style={{ width: `${vuToPixels(modalWidth, pixelsPerVU)}px`, height: `${vuToPixels(DEFAULT_MODAL_HEIGHT, pixelsPerVU)}px` }}
       >
         {/* Header - minimal style */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
@@ -526,7 +525,7 @@ export const TopDeckModal: React.FC<TopDeckModalProps> = ({ deck, onClose, langu
             </div>
           ) : (
             <div className="flex flex-wrap gap-[2px] w-full">
-              {cards.map((card, index) => {
+              {cards.map((card, _index) => {
                 const { width: cardWidth, height: cardHeight } = getCardDimensions(card);
 
                 return (

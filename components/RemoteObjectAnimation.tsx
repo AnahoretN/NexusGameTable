@@ -167,7 +167,7 @@ export const RemoteObjectAnimation: React.FC<RemoteObjectAnimationProps> = ({
   animatingObjects,
   state,
   zoom,
-  getCardSettings,
+  getCardSettings: _getCardSettings,
 }) => {
   // Handle undefined animatingObjects during initialization
   if (!animatingObjects || animatingObjects.length === 0) return null;
@@ -197,7 +197,6 @@ export const RemoteObjectAnimation: React.FC<RemoteObjectAnimationProps> = ({
 
           let baseWidth = card.width ?? (deck?.cardWidth ?? 63);
           let baseHeight = card.height ?? (deck?.cardHeight ?? 88);
-          let isHorizontal = deck?.cardOrientation === CardOrientation.HORIZONTAL;
 
           if (deck?.cardShape) {
             baseWidth = card.width ?? deck.cardWidth ?? 63;

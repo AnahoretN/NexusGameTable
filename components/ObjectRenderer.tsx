@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useCallback } from 'react';
+import React, { memo, useCallback } from 'react';
 import { Card, Token, Counter, ItemType, TableObject, TokenShape, ContextAction, CardShape, CardOrientation, BattlefieldCell } from '../types';
 import { SvgTokenShape, CELL_BORDER_SCALE } from './SvgTokenShape';
 import { SvgDeckShape } from './SvgDeckShape';
@@ -6,7 +6,6 @@ import { isGeometricCardShape } from '../utils/shapeUtils';
 import { Trash2, Copy, RefreshCw, RotateCw, ChevronsUpDown, Eye, EyeOff, ArrowUp, ArrowDown, Lock, Unlock, Shuffle, Search, Hand, Pin, Undo } from 'lucide-react';
 import { getCardSettings } from '../utils/cardUtils';
 import { executeActionButtonUniversal } from '../utils/actionButtonsHandler';
-import { logger } from '../utils/logger';
 import { LazyBackgroundImage } from './LazyImage';
 import { EffectTemplateRendererMemo } from './EffectTemplateRenderer';
 
@@ -39,7 +38,7 @@ export const ObjectRenderer: React.FC<ObjectRendererProps> = (props) => {
     onContextMenu,
     style = {},
     className = '',
-    isGM = false,
+    isGM: _isGM = false,
     showTokenName = false,
     dispatch,
     allObjects = {},

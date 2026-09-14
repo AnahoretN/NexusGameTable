@@ -86,7 +86,7 @@ class AssetDatabase {
    */
   async init(): Promise<IDBDatabase> {
     // If database is closed, reset and reinitialize
-    if (this.db && this.db.readyState === 'closed') {
+    if (this.db && (this.db as IDBDatabase & { readyState?: string }).readyState === "closed") {
       this.db = null;
       this.initPromise = null;
     }
@@ -143,7 +143,7 @@ class AssetDatabase {
         const db = await this.init();
 
         // Check if database is closing or closed
-        if (!db || db.readyState === 'closed') {
+        if (!db || (db as IDBDatabase & { readyState?: string }).readyState === "closed") {
           throw new Error('Database is closed');
         }
 

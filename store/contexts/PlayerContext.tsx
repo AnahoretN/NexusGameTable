@@ -7,7 +7,7 @@
  * Status: 🔄 Synchronization Bridge (Phase 2 Completion)
  */
 
-import React, { createContext, useContext, useCallback, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useCallback, useMemo } from 'react';
 import { useGame } from '../GameContext';
 import {
   PlayerContextValue,
@@ -54,8 +54,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [dispatch]);
 
   const updatePermissions = useCallback((permissions: Partial<PlayerPermissions>) => {
-    dispatch({ type: 'UPDATE_PLAYER_PERMISSIONS', payload: permissions });
-  }, [dispatch]);
+    // The action payload is the full permissions object (the reducer replaces it),
+    // so merge with the current state to only override the provided fields.
+    dispatch({
+      type: 'UPDATE_PLAYER_PERMISSIONS',
+      payload: { ...state.playerPermissions, ...permissions }
+    });
+  }, [dispatch, state.playerPermissions]);
 
   // Getters - optimized with memoization
   const getActivePlayer = useCallback((): Player | undefined => {

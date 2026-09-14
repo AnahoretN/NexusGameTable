@@ -37,16 +37,16 @@ export const NexusBoard: React.FC<NexusBoardProps> = ({
   isDragging: _isDragging,
   zoom: _zoom,
   onMouseDown,
-  onContextMenu,
+  onContextMenu: _onContextMenu,
   onAddCell,
   showAddUI = false,
   selectedCellIds: _selectedCellIds,
-  onCellSelect,
+  onCellSelect: _onCellSelect,
   mainCellWidth,
   mainCellHeight,
   pixelsPerVU = 1.08,
 }) => {
-  const [hoveredDirection, setHoveredDirection] = useState<HexDirection | null>(null);
+  const [_hoveredDirection, setHoveredDirection] = useState<HexDirection | null>(null);
 
   // Use actual main cell dimensions (in vu) for all calculations
   const cellWidth = mainCellWidth ?? board.cellWidth ?? 100;
@@ -57,7 +57,7 @@ export const NexusBoard: React.FC<NexusBoardProps> = ({
   const cellHeightPx = vuToPixels(cellHeight, pixelsPerVU);
 
   // Calculate positions for all cells using hex grid spacing
-  const cellPositions = useMemo(() => {
+ useMemo(() => {
     const positions: Map<string, { x: number; y: number; direction: HexDirection }> = new Map();
 
     // Main cell at center (0, 0)

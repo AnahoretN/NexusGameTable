@@ -6,7 +6,7 @@
  */
 
 import { assetDB, type AssetEntry } from './indexeddb';
-import { isValidHash, normalizeHash } from './hashing';
+import { normalizeHash } from './hashing';
 
 // ============================================================================
 // CONSTANTS

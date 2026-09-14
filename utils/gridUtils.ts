@@ -269,7 +269,6 @@ export function calculateFlexibleHexGrid(gridWidth: number = DEFAULT_HEX_WIDTH):
   const dx = width;
   const dy = height - hCap;
   const offsetX = width / 2;
-  const offsetY = 0;
 
   // Pattern dimensions - need 2x2 grid for seamless tiling
   const patternWidth = dx * 2;
@@ -304,7 +303,7 @@ export function calculateFlexibleHexGrid(gridWidth: number = DEFAULT_HEX_WIDTH):
   // Clean up cache if too large
   if (hexGridCache.size >= MAX_HEX_CACHE_SIZE) {
     const firstKey = hexGridCache.keys().next().value;
-    hexGridCache.delete(firstKey);
+    if (firstKey !== undefined) hexGridCache.delete(firstKey);
   }
 
   // Cache the result
@@ -323,7 +322,6 @@ export function calculateHorizontalHexGrid(gridWidth: number = DEFAULT_FLAT_HEX_
   const width = gridWidth;
   const height = calculateFlatHexHeight(width);
 
-  const halfW = width / 2;
   const halfH = height / 2;
   const quarterW = width / 4;
 
@@ -768,11 +766,7 @@ export function pixelToHex(
 ): HexCoords {
   if (orientation === 'pointy-top') {
     // Pointy-top hex conversion
-    const hCapIdeal = hexWidth / (2 * Math.sqrt(3));
-    const hCap = Math.min(hCapIdeal, hexHeight / 2);
 
-    const dx = hexWidth;
-    const dy = hexHeight - hCap;
 
     const q = Math.round((x * Math.sqrt(3) / 3 - y / 3) / (hexWidth / 2));
     const r = Math.round(y * 2 / 3 / (hexHeight / 2));
@@ -780,11 +774,7 @@ export function pixelToHex(
     return { q, r };
   } else {
     // Flat-top hex conversion
-    const wCapIdeal = hexHeight / (2 * Math.sqrt(3));
-    const wCap = Math.min(wCapIdeal, hexWidth / 2);
 
-    const dx = hexWidth - wCap;
-    const dy = hexHeight;
 
     const q = Math.round(x * 2 / 3 / (hexWidth / 2));
     const r = Math.round((-x / 3 + y * Math.sqrt(3) / 3) / (hexHeight / 2));

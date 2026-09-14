@@ -8,7 +8,7 @@
  * - Maintains 60fps performance
  */
 
-import React, { useRef, useMemo, memo } from 'react';
+import React, { useRef, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { TokenType, TokenShape, AppLanguage } from '../types';
 import { SvgTokenShape } from './SvgTokenShape';

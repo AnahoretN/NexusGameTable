@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { getAssetURL, preloadAssets } from '../utils/assets';
+import { getAssetURL } from '../utils/assets';
 import { isLocalFsReference } from '../utils/imageCompat';
 import { getGlobalCacheVersion } from './SvgTokenShape';
 
@@ -45,7 +45,7 @@ export const LazyImage = memo<LazyImageProps>(({
 }) => {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [isError, setIsError] = useState(false);
+  const [_isError, setIsError] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const [cacheVersion, setCacheVersion] = useState(getGlobalCacheVersion());
 

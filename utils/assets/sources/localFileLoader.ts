@@ -38,7 +38,7 @@ export interface LoadLocalFilesResult {
  */
 export async function loadLocalFile(
   file: File,
-  onProgress?: (progress: { loaded: number; total: number }) => void
+  _onProgress?: (progress: { loaded: number; total: number }) => void
 ): Promise<LoadLocalFileResult> {
   // Hash the file
   const hashResult = await hashFile(file);

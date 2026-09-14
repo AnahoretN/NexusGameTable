@@ -108,7 +108,7 @@ export function analyzeImageForGrid(
 
     // Check if region touches image edges - only skip if MOST of the edge is touching
     // This allows cells that slightly touch the edge
-    const edgeTouchThreshold = Math.min(bounds.width, bounds.height) * 0.5;
+ Math.min(bounds.width, bounds.height) * 0.5;
     const touchesTop = bounds.y <= 2;
     const touchesBottom = bounds.y + bounds.height >= height - 2;
     const touchesLeft = bounds.x <= 2;
@@ -145,7 +145,7 @@ export function analyzeImageForGrid(
       centerY: bounds.y + bounds.height / 2,
       contour: region.contour,
       polygon: simplifiedPolygon,
-      shape,
+      shape: shape as "square" | "circle" | "rectangle" | "hex",
       area,
       perimeter
     });

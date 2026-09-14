@@ -7,14 +7,10 @@ import { filterLocalPanelProperties } from '../utils/panelSync';
 import { filterObjectsForBroadcast } from '../utils/individualPositions';
 import { getPlayerId } from './gameConstants';
 import {
-  differentialSyncManager,
-  webrtcStatsMonitor,
   createOptimizedPeerJSConfig,
   CONNECTION_TIMEOUT,
-  ICE_GATHERING_TIMEOUT
-} from '../utils/webrtcOptimization';
+  } from '../utils/webrtcOptimization';
 import {
-  compressWebRTCData,
   decompressWebRTCData,
   printCompressionReport,
   dataCompressionManager
@@ -24,8 +20,7 @@ import { getConnectionSettings, ConnectionMethod } from '../utils/localSettings'
 import {
   ActionBatcher,
   PredictivePositionSender,
-  getActionPriority
-} from './p2p';
+  } from './p2p';
 import {
   handleDirectSyncMessage,
   registerP2PConnections,
@@ -50,7 +45,7 @@ const p2pSingleton = {
   // 🔥 NEW: Action batching for rapid updates
   actionBatcher: new ActionBatcher({
     batchWindow: 30, // 30ms batching window
-    onFlush: (objectId, finalAction) => {
+    onFlush: (_objectId, _finalAction) => {
       // When batch is flushed, send the final action
       // This will be called automatically by ActionBatcher
     }
@@ -143,22 +138,6 @@ export interface UsePeerConnectionReturn {
 const PEERJS_CONFIG = createOptimizedPeerJSConfig();
 
 // 🔥 DEBUG: Log ICE servers configuration
-const countStunServers = (servers: any[]) => {
-  let count = 0;
-  for (const s of servers) {
-    const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
-    if (urls.some((u: string) => u.startsWith('stun:'))) count++;
-  }
-  return count;
-};
-const countTurnServers = (servers: any[]) => {
-  let count = 0;
-  for (const s of servers) {
-    const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
-    if (urls.some((u: string) => u.startsWith('turn:'))) count++;
-  }
-  return count;
-};
 
 // ============================================================================
 // FALLBACK SIGNALING CONFIGURATION
@@ -210,14 +189,6 @@ const TORRENT_TRACKERS = [
 /**
  * Результат попытки подключения
  */
-interface ConnectionAttempt {
-  success: boolean;
-  method: string;
-  peer?: Peer;
-  connection?: any;
-  room?: TrysteroRoom;
-  error?: string;
-}
 
 /**
  * Попытка подключения через PeerJS сервер с таймаутом
@@ -229,7 +200,6 @@ async function tryPeerJSServer(
   timeout: number = 15000,
   abortSignal?: AbortSignal
 ): Promise<{ peer: Peer } | null> {
-  const serverName = `${serverConfig.host}:${serverConfig.port}`;
 
   return new Promise((resolve) => {
     const peerConfig = {
@@ -276,7 +246,7 @@ async function tryPeerJSServer(
       }
     }, timeout);
 
-    peer.on('open', (id) => {
+    peer.on('open', (_id) => {
       if (!resolved) {
 
         resolved = true;
@@ -286,7 +256,7 @@ async function tryPeerJSServer(
       }
     });
 
-    peer.on('error', (err) => {
+    peer.on('error', (_err) => {
       if (!resolved) {
 
         resolved = true;
@@ -327,7 +297,7 @@ async function tryTrysteroTorrent(
         resolve(room);
       }, 1000);
 
-      const timeoutId = setTimeout(() => {
+ setTimeout(() => {
         resolve(null);
       }, timeout);
 
@@ -355,7 +325,7 @@ export function usePeerConnection(
     return !(params.has('hostId') || params.has('ticket'));
   };
 
-  const [isHost, setIsHost] = useState<boolean>(getInitialHostStatus());
+  const [isHost, _setIsHost] = useState<boolean>(getInitialHostStatus());
   const [peerId, setPeerId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [waitingForPlayerName, setWaitingForPlayerName] = useState<WaitingForPlayerName | null>(null);
@@ -392,10 +362,10 @@ export function usePeerConnection(
   const hostConnectionRef = useRef<any>(p2pSingleton.hostConnection);
   const roomRef = useRef<TrysteroRoom | null>(p2pSingleton.room);
   const isIntentionalDisconnectRef = useRef(false); // Track intentional disconnect vs network error
-  const guestReconnectStateRef = useRef({ attempts: 0, startTime: null as number | null }); // Guest reconnect state
+ useRef({ attempts: 0, startTime: null as number | null }); // Guest reconnect state;
   const hostReconnectStateRef = useRef({ attempts: 0, startTime: null as number | null }); // Host reconnect state
   const signallingDisconnectedRef = useRef(false); // Track if we intentionally disconnected from signalling (optimization)
-  const expectedPlayerCountRef = useRef(0); // Track expected player count for signalling disconnect timing
+ useRef(0); // Track expected player count for signalling disconnect timing;
   const signallingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Timer for signalling disconnect
   const pendingPlayerNameRef = useRef<string | null>(null); // 🔥 FIX: Store player name for HELO after connection opens
 
@@ -620,7 +590,7 @@ export function usePeerConnection(
       }
     } else if (data.type === 'PLAYER_PANEL_SETTINGS') {
       // Guest received their individual panel settings from host
-      const { playerId, settings } = data.payload;
+      const { settings } = data.payload;
 
       // Apply individual panel settings using special action
       localDispatch({
@@ -751,7 +721,7 @@ export function usePeerConnection(
    * Disconnect from signalling server after P2P connections are established
    * This reduces server load while keeping P2P connections alive
    */
-  const disconnectFromSignalling = useCallback((reason: string) => {
+  const disconnectFromSignalling = useCallback((_reason: string) => {
     const peer = peerRef.current;
     if (peer && !peer.disconnected && !peer.destroyed) {
       signallingDisconnectedRef.current = true;
@@ -806,7 +776,7 @@ export function usePeerConnection(
   /**
    * Reconnect to signalling server (needed for new players or reconnect)
    */
-  const reconnectToSignalling = useCallback((reason: string): Promise<void> => {
+  const reconnectToSignalling = useCallback((_reason: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       const peer = peerRef.current;
       if (!peer) {
@@ -878,7 +848,7 @@ export function usePeerConnection(
       if (trysteroRoom) {
         roomRef.current = trysteroRoom;
 
-        trysteroRoom.onData((data: any, peerId: string) => {
+        trysteroRoom.onData((data: any, _peerId: string) => {
           const trysteroConn = { send: (msg: any) => trysteroRoom.send(msg) };
           handleNetworkData(data, trysteroConn);
         });
@@ -957,7 +927,7 @@ export function usePeerConnection(
     /**
      * Настроить PeerJS соединение после успешного подключения
      */
-    function setupPeerConnection(peer: Peer, hostId: string, playerName: string) {
+    function setupPeerConnection(peer: Peer, hostId: string, _playerName: string) {
       peerRef.current = peer;
       (window as any).__nexusPeer = peer;
       syncSingleton(); // Sync to singleton after peer is set
@@ -1000,7 +970,7 @@ export function usePeerConnection(
             updateP2PLoadingStep('handshake', 'loading', 'Waiting for host info...');
           });
 
-          newConn.on('error', (err) => {
+          newConn.on('error', (_err) => {
             // Retry connection failed
           });
         }
@@ -1721,7 +1691,7 @@ if (typeof window !== 'undefined') {
     testConnection: async (hostId: string) => {
       const testPeer = new Peer(PEERJS_CONFIG);
       return new Promise((resolve) => {
-        testPeer.on('open', (id: string) => {
+        testPeer.on('open', (_id: string) => {
           const testConn = testPeer.connect(hostId);
 
           let resolved = false;

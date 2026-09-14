@@ -5,7 +5,6 @@
  * Uses fflate library for decompression.
  */
 
-import { hashAsset } from '../hashing';
 import { assetDB } from '../indexeddb';
 
 // ============================================================================

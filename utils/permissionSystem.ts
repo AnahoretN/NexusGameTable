@@ -3,7 +3,7 @@
  * Centralized permission checking for all game actions
  */
 
-import { TableObject, ItemType, Deck, Card, ContextAction } from '../types';
+import { TableObject, Deck, Card, ContextAction } from '../types';
 
 // ============================================
 // PERMISSION TYPES
@@ -33,7 +33,7 @@ export const GM_DEFAULT_ACTIONS: ContextAction[] = [
   'bringToFront', 'sendToBack', 'layerUp', 'layerDown',
   'flip', 'draw', 'playTopCard', 'shuffleDeck', 'searchDeck',
   'showTop', 'hideTop', 'returnAll', 'returnAllAndShuffle', 'returnAllExceptHands',
-  'moveToHand', 'moveToDeck', 'moveToDiscard', 'moveToTopDeck', 'moveToBottomDeck',
+  'moveToHand', 'moveToDiscard', 'moveToTopDeck', 'moveToBottomDeck',
   'roll', 'millTopCard', 'millToBottom', 'toBottom', 'topDeck'
 ];
 
@@ -53,7 +53,7 @@ export const PLAYER_DEFAULT_ACTIONS: ContextAction[] = [
   'swingClockwise', 'swingCounterClockwise',
   'bringToFront', 'sendToBack', 'layerUp', 'layerDown',
   'draw', 'playTopCard', 'shuffleDeck', 'searchDeck',
-  'showTop', 'hideTop', 'moveToHand', 'moveToDeck', 'moveToDiscard',
+  'showTop', 'hideTop', 'moveToHand', 'moveToDiscard',
   'moveToTopDeck', 'moveToBottomDeck', 'roll', 'millTopCard', 'millToBottom',
   'toBottom', 'topDeck'
 ];

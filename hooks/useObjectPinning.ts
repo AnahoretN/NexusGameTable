@@ -1,7 +1,6 @@
 import { useCallback } from 'react';
 import { useGame } from '../store/GameContext';
 import { TableObject, Coordinates } from '../types';
-import { viewportToWorld, worldToViewport } from '../utils/coordinateUtils';
 
 interface UseObjectPinningOptions {
   offset?: Coordinates;
@@ -20,9 +19,8 @@ interface UseObjectPinningResult {
 /**
  * Custom hook for managing object pinning to viewport
  */
-export function useObjectPinning(options: UseObjectPinningOptions = {}): UseObjectPinningResult {
+export function useObjectPinning(_options: UseObjectPinningOptions = {}): UseObjectPinningResult {
   const { dispatch } = useGame();
-  const { offset = { x: 0, y: 0 }, zoom = 1, scrollLeft = 0, scrollTop = 0 } = options;
 
   const pinObject = useCallback(
     (objectId: string) => {
@@ -53,7 +51,7 @@ export function useObjectPinning(options: UseObjectPinningOptions = {}): UseObje
   );
 
   const togglePin = useCallback(
-    (objectId: string) => {
+    (_objectId: string) => {
       // This needs to be handled by checking current state
       // Use the component's executeClickAction or check state directly
     },
@@ -61,7 +59,7 @@ export function useObjectPinning(options: UseObjectPinningOptions = {}): UseObje
   );
 
   const isPinned = useCallback(
-    (objectId: string): boolean => {
+    (_objectId: string): boolean => {
       // This needs access to state - caller should check state directly
       return false;
     },
@@ -112,7 +110,7 @@ export function calculateUnpinPosition(
  * Calculate world position for unpinning game objects (decks, etc.)
  */
 export function calculateGameUnpinPosition(
-  object: TableObject,
+  _object: TableObject,
   pinnedScreenPosition: { x: number; y: number },
   offset: Coordinates,
   zoom: number,
