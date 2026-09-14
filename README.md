@@ -22,7 +22,7 @@
 
 **Nexus Game Table** is a free virtual game table for board games with online multiplayer support. The application runs directly in the browser and uses P2P connections — no dedicated server required.
 
-**Current version:** 0.2.5
+**Current version:** 0.2.7
 **Status:** ✅ Production Ready
 
 ### Knowledge Graph
@@ -30,7 +30,7 @@
 The project contains an integrated **graphify knowledge graph** for understanding the architecture:
 
 ```bash
-# The graph contains 498 nodes and 643 edges
+# Graph report (statistics reflect the last graphify run):
 graphify-out/GRAPH_REPORT.md
 
 # For querying the graph:
@@ -66,8 +66,8 @@ graphify query "your question" --graph graphify-out/graph.json
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/nexus-game-table.git
-cd nexus-game-table
+git clone https://github.com/AnahoretN/NexusGameTable.git
+cd NexusGameTable
 
 # Install dependencies
 npm install
@@ -76,7 +76,7 @@ npm install
 npm run dev
 ```
 
-The application will open at: **http://localhost:5173**
+The application will open at: **http://localhost:5177**
 
 ### Production Build
 
@@ -109,9 +109,10 @@ npm run preview
 | Pick up object | Shift + click |
 | Drop object | Shift + click on target |
 | Context menu | Right click |
-| Zoom | Mouse wheel |
-| Pan | Space + Drag or middle mouse button |
-| Undo | Ctrl + Z |
+| Zoom | Ctrl + mouse wheel (Ctrl +/−/0 to zoom/reset) |
+| Pan | Ctrl + Drag |
+| Normal cursor mode | Alt (hold) |
+| Undo | Via the log viewer / context menu |
 
 ## For Developers
 
@@ -120,11 +121,10 @@ npm run preview
 ```
 React 18.x + TypeScript
 ├── Vite (build)
-├── PeerJS + Trystero (WebRTC multiplayer with fallback)
+├── PeerJS + Trystero + Iroh (P2P multiplayer with fallback)
 ├── Zustand (state management)
-├── Redux Toolkit (reducers)
 ├── Lucide React (icons)
-└── Tailwind CSS + CSS Modules (styles)
+└── Tailwind CSS (styles)
 ```
 
 ### Project Structure
@@ -132,52 +132,55 @@ React 18.x + TypeScript
 ```
 NexusGameTable/
 ├── components/
-│   ├── Tabletop/              # Main game table
+│   ├── Tabletop/              # Main game table (modular)
+│   │   ├── TabletopRefactored.tsx   # Entry component
 │   │   ├── TabletopBackground.tsx    # Background rendering
 │   │   ├── TabletopEventHandlers.tsx # Event handling
-│   │   ├── TabletopRefactored.tsx   # Core with smart z-index
+│   │   ├── GameObjectsRenderer.tsx   # Table object rendering
 │   │   ├── CardRenderer.tsx          # Card rendering
 │   │   ├── TokenRenderer.tsx         # Token rendering
-│   │   └── index.tsx                 # Module export
+│   │   └── ...
 │   ├── CharacterBlocks/       # Character blocks
-│   ├── contextMenu/           # Context menus
-│   ├── ObjectSettings/        # Object settings
+│   ├── ContextMenu.tsx        # Context menu
+│   ├── ObjectSettingsModal.tsx # Object settings (all tabs)
 │   ├── HandPanelOptimized.tsx # Hand panel
 │   ├── ToolsPanel.tsx         # Tools panel
-│   ├── PoolTabletopOptimized.tsx # Panel pool
-│   └── UIObjectRendererOptimized.tsx # Object rendering
+│   ├── PoolPanel.tsx          # Pool panel (uses PoolTabletopOptimized)
+│   └── UIObjectRendererOptimized.tsx # UI object rendering
 ├── store/
 │   ├── contexts/              # React Context providers
 │   │   ├── PlayerContext.tsx         # Player management
 │   │   ├── ViewTransformContext.tsx  # Camera and zoom
-│   │   ├── UIContext.tsx             # Language, layers
-│   │   └── GameContext.tsx           # Game state
-│   ├── slices/                 # Redux Toolkit slices
-│   │   ├── objectSlice.ts            # Object operations
-│   │   └── playerSlice.ts            # Player operations
+│   │   └── UIContext.tsx             # Language, layers
+│   ├── GameContext.tsx        # Game state (objects, dispatch)
+│   ├── reducers/
+│   │   └── appReducers.ts     # Modular reducers
 │   ├── objectStore.ts         # Zustand store for objects
 │   ├── gameActions.ts         # Action definitions
 │   ├── gameState.ts           # State types
+│   ├── p2p/                   # Networking helpers (batching, scheduling)
 │   ├── usePeerConnection.ts   # WebRTC with fallback signaling
-│   ├── useAutoSave.ts         # Auto-save
-│   └── reducers/               # Redux reducers
+│   ├── useTrysteroConnection.ts / useIrohConnection.ts
+│   ├── useManualConnection.ts # Manual signaling
+│   └── useAutoSave.ts         # Auto-save
 ├── utils/
 │   ├── contextMenuActions.ts  # Context menu handlers
 │   ├── objectActionHandlers.ts # Object action handlers
 │   ├── objectFactories.ts     # Object factories
 │   ├── geometryUtils.ts       # Geometric calculations
 │   ├── coordinateUtils.ts     # Coordinate transformations
+│   ├── zIndexAllocator.ts     # Z-index allocation
 │   ├── logger.ts              # Logging system
 │   ├── memoryManager.ts       # Memory management
 │   ├── performanceMonitor.ts # Performance monitoring
 │   ├── webrtcOptimization.ts  # WebRTC optimization
-│   └── assets/                # Asset management
+│   └── assets/                # Asset management (cache, packs, IndexedDB)
 ├── hooks/
 │   ├── useDragHandlers.ts     # Drag & Drop
 │   ├── useGridSnapping.ts     # Grid snapping
+│   ├── useLocalSettings.tsx   # Local (unsynced) settings
 │   └── useObjectPinning.ts    # Object pinning
-├── locales/                   # Translations
-│   ├── en.json
+├── locales/                   # Translations (en is built-in default)
 │   ├── ru.json
 │   ├── be.json
 │   ├── sr.json
@@ -203,13 +206,13 @@ NexusGameTable/
 | **Drawing & Canvas** | Drawing tools |
 | **Performance Monitoring** | FPS and optimization |
 
-### God Nodes (most connected nodes)
+### God Nodes (most connected nodes, per last graphify run — regenerate the graph after major refactors)
 
-1. `dispatch()` — 48 edges (central dispatcher)
-2. `executeClickAction()` — 34 edges (click handler)
-3. `MemoryManager` — 16 edges (memory optimization)
-4. `useUI()` — 11 edges (UI context)
-5. `WebRTCSyncManager` — 11 edges (P2P synchronization)
+1. `dispatch()` — central dispatcher
+2. `executeClickAction()` — click handler
+3. `MemoryManager` — memory optimization
+4. `useUI()` — UI context
+5. `DifferentialSyncManager` — state sync
 
 ---
 
@@ -220,12 +223,12 @@ NexusGameTable/
 Provider hierarchy:
 
 ```typescript
-<LocalSettingsProvider>
-  <UIProvider>              // Language (local), Layers (synced)
-    <ViewTransformProvider>  // Camera (local, NO sync)
-      <PlayerProvider>        // Players (synced)
-        <GameProvider>        // Game objects (synced)
-          <WebRTCIntegration> // Manages sync between contexts
+<LocalSettingsProvider>   // Local (unsynced) settings
+  <ViewTransformProvider>  // Camera and zoom (local)
+    <ToolSettingsProvider> // Active tool, marker/eraser settings
+      <UIProvider>          // Language, layers
+        <GameProvider>      // Game objects (synced)
+          <PlayerProvider>  // Players (synced)
             <App />
 ```
 
@@ -491,7 +494,7 @@ export interface MyNewType extends GameItem {
 ### 2. Add reducer
 
 ```typescript
-// store/slices/objectSlice.ts
+// store/GameContext.tsx (main reducer) or store/reducers/appReducers.ts
 case 'CUSTOM_ACTION': {
   const obj = state.objects[action.payload.objectId];
   if (!obj || obj.type !== ItemType.MY_NEW_TYPE) return state;
@@ -582,24 +585,17 @@ logger.debug('Debug information');
 
 ## Constants
 
-### Object Sizes
+### Object Sizes (`constants.ts`)
 
 ```typescript
-CARD_WIDTH = 120
-CARD_HEIGHT = 168
-TOKEN_SIZE = 80
-DEFAULT_DICE_SIZE = 60
+CARD_WIDTH = 120    // vu
+TOKEN_SIZE = 80     // vu
+DEFAULT_DICE_SIZE = 60 // vu
 ```
 
 ### Z-index
 
-```typescript
-Z_INDEX_BOARD = -100
-Z_INDEX_DECK = 0
-Z_INDEX_PANEL = 1000
-Z_INDEX_WINDOW = 10000
-Z_INDEX_DRAGGING = 9999
-```
+Z-index values are not fixed constants — they are allocated dynamically per object by `utils/zIndexAllocator.ts` (with defragmentation and hyperslice support).
 
 ---
 
@@ -736,23 +732,25 @@ const stateForBroadcast = {
 - 📖 [README.md](./README.md) — this file
 - 🔒 [SECURITY.md](./SECURITY.md) — security policy
 - 📋 [CHANGELOG.md](./CHANGELOG.md) — version history
+- 🚀 [QUICK_START.md](./QUICK_START.md) — quick start guide (Russian)
+- 📗 [store/p2p/README.md](./store/p2p/README.md) — networking layer
 
-### Deprecated Documents (merged into this README)
+### Removed Documents (merged into this README)
 
-- ~~DEVELOPER_GUIDE.md~~ — included in "For Developers" section
-- ~~DOCUMENTATION.md~~ — included in "Features" and "How to Play" sections
+- ~~DEVELOPER_GUIDE.md~~ — included in "For Developers" section (deleted)
+- ~~DOCUMENTATION.md~~ — included in "Features" and "How to Play" sections (deleted)
 - ~~FALLBACK_SIGNALING.md~~ — included in "WebRTC Multiplayer" section
 
 ---
 
 ## License
 
-MIT License — see [LICENSE](./LICENSE) file
+MIT License
 
 ---
 
 <div align="center">
   <p>Made with ❤️ for board game lovers</p>
-  <a href="https://github.com/your-repo/nexus-game-table/issues">Report Issue</a> •
-  <a href="https://github.com/your-repo/nexus-game-table/discussions">Discussions</a>
+  <a href="https://github.com/AnahoretN/NexusGameTable/issues">Report Issue</a> •
+  <a href="https://github.com/AnahoretN/NexusGameTable/discussions">Discussions</a>
 </div>

@@ -32,12 +32,14 @@ graphify query "your question" --graph graphify-out/graph.json
 graphify-out/graph.html
 ```
 
-### Graph Statistics (Updated: 2026-04-29)
+### Graph Statistics (last run: 2026-04-29 — regenerate with `/graphify` after major refactors)
 
 - **498 nodes** (functions, components, concepts)
 - **643 edges** (relationships, calls, imports)
 - **55 communities** (logical groupings)
 - **85% EXTRACTED** · **15% INFERRED** · **0% AMBIGUOUS**
+
+Note: these numbers predate the Sep 2026 dead-code cleanup (42 unreachable files removed); the graph has not been rebuilt since.
 
 ### Key Communities (Updated)
 
@@ -61,23 +63,28 @@ graphify-out/graph.html
 ### Project Structure
 
 ```
+App.tsx → components/Tabletop/TabletopRefactored.tsx  # entry chain
+
 components/
-├── Tabletop/           # Core game board (refactored)
+├── Tabletop/           # Core game board (modular; TabletopRefactored.tsx is the entry)
 ├── CharacterBlocks/    # Character sheet widgets
-├── contextMenu/        # Right-click menus
-└── ObjectSettings/     # Object configuration
+├── ContextMenu.tsx     # Right-click menu
+└── ObjectSettingsModal.tsx  # Object configuration (all settings tabs)
 
 store/
-├── contexts/           # React Context providers
-├── reducers/           # Redux reducers
-└── slices/             # Redux Toolkit slices
+├── contexts/           # React Context providers (Player, ViewTransform, UI)
+├── GameContext.tsx     # Main game state + dispatch
+├── reducers/           # Modular reducers (appReducers.ts)
+├── objectStore.ts      # Zustand store for objects
+└── p2p/                # Networking helpers (actionBatcher, idleWorkScheduler)
 
 utils/
 ├── objectActionHandlers.ts  # Card/deck actions
 ├── poolPlacement.ts         # Pool panel positioning
+├── zIndexAllocator.ts       # Dynamic z-index allocation
 └── webrtcOptimization.ts    # WebRTC performance tuning
 ```
 
-## Current Branch: refactor/tabletop-component-breakdown
+## Current Branch: main
 
-Recent refactoring work focused on breaking down the monolithic Tabletop component into smaller, focused modules.
+The `refactor/tabletop-component-breakdown` work (breaking the monolithic Tabletop.tsx into smaller modules) is merged; the live tabletop is `components/Tabletop/TabletopRefactored.tsx`.

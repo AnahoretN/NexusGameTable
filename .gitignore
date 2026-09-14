@@ -21,5 +21,12 @@ ngrok.exe
 tmpclaude-*
 tmpclaude-*
 
+# Graphify build cache (rebuildable)
+graphify-out/cache/
+.graphify_chunk_*.json
+
+# Local env files
+.env*.local
+
 # Claude Code local settings (user-specific)
 .claude/settings.local.json
