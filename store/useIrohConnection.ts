@@ -1,8 +1,10 @@
 /**
  * Iroh Connection Hook
  *
- * Uses Iroh Net for true P2P connections (relay and direct-local).
- * Not dependent on signaling servers like PeerJS.
+ * TRANSPORT ONLY: node identity (nodeId/ticket) and PeerJS-backed byte pipes.
+ * (True Iroh is not wired yet — this wraps PeerJS under an Iroh-shaped API.)
+ * All game-session protocol (HELO/SYNC_STATE/POSITION_UPDATE/packs) is handled
+ * by the shared store/session/protocol.ts.
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
@@ -10,6 +12,12 @@ import { Action } from './gameActions';
 import { Player } from '../types';
 import { logger } from '../utils/logger';
 import { getPlayerId } from './gameConstants';
+import { useSessionUx } from './session/sessionUx';
+import {
+  createProtocolHandler,
+  buildPacksNeeded,
+  buildInitialSyncState
+} from './session/protocol';
 
 // ============================================================================
 // TYPES
@@ -44,6 +52,7 @@ export interface UseIrohConnectionReturn {
   initializeHost: () => void;
   setPlayerName: (name: string) => void;
   onPackLoaded: (packName: string, hashes: string[]) => void;
+  onJoinWithoutPacks: () => void;
 
   // Internal refs
   hostConnectionRef: React.RefObject<any>;
@@ -121,7 +130,27 @@ export function useIrohConnection(
   const [ticket, setTicket] = useState<string | null>(irohSingleton.node?.ticket || null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [waitingForPlayerName, setWaitingForName] = useState<WaitingForPlayerName | null>(null);
-  const [suggestedPlayerName, setSuggestedPlayerName] = useState<string>('');
+  const [isP2PLoadingModalOpen, setIsP2PLoadingModalOpen] = useState(false);
+
+  // Shared session UX (loading steps, pack negotiation) — single source of truth
+  const ux = useSessionUx(localDispatch);
+  const sessionUxRef = useRef(ux);
+  sessionUxRef.current = ux;
+  const {
+    p2pLoadingSteps,
+    p2pLoadingProgress,
+    requiredPacks,
+    suggestedPlayerName,
+    setSuggestedPlayerName,
+    updateStep: updateP2PLoadingStep,
+    reset: resetP2PLoading,
+    packBuffer: {
+      loadedPacksRef,
+      expectedPacksCountRef,
+      flushBufferedSyncState,
+      proceedWithoutPacks,
+    },
+  } = ux;
 
   // Refs
   const hostConnectionRef = useRef<any>(null);
@@ -135,187 +164,25 @@ export function useIrohConnection(
     connectionStatusRef.current = connectionStatus;
   }, [connectionStatus]);
 
-  // Loading progress
-  const [p2pLoadingSteps, setP2pLoadingSteps] = useState<P2PLoadingStep[]>([
-    { id: 'connect', message: 'Initializing Iroh node...', status: 'pending' },
-    { id: 'p2p', message: 'Establishing P2P connection...', status: 'pending' },
-    { id: 'handshake', message: 'Handshaking with host...', status: 'pending' },
-    { id: 'packs', message: 'Loading asset packs...', status: 'pending' },
-    { id: 'state', message: 'Synchronizing game state...', status: 'pending' },
-  ]);
-  const [p2pLoadingProgress, setP2pLoadingProgress] = useState(0);
-  const [isP2PLoadingModalOpen, setIsP2PLoadingModalOpen] = useState(false);
-
-  // Packs
-  const [requiredPacks, setRequiredPacks] = useState<Array<{ name: string; hash: string; size: number }>>([]);
-  const guestLoadedPacksRef = useRef<Set<string>>(new Set()); // Track packs loaded by guest (host side)
-
   // Pending player name
   const pendingPlayerNameRef = useRef<string | null>(null);
 
   // ============================================================================
-  // UPDATE LOADING STEP
+  // NETWORK DATA HANDLER — delegates to the shared session protocol
   // ============================================================================
 
-  const updateP2PLoadingStep = useCallback((id: string, status: 'pending' | 'loading' | 'success' | 'error', message?: string) => {
-    setP2pLoadingSteps(prev => {
-      const updated = prev.map(step =>
-        step.id === id ? { ...step, status, message: message || step.message } : step
-      );
-
-      // Calculate progress
-      const total = updated.length;
-      const completed = updated.filter(s => s.status === 'success').length;
-      const inProgress = updated.filter(s => s.status === 'loading').length;
-      const progress = Math.round(((completed + inProgress * 0.5) / total) * 100);
-      setP2pLoadingProgress(progress);
-
-      // Open modal on first step loading (managed by GameContext)
-      if (id === 'connect' && status === 'loading') {
-        setIsP2PLoadingModalOpen(true);
-      }
-
-      return updated;
-    });
-  }, []);
-
-  const resetP2PLoading = useCallback(() => {
-    setP2pLoadingSteps([
-      { id: 'connect', message: 'Initializing Iroh node...', status: 'pending' },
-      { id: 'p2p', message: 'Establishing P2P connection...', status: 'pending' },
-      { id: 'handshake', message: 'Handshaking with host...', status: 'pending' },
-      { id: 'packs', message: 'Loading asset packs...', status: 'pending' },
-      { id: 'state', message: 'Synchronizing game state...', status: 'pending' },
-    ]);
-    setP2pLoadingProgress(0);
-    setIsP2PLoadingModalOpen(false);
-  }, []);
-
-  // ============================================================================
-  // NETWORK DATA HANDLER
-  // ============================================================================
+  const protocolHandlerRef = useRef<(data: any, senderConn: any) => void>(() => {});
+  protocolHandlerRef.current = createProtocolHandler({
+    localDispatch,
+    stateRef,
+    isHost,
+    getConnections: () => connectionsRef.current,
+    ux: sessionUxRef.current,
+  });
 
   const handleNetworkData = useCallback((data: any, conn: any) => {
-    logger.log('[Iroh] Received data:', data.type);
-
-    switch (data.type) {
-      case 'HELO': {
-        const newPlayer: Player = data.payload;
-        logger.log('[Iroh] Player joined:', newPlayer.name);
-
-        // Add player to state
-        localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
-        updateP2PLoadingStep('handshake', 'success', 'Handshake complete!');
-
-        // Check if we need to send PACKS_NEEDED or go straight to SYNC_STATE
-        const usedPacks = stateRef.current?.usedPacks || {};
-        const packList = Object.values(usedPacks);
-        const players: Player[] = stateRef.current?.players || [];
-        const nonGMCount = players.filter(p => !p.isGM).length;
-        const nextPlayerNumber = nonGMCount + 1;
-
-        if (packList.length > 0) {
-          // Send PACKS_NEEDED first, guest will request SYNC_STATE after loading packs
-          setTimeout(() => {
-            if (conn?.open) {
-              conn.send({
-                type: 'PACKS_NEEDED',
-                payload: {
-                  packs: packList.map((p: any) => ({
-                    name: p.name,
-                    hash: p.hash,
-                    size: p.size
-                  })),
-                  nextPlayerNumber
-                }
-              });
-            }
-          }, 50);
-        } else {
-          // No packs needed, send SYNC_STATE immediately
-          setTimeout(() => {
-            if (conn?.open) {
-              const state = stateRef.current;
-              conn.send({
-                type: 'SYNC_STATE',
-                payload: {
-                  objects: state.objects,
-                  players: state.players,
-                  hyperscaleLayers: state.hyperscaleLayers,
-                }
-              });
-            }
-          }, 50);
-        }
-        break;
-      }
-
-      case 'PACKS_NEEDED': {
-        logger.log('[Iroh] Host requires packs:', data.payload);
-        const { packs, nextPlayerNumber } = data.payload;
-
-        // Set suggested player name if provided
-        if (nextPlayerNumber !== undefined) {
-          setSuggestedPlayerName(`Player ${nextPlayerNumber}`);
-        }
-
-        setRequiredPacks(packs || []);
-        if (packs && packs.length > 0) {
-          updateP2PLoadingStep('packs', 'loading', 'Loading asset packs...');
-        } else {
-          updateP2PLoadingStep('packs', 'success', 'No packs required');
-        }
-        break;
-      }
-
-      case 'PACK_LOADED': {
-        logger.log('[Iroh] Guest loaded pack:', data.payload.packName);
-        // Host received pack loaded notification
-        const { packName } = data.payload;
-        guestLoadedPacksRef.current.add(packName);
-
-        // Check if all packs are loaded, then send SYNC_STATE
-        const usedPacks = stateRef.current?.usedPacks || {};
-        const packList = Object.values(usedPacks);
-
-        if (guestLoadedPacksRef.current.size >= packList.length && packList.length > 0) {
-          setTimeout(() => {
-            if (conn?.open) {
-              const state = stateRef.current;
-              conn.send({
-                type: 'SYNC_STATE',
-                payload: {
-                  objects: state.objects,
-                  players: state.players,
-                  hyperscaleLayers: state.hyperscaleLayers,
-                }
-              });
-            }
-          }, 50);
-        }
-        break;
-      }
-
-      case 'SYNC_STATE': {
-        logger.log('[Iroh] Received state sync');
-        const { objects, players, hyperscaleLayers } = data.payload;
-        localDispatch({ type: 'SYNC_STATE', payload: { objects, players, hyperscaleLayers } });
-        updateP2PLoadingStep('state', 'success', 'Game synchronized!');
-
-        // Mark packs step as success - if we received SYNC_STATE, host is satisfied with pack state
-        updateP2PLoadingStep('packs', 'success', 'Packs synchronized!');
-        break;
-      }
-
-      case 'ACTION': {
-        localDispatch(data.payload);
-        break;
-      }
-
-      default:
-        logger.warn('[Iroh] Unknown message type:', data.type);
-    }
-  }, [localDispatch, stateRef, updateP2PLoadingStep, p2pLoadingSteps, requiredPacks]);
+    protocolHandlerRef.current(data, conn);
+  }, []);
 
   // ============================================================================
   // INITIALIZE HOST
@@ -373,8 +240,15 @@ export function useIrohConnection(
 
         conn.on('open', () => {
           updateP2PLoadingStep('p2p', 'success', 'P2P connection established');
-          // Reset guest packs tracking for new connection
-          guestLoadedPacksRef.current.clear();
+
+          // Same accept sequence as the PeerJS host: PACKS_NEEDED first,
+          // then the filtered initial state (guest buffers until packs resolve)
+          setTimeout(() => {
+            if (conn?.open) {
+              conn.send(buildPacksNeeded(stateRef.current));
+              conn.send(buildInitialSyncState(stateRef.current));
+            }
+          }, 50);
         });
 
         conn.on('close', () => {
@@ -397,7 +271,7 @@ export function useIrohConnection(
       setConnectionStatus('disconnected');
       updateP2PLoadingStep('connect', 'error', 'Initialization failed');
     }
-  }, [updateP2PLoadingStep, handleNetworkData]);
+  }, [updateP2PLoadingStep, handleNetworkData, localDispatch, stateRef]);
 
   // ============================================================================
   // CONNECT TO HOST (GUEST)
@@ -532,7 +406,12 @@ export function useIrohConnection(
   // ON PACK LOADED
   // ============================================================================
 
+  const onJoinWithoutPacks = proceedWithoutPacks;
+
   const onPackLoaded = useCallback((packName: string, hashes: string[]) => {
+    // Track loaded pack
+    loadedPacksRef.current.add(packName);
+
     // Notify host about pack loading
     const hostConn = hostConnectionRef.current;
     if (hostConn && hostConn.open) {
@@ -541,7 +420,14 @@ export function useIrohConnection(
         payload: { packName, hashes }
       });
     }
-  }, []);
+
+    // Apply buffered SYNC_STATE after all required packs are loaded
+    const allLoaded = expectedPacksCountRef.current > 0 && loadedPacksRef.current.size >= expectedPacksCountRef.current;
+    if (allLoaded) {
+      updateP2PLoadingStep('packs', 'success', `Loaded ${expectedPacksCountRef.current} asset pack(s)`);
+      flushBufferedSyncState();
+    }
+  }, [updateP2PLoadingStep, flushBufferedSyncState, loadedPacksRef, expectedPacksCountRef]);
 
   // ============================================================================
   // URL CHECK ON MOUNT
@@ -563,7 +449,7 @@ export function useIrohConnection(
         nodeId: '' // Will be parsed from ticket
       });
     }
-  }, []);
+  }, [setSuggestedPlayerName]);
 
   // ============================================================================
   // CLEANUP
@@ -599,6 +485,7 @@ export function useIrohConnection(
     isP2PLoadingModalOpen,
     requiredPacks,
     onPackLoaded,
+    onJoinWithoutPacks,
     suggestedPlayerName,
   };
 }

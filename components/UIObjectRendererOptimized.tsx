@@ -36,7 +36,7 @@ import { PanelResizeHandleMemo } from './PanelResizeHandle';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.1.9';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.3.0';
 
 // Support links
 const SUPPORT_LINKS = [
@@ -143,7 +143,6 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showStyleSelector, setShowStyleSelector] = useState(false);
   const [isIrohUnlocked, setIsIrohUnlocked] = useState(false);
-  const [isTrysteroUnlocked, setIsTrysteroUnlocked] = useState(false);
 
   // Connection settings state
   const [showAddServerForm, setShowAddServerForm] = useState(false);
@@ -199,32 +198,6 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
         if (iPresses.length >= REQUIRED_PRESSES) {
           setIsIrohUnlocked(prev => !prev); // Toggle visibility
           iPresses.length = 0; // Reset to prevent immediate re-trigger
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  // Secret Trystero unlock: press 'T' 3 times within 2 seconds (works on any keyboard layout)
-  useEffect(() => {
-    const tPresses: number[] = [];
-    const REQUIRED_PRESSES = 3;
-    const TIME_WINDOW = 2000; // 2 seconds
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'KeyT') {
-        const now = Date.now();
-        // Remove presses outside the time window
-        while (tPresses.length > 0 && tPresses[0] < now - TIME_WINDOW) {
-          tPresses.shift();
-        }
-        tPresses.push(now);
-
-        if (tPresses.length >= REQUIRED_PRESSES) {
-          setIsTrysteroUnlocked(prev => !prev); // Toggle visibility
-          tPresses.length = 0; // Reset to prevent immediate re-trigger
         }
       }
     };
@@ -1600,7 +1573,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                   >
                     <option value="peerjs">{translate('PeerJS (WebRTC)', language as Locale)}</option>
                     <option value="iroh" disabled={!isIrohUnlocked}>{translate('Iroh (P2P)', language as Locale)}</option>
-                    <option value="trystero" disabled={!isTrysteroUnlocked}>{translate('Trystero (Torrent)', language as Locale)}</option>
+                    <option value="trystero">{translate('Trystero (Torrent)', language as Locale)}</option>
                   </select>
                 </div>
 

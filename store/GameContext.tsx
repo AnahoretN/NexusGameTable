@@ -12,9 +12,7 @@ import { GameState, ViewTransform, initialState, PlayerPanelSettings } from './g
 import { Action } from './gameActions';
 import { createAuditLogEntry } from './auditLogger';
 import { useAutoSave } from './useAutoSave';
-import { usePeerConnection, resetP2PSingleton } from './usePeerConnection';
-import { useIrohConnection, resetIrohSingleton } from './useIrohConnection';
-import { useTrysteroConnection } from './useTrysteroConnection';
+import { useGameSession, resetAllTransports } from './session';
 import { getConnectionSettings, ConnectionMethod } from '../utils/localSettings';
 import { isInCursorSlot, getOriginalPosition, removeFromCursorSlot } from '../utils/cursorSlotTracker';
 import {
@@ -213,6 +211,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
             // Check if this is a partial sync (differential update)
             const isPartialSync = action.payload._isPartial === true;
+            if (import.meta.env.DEV) {
+              console.log('[SYNC_STATE] apply ' + (isPartialSync ? 'PARTIAL' : 'FULL'),
+                'incoming=' + Object.keys(action.payload.objects || {}).length,
+                'current=' + Object.keys(state.objects).length,
+                'isGuest=' + !state.players?.some((p: any) => p.isGM));
+            }
 
             if (isPartialSync) {
               // For partial sync, MERGE incoming objects with existing ones
@@ -6250,20 +6254,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // 🔥 NEW: Disconnect from all P2P servers before clearing cache
       logger.log('[GAME] Disconnecting from all P2P servers before cache clear...');
 
-      // Disconnect from PeerJS connection
+      // Disconnect from all P2P transports (PeerJS, Iroh)
       try {
-        resetP2PSingleton();
-        logger.log('[GAME] Disconnected from PeerJS P2P connection');
+        resetAllTransports();
+        logger.log('[GAME] Disconnected from P2P transports');
       } catch (e) {
-        logger.warn('[GAME] Failed to disconnect from PeerJS:', e);
-      }
-
-      // Disconnect from Iroh connection
-      try {
-        resetIrohSingleton();
-        logger.log('[GAME] Disconnected from Iroh P2P connection');
-      } catch (e) {
-        logger.warn('[GAME] Failed to disconnect from Iroh:', e);
+        logger.warn('[GAME] Failed to disconnect transports:', e);
       }
 
       // Disconnect from Trystero connection (clear localStorage data)
@@ -6771,76 +6767,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // Call all connection hooks (React requires hooks to be called unconditionally)
-  // Only the active one will actually initialize
-  const peerJsConn = usePeerConnection(localDispatch, stateRef, connectionMethod);
-  const irohConn = useIrohConnection(localDispatch, stateRef);
-  const trysteroConn = useTrysteroConnection(localDispatch, stateRef);
-
-  // Track which connection method is active
-  useEffect(() => {
-    // Connection method changed
-  }, [connectionMethod]);
-
-  // Select the active connection based on method
-
-  // Extract values with proper mapping for Iroh/Trystero compatibility
-  const peerId = connectionMethod === 'iroh' ? irohConn.peerId
-    : connectionMethod === 'trystero' ? trysteroConn.peerId
-    : peerJsConn.peerId;
-
-  const isHost = connectionMethod === 'iroh' ? irohConn.isHost
-    : connectionMethod === 'trystero' ? trysteroConn.isHost
-    : peerJsConn.isHost;
-
-  const connectionStatus = connectionMethod === 'iroh' ? irohConn.connectionStatus
-    : connectionMethod === 'trystero' ? trysteroConn.connectionStatus
-    : peerJsConn.connectionStatus;
-
-  const waitingForPlayerName = connectionMethod === 'iroh'
-    ? (irohConn.waitingForPlayerName ? { hostId: irohConn.waitingForPlayerName.nodeId || irohConn.waitingForPlayerName.ticket || '' } : null)
-    : connectionMethod === 'trystero'
-    ? (trysteroConn.waitingForPlayerName ? { hostId: trysteroConn.waitingForPlayerName.roomId } : null)
-    : peerJsConn.waitingForPlayerName;
-
-  const setPlayerName = connectionMethod === 'iroh' ? irohConn.setPlayerName
-    : connectionMethod === 'trystero' ? trysteroConn.setPlayerName
-    : peerJsConn.setPlayerName;
-
-  const initializeHost = connectionMethod === 'iroh' ? irohConn.initializeHost
-    : connectionMethod === 'trystero' ? trysteroConn.initializeHost
-    : peerJsConn.initializeHost;
-
-  const hostConnectionRef = connectionMethod === 'iroh' ? irohConn.hostConnectionRef
-    : connectionMethod === 'trystero' ? trysteroConn.hostConnectionRef
-    : peerJsConn.hostConnectionRef;
-
-  const connectionsRef = connectionMethod === 'iroh' ? irohConn.connectionsRef
-    : connectionMethod === 'trystero' ? trysteroConn.connectionsRef
-    : peerJsConn.connectionsRef;
-
-  const p2pLoadingSteps = connectionMethod === 'iroh' ? irohConn.p2pLoadingSteps
-    : connectionMethod === 'trystero' ? trysteroConn.p2pLoadingSteps
-    : peerJsConn.p2pLoadingSteps;
-
-  const p2pLoadingProgress = connectionMethod === 'iroh' ? irohConn.p2pLoadingProgress
-    : connectionMethod === 'trystero' ? trysteroConn.p2pLoadingProgress
-    : peerJsConn.p2pLoadingProgress;
-
-  const requiredPacks = connectionMethod === 'iroh' ? irohConn.requiredPacks
-    : connectionMethod === 'trystero' ? trysteroConn.requiredPacks
-    : peerJsConn.requiredPacks;
-
-  const onPackLoaded = connectionMethod === 'iroh' ? irohConn.onPackLoaded
-    : connectionMethod === 'trystero' ? trysteroConn.onPackLoaded
-    : peerJsConn.onPackLoaded;
-
-  const suggestedPlayerName = connectionMethod === 'iroh' ? irohConn.suggestedPlayerName
-    : connectionMethod === 'trystero' ? trysteroConn.suggestedPlayerName
-    : peerJsConn.suggestedPlayerName;
-
-  const nodeId = connectionMethod === 'iroh' ? irohConn.nodeId : null;
-  const ticket = connectionMethod === 'iroh' ? irohConn.ticket : null;
+  // The ONE session hook: transports bring players in, one shared protocol
+  // handles all gameplay sync (store/session/).
+  const session = useGameSession(localDispatch, stateRef, connectionMethod);
+  const {
+    peerId,
+    isHost,
+    connectionStatus,
+    waitingForPlayerName,
+    setPlayerName,
+    initializeHost,
+    hostConnectionRef,
+    connectionsRef,
+    p2pLoadingSteps,
+    p2pLoadingProgress,
+    requiredPacks,
+    onPackLoaded,
+    onJoinWithoutPacks,
+    suggestedPlayerName,
+    nodeId,
+    ticket,
+    roomId: sessionRoomId,
+  } = session;
 
   // 🔥 NEW: Guest connection modal state
   const [guestReadyToJoin, setGuestReadyToJoin] = useState(false);
@@ -6896,6 +6844,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Handle joining the game
   const handleJoinGame = () => {
+    // Guest proceeds into the game: if required packs weren't loaded, stop
+    // buffering SYNC_STATE updates — otherwise the guest would never see changes.
+    onJoinWithoutPacks?.();
     setIsModalClosed(true); // 🔥 FIX: This triggers re-render and updates guestConnectionModalOpen
   };
 
@@ -7462,8 +7413,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   // Optimistic update for immediate feedback
                   localDispatch(action);
               } else if (action.type === 'MOVE_OBJECT_COMMIT' || action.type === 'FINISH_DRAWING_STROKE') {
-                  // Commit actions are sent to host, applied locally after host broadcasts
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
+                  if (action.type === 'MOVE_OBJECT_COMMIT') {
+                      // Optimistic update: the host echoes the position back via
+                      // partial sync, but on slow transports (Trystero) that echo
+                      // can lag for seconds — the guest should see its own commit
+                      // immediately. Panels/windows and individualObjects layers
+                      // already applied locally above.
+                      localDispatch(action);
+                  }
               } else if (action.type === 'CREATE_DRAWING_OBJECT' || action.type === 'ADD_STROKE_TO_DRAWING' || action.type === 'MERGE_DRAWINGS') {
                   // Drawing actions are sent to host
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
@@ -7488,9 +7446,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [isHost, connectionStatus, hostConnectionRef]);
 
   // 🔥 OPTIMIZED: Create throttled broadcast function with WebRTC optimizations
+  //
+  // ⚠️ This callback is recreated only when `isHost` changes. When the user
+  // switches connection method (peerjs → trystero) `isHost` usually STAYS true
+  // (both transports derive it from URL params), so the callback would keep
+  // the OLD transport's connectionsRef forever — the host would broadcast into
+  // an empty list while the active transport's list is full. Read everything
+  // that can change through always-fresh refs instead of closure variables.
+  const isHostRef = useRef(isHost);
+  isHostRef.current = isHost;
+  const connectionsRefRef = useRef(connectionsRef);
+  connectionsRefRef.current = connectionsRef;
+
   const createOptimizedBroadcastFunction = useCallback(() => {
     return throttle((currentState: GameState) => {
-      if (!isHost || !connectionsRef.current || connectionsRef.current.length === 0) {
+      const connRef = connectionsRefRef.current;
+      if (!isHostRef.current || !connRef.current || connRef.current.length === 0) {
+        // 🔧 DEV diagnostic: why is the host not broadcasting?
+        // NOTE: eager primitives only — Chrome shows object args lazily, which
+        // made past `connections: 0` reports unreliable.
+        if (import.meta.env.DEV) {
+          console.log(
+            '[Broadcast] SKIP isHost=' + isHostRef.current,
+            'len=' + (connRef.current?.length ?? -1),
+            'tag=' + ((connRef.current as any)?.__instanceId ?? 'none'),
+            'dbgSame=' + (connRef.current === (window as any).__trysteroDebug?.connections)
+          );
+        }
         return;
       }
 
@@ -7570,7 +7552,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       })();
 
       // Broadcast state to each connection (state now contains sha256 hashes, not base64)
-      connectionsRef.current.forEach(conn => {
+      connRef.current.forEach(conn => {
+        // 🔧 DEV diagnostic
+        if (import.meta.env.DEV) {
+          console.log('[Broadcast] conn peer=' + (conn.peer || conn.peerId), 'open=' + conn.open);
+        }
         if (conn.open) {
           // 🔥 NEW: Check if we can use differential sync
           // Filter out invalid changes (e.g., individual objects) before checking
@@ -7667,6 +7653,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const stateJson = JSON.stringify(stateToSend);
               // Send state with sha256 hashes (assets are loaded from packs by guest)
               conn.send({ type: 'SYNC_STATE', payload: stateToSend });
+              // 🔧 DEV diagnostic
+              if (import.meta.env.DEV) {
+                console.log('[Broadcast] SENT SYNC_STATE', { size: stateJson.length, isPartial: isPartialSync, changes: changeCount });
+              }
               return { stateSize: stateJson.length, isPartial: isPartialSync };
             },
             (result, syncTime) => {
@@ -7678,7 +7668,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       // Also broadcast to manual P2P connection guest
-      if (isHost && manualConnectionRef.current && manualConnectionRef.current.open === true) {
+      if (isHostRef.current && manualConnectionRef.current && manualConnectionRef.current.open === true) {
         try {
           manualConnectionRef.current.send({ type: 'SYNC_STATE', payload: stateForBroadcast });
         } catch (e) {
@@ -7704,6 +7694,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         optimizedBroadcastRef.current.execute(state);
       }
   }, [state, isHost]);
+
+  // 🔧 DEV ONLY: expose network-aware dispatch and state for console debugging
+  const devRoomIdRef = useRef<string | null>(null);
+  devRoomIdRef.current = sessionRoomId;
+  const devPeerIdRef = useRef<string | null>(null);
+  devPeerIdRef.current = peerId;
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      (window as any).__nexus = {
+        dispatch,
+        getState: () => stateRef.current,
+        connectionMethod,
+        initializeHost,
+        getRoomId: () => devRoomIdRef.current,
+        getPeerId: () => devPeerIdRef.current,
+      };
+    }
+  }, [dispatch, connectionMethod, initializeHost]);
 
   // Handle incoming data from manual P2P connection
   useEffect(() => {
@@ -7866,7 +7874,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, stateRef, connectionMethod, ticket, nodeId, roomId: trysteroConn.roomId }}>
+    <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, stateRef, connectionMethod, ticket, nodeId, roomId: sessionRoomId }}>
       {children}
       <InitialLoadModal
         steps={initialLoadSteps}

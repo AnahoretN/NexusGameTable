@@ -1,31 +1,28 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { Peer } from 'peerjs';
 import { Action } from './gameActions';
-import { Player, PackInfo } from '../types';
+import { Player } from '../types';
 import { logger } from '../utils/logger';
-import { filterLocalPanelProperties } from '../utils/panelSync';
-import { filterObjectsForBroadcast } from '../utils/individualPositions';
 import { getPlayerId } from './gameConstants';
 import {
   createOptimizedPeerJSConfig,
   CONNECTION_TIMEOUT,
   } from '../utils/webrtcOptimization';
 import {
-  decompressWebRTCData,
   printCompressionReport,
   dataCompressionManager
 } from '../utils/dataCompression';
-import { joinRoom } from 'trystero';
 import { getConnectionSettings, ConnectionMethod } from '../utils/localSettings';
 import {
-  ActionBatcher,
-  PredictivePositionSender,
-  } from './p2p';
-import {
-  handleDirectSyncMessage,
-  registerP2PConnections,
-  DirectP2PMessage
+  registerP2PConnections
 } from '../utils/directP2PSync';
+import { useSessionUx } from './session/sessionUx';
+import {
+  createProtocolHandler,
+  buildPacksNeeded,
+  buildInitialSyncState,
+  notifyGuestDisconnected
+} from './session/protocol';
 
 // ============================================================================
 // 🔥 SINGLETON PATTERN: Persist P2P connection across HMR remounts
@@ -42,16 +39,6 @@ const p2pSingleton = {
   room: null as any,
   peerId: null as string | null,
   isInitialized: false,
-  // 🔥 NEW: Action batching for rapid updates
-  actionBatcher: new ActionBatcher({
-    batchWindow: 30, // 30ms batching window
-    onFlush: (_objectId, _finalAction) => {
-      // When batch is flushed, send the final action
-      // This will be called automatically by ActionBatcher
-    }
-  }),
-  // 🔥 NEW: Predictive position sender to reduce unnecessary updates
-  positionSender: new PredictivePositionSender(),
 };
 
 /**
@@ -71,9 +58,6 @@ export function resetP2PSingleton() {
   p2pSingleton.room = null;
   p2pSingleton.peerId = null;
   p2pSingleton.isInitialized = false;
-  // 🔥 NEW: Clear action batcher
-  p2pSingleton.actionBatcher.clear();
-  p2pSingleton.positionSender.clearAll();
 }
 
 // Type for Trystero room (since library doesn't export types)
@@ -113,16 +97,12 @@ export interface UsePeerConnectionReturn {
   // 🔥 NEW: P2P Loading Progress
   p2pLoadingSteps: P2PLoadingStep[];
   p2pLoadingProgress: number; // 0-100 overall progress
-  isP2PLoadingModalOpen: boolean; // Whether the P2P loading modal is visible
   // 🔥 NEW: Pack download modal for guests
   requiredPacks: Array<{ name: string; hash: string; size: number }>;
   onPackLoaded: (packName: string, hashes: string[]) => void;
+  onJoinWithoutPacks: () => void;
   // 🔥 NEW: Suggested player name for guests
   suggestedPlayerName: string;
-  // Signalling control for manual connection management
-  disconnectFromSignalling: (reason: string) => void;
-  reconnectToSignalling: (reason: string) => Promise<void>;
-  resetSignallingTimer: () => void;
 }
 
 /**
@@ -170,17 +150,6 @@ const getCommunityServers = (): Array<{ host: string; port: number; secure: bool
     name: server.name,
   }));
 };
-
-/**
- * WebTorrent трекеры для Trystero - финальный fallback
- * Децентрализованный метод без центрального сервера
- */
-const TORRENT_TRACKERS = [
-  'wss://tracker.btorrent.xyz',
-  'wss://tracker.openwebtorrent.com',
-  'wss://tracker.fastcast.nz',
-  'wss://tracker.files.fm:443/announce',
-];
 
 // ============================================================================
 // FALLBACK CONNECTION HELPERS
@@ -276,36 +245,8 @@ async function tryPeerJSServer(
 /**
  * Попытка подключения через Trystero с торрент-трекерами
  */
-async function tryTrysteroTorrent(
-  roomId: string,
-  timeout: number = 20000
-): Promise<TrysteroRoom | null> {
-  return new Promise((resolve) => {
-    try {
-      const config = {
-        appId: 'nexus-game-table',
-        trackers: TORRENT_TRACKERS,
-      };
-
-      // The installed trystero version ships a newer Room API (makeAction-based);
-      // the app uses the legacy send/onData surface declared by TrysteroRoom.
-      const room = joinRoom(config, roomId) as unknown as TrysteroRoom;
-
-      // Trystero не имеет явного события подключения, но мы можем
-      // проверить что room создан успешно
-      setTimeout(() => {
-        resolve(room);
-      }, 1000);
-
- setTimeout(() => {
-        resolve(null);
-      }, timeout);
-
-    } catch (error) {
-      resolve(null);
-    }
-  });
-}
+// (removed — unreachable: GameContext routes connectionMethod 'trystero'
+// to store/useTrysteroConnection.ts, never to this hook's guest path)
 
 // ============================================================================
 // PACK HANDLING (Simplified - no P2P asset transfer)
@@ -330,29 +271,25 @@ export function usePeerConnection(
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [waitingForPlayerName, setWaitingForPlayerName] = useState<WaitingForPlayerName | null>(null);
 
-  // 🔥 NEW: P2P Loading Progress state
-  const [p2pLoadingSteps, setP2pLoadingSteps] = useState<P2PLoadingStep[]>([
-    { id: 'connect', message: 'Connecting to signaling server...', status: 'pending' },
-    { id: 'p2p', message: 'Establishing P2P connection...', status: 'pending' },
-    { id: 'handshake', message: 'Handshake with host...', status: 'pending' },
-    { id: 'packs', message: 'Loading asset packs...', status: 'pending' },
-    { id: 'state', message: 'Synchronizing game state...', status: 'pending' },
-  ]);
-  const [p2pLoadingProgress, setP2pLoadingProgress] = useState(0);
-  const [isP2PLoadingModalOpen, setIsP2PLoadingModalOpen] = useState(false); // 🔥 NEW: Separate state for modal visibility
-
-  // 🔥 NEW: Pack download modal state for guests
-  const [requiredPacks, setRequiredPacks] = useState<Array<{ name: string; hash: string; size: number }>>([]);
-  const loadedPacksRef = useRef<Set<string>>(new Set()); // Track which packs have been loaded
-  const [suggestedPlayerName, setSuggestedPlayerName] = useState<string>(''); // 🔥 NEW: Suggested name for new guest
-
-  // 🔥 NEW: Track if we received empty PACKS_NEEDED (for warning)
-  const receivedEmptyPacksRef = useRef(false);
-
-  // 🔥 NEW: Buffer SYNC_STATE until packs are loaded (fixes race condition)
-  const bufferedStateRef = useRef<any>(null);
-  const hasReceivedPacksNeededRef = useRef(false);
-  const expectedPacksCountRef = useRef(0); // Track expected pack count (synchronous)
+  // 🔥 NEW: Shared session UX (loading steps, pack negotiation) — single source of truth
+  const ux = useSessionUx(localDispatch);
+  const sessionUxRef = useRef(ux);
+  sessionUxRef.current = ux;
+  const {
+    p2pLoadingSteps,
+    p2pLoadingProgress,
+    requiredPacks,
+    suggestedPlayerName,
+    setSuggestedPlayerName,
+    updateStep: updateP2PLoadingStep,
+    reset: resetP2PLoading,
+    packBuffer: {
+      loadedPacksRef,
+      expectedPacksCountRef,
+      flushBufferedSyncState,
+      proceedWithoutPacks,
+    },
+  } = ux;
 
 
   // 🔥 SINGLETON: Use module-level refs that persist across remounts
@@ -386,332 +323,22 @@ export function usePeerConnection(
     });
   }, [isHost]);
 
-  // 🔥 NEW: Helper functions for P2P loading progress
-  const updateP2PLoadingStep = useCallback((stepId: string, status: P2PLoadingStep['status'], message?: string, progress?: number) => {
-    setP2pLoadingSteps(prev => {
-      const updated = prev.map(step => {
-        if (step.id === stepId) {
-          return {
-            ...step,
-            status,
-            ...(message && { message }),
-            ...(progress !== undefined && { progress })
-          };
-        }
-        return step;
-      });
-
-      // Update overall progress based on completed steps
-      // Step IDs in order: connect, p2p, handshake, packs, state
-      const stepOrder = ['connect', 'p2p', 'handshake', 'packs', 'state'] as const;
-      const stepIndex = stepOrder.indexOf(stepId as any);
-      if (stepIndex !== -1) {
-        const stepProgress = status === 'success' ? 100 : progress || 0;
-        const stepWeight = 100 / stepOrder.length;
-        const newProgress = Math.min(100, (stepIndex * stepWeight) + (stepProgress * stepWeight / 100));
-        setP2pLoadingProgress(newProgress);
-      }
-
-      // 🔥 NEW: Open modal on first step loading
-      // Note: Modal is no longer auto-closed - managed by GameContext
-      if (stepId === 'connect' && status === 'loading') {
-        setIsP2PLoadingModalOpen(true);
-      }
-
-      return updated;
-    });
-  }, []);
-
-  const resetP2PLoading = useCallback(() => {
-    setP2pLoadingSteps([
-      { id: 'connect', message: 'Connecting to signaling server...', status: 'pending' },
-      { id: 'p2p', message: 'Establishing P2P connection...', status: 'pending' },
-      { id: 'handshake', message: 'Handshake with host...', status: 'pending' },
-      { id: 'packs', message: 'Loading asset packs...', status: 'pending' },
-      { id: 'state', message: 'Synchronizing game state...', status: 'pending' },
-    ]);
-    setP2pLoadingProgress(0);
-    setIsP2PLoadingModalOpen(false);
-    // 🔥 FIX: Reset refs for new connection
-    loadedPacksRef.current.clear();
-    bufferedStateRef.current = null;
-    hasReceivedPacksNeededRef.current = false;
-    expectedPacksCountRef.current = 0;
-    receivedEmptyPacksRef.current = false;
-    setRequiredPacks([]);
-  }, []);
 
   // Signalling server timeout - disconnect after this time of inactivity
   const SIGNALLING_TIMEOUT_MS = 120000; // 2 minutes
 
-  // Central Network Data Handler
+  // Central Network Data Handler — delegates to the shared session protocol
+  const protocolHandlerRef = useRef<(data: any, senderConn: any) => void>(() => {});
+  protocolHandlerRef.current = createProtocolHandler({
+    localDispatch,
+    stateRef,
+    isHost,
+    getConnections: () => connectionsRef.current,
+    ux: sessionUxRef.current,
+  });
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
-    // 🔥 NEW: Process PACKS_NEEDED BEFORE SYNC_STATE
-    // This ensures guest knows which packs are needed before state sync
-    if (data.type === 'PACKS_NEEDED') {
-      // 🔥 NEW: Guest received pack list from host
-      const { packs, nextPlayerNumber } = data.payload;
-
-      // 🔥 NEW: Set suggested player name (Player X where X is the next player number)
-      if (nextPlayerNumber !== undefined) {
-        const suggestedName = `Player ${nextPlayerNumber}`;
-        setSuggestedPlayerName(suggestedName);
-      }
-
-      // 🔥 NEW: Update handshake step and show modal for player name
-      updateP2PLoadingStep('handshake', 'success', 'Connected to host!');
-      updateP2PLoadingStep('packs', 'loading', `Waiting for ${packs.length} asset pack(s)...`);
-
-      if (packs.length > 0) {
-        // Set required packs and show modal
-        setRequiredPacks(packs);
-        expectedPacksCountRef.current = packs.length; // Track expected count
-      } else {
-        // No packs needed - mark as complete
-        updateP2PLoadingStep('packs', 'success', 'No asset packs needed');
-        // 🔥 NEW: Track that we received empty packs list
-        receivedEmptyPacksRef.current = true;
-
-        // 🔥 FIX: Apply buffered SYNC_STATE immediately if no packs needed
-        if (bufferedStateRef.current) {
-          updateP2PLoadingStep('state', 'loading', 'Synchronizing game state...');
-          localDispatch({ type: 'SYNC_STATE', payload: bufferedStateRef.current });
-          bufferedStateRef.current = null;
-          updateP2PLoadingStep('state', 'success', 'Game synchronized!');
-        }
-      }
-
-      // 🔥 NOTE: Modal is already opened when URL has hostId parameter
-      // No need to set waitingForPlayerName here - it's already set in the useEffect
-
-      // 🔥 NEW: Mark that we received PACKS_NEEDED (for SYNC_STATE buffering)
-      hasReceivedPacksNeededRef.current = true;
-    } else if (data.type === 'PACK_LOADED') {
-      // 🔥 NEW: Host received notification that guest loaded a pack
-      const { packName, hashes } = data.payload;
-      const guestId = senderConn.peer;
-
-      // Get guest info
-      const guest = stateRef.current?.players?.find((p: Player) => p.id === guestId);
-      if (!guest) {
-        return;
-      }
-
-      // Find pack info to get hash
-      const usedPacks: Record<string, PackInfo> = stateRef.current?.usedPacks ?? {};
-      const packInfo = Object.values(usedPacks).find(p => p.name === packName);
-      if (!packInfo) {
-        return;
-      }
-
-      // Update guest pack status
-      const currentStatus = stateRef.current?.guestPackStatus?.[guestId];
-      if (currentStatus) {
-        localDispatch({
-          type: 'UPDATE_GUEST_PACK_STATUS',
-          payload: {
-            guestId,
-            packName,
-            packHash: packInfo.hash,
-            imageCount: hashes.length,
-          }
-        });
-      } else {
-        // Initialize guest status
-        localDispatch({
-          type: 'INITIALIZE_GUEST_PACK_STATUS',
-          payload: {
-            guestId,
-            guestName: guest.name,
-            connectedAt: Date.now(),
-          }
-        });
-        // Then update with pack info
-        setTimeout(() => {
-          localDispatch({
-            type: 'UPDATE_GUEST_PACK_STATUS',
-            payload: {
-              guestId,
-              packName,
-              packHash: packInfo.hash,
-              imageCount: hashes.length,
-            }
-          });
-        }, 50);
-      }
-
-    } else if (data.type === 'SYNC_STATE') {
-      // Received full state update (Guest receives from Host)
-      // Check if data is compressed
-      const isCompressed = data.compressed === true;
-      const payload = isCompressed
-        ? decompressWebRTCData(data.payload, true)
-        : data.payload;
-
-      // 🔥 FIX: Buffer SYNC_STATE until packs are loaded (prevents race condition)
-      // Check if we need to wait for pack loading
-      const needsPacks = expectedPacksCountRef.current > 0 && loadedPacksRef.current.size < expectedPacksCountRef.current;
-      const waitingForPacksNeeded = !hasReceivedPacksNeededRef.current;
-
-      if (needsPacks || waitingForPacksNeeded) {
-        bufferedStateRef.current = payload;
-        updateP2PLoadingStep('state', 'loading', 'Waiting for asset packs...');
-        return; // Don't dispatch yet
-      }
-
-      // 🔥 NEW: Update progress - state synchronized
-      updateP2PLoadingStep('state', 'loading', 'Synchronizing game state...');
-
-      localDispatch({ type: 'SYNC_STATE', payload });
-
-      // 🔥 NEW: Mark state as complete immediately
-      // Images will be loaded from packs by the guest
-      updateP2PLoadingStep('state', 'success', 'Game synchronized!');
-
-      // 🔥 NEW: Check if game likely needs asset packs but host didn't register any
-      // Show warning if: 1) we received empty PACKS_NEEDED, 2) game has objects with images
-      if (receivedEmptyPacksRef.current && payload.usedPacks && Object.keys(payload.usedPacks).length === 0) {
-        // Check if any objects have image content (sha256: hashes or URLs)
-        const objectsHaveImages = Object.values(payload.objects || {}).some((obj: any) => {
-          // Check for various image content fields
-          return !!(obj.content && (
-            obj.content.startsWith('sha256:') ||
-            obj.content.startsWith('http://') ||
-            obj.content.startsWith('https://') ||
-            obj.content.startsWith('data:image/')
-          ));
-        });
-
-        if (objectsHaveImages) {
-          // The missing-assets warning UI was removed with the old warning state;
-          // keep a console trace so guests still get a diagnostic hint.
-          logger.warn('[P2P] Host did not register any packs, but game state contains image objects — assets may be missing');
-        }
-      }
-    } else if (data.type === 'PLAYER_PANEL_SETTINGS') {
-      // Guest received their individual panel settings from host
-      const { settings } = data.payload;
-
-      // Apply individual panel settings using special action
-      localDispatch({
-        type: 'APPLY_PLAYER_PANEL_SETTINGS',
-        payload: { settings }
-      });
-    } else if (data.type === 'POSITION_UPDATE') {
-      // Lightweight position update for smooth dragging (batched)
-      // 🔥 EXTENDED: Now includes effect template properties (rotation, width, height, pivot, etc.) for smoother effect sync
-      const positions = data.payload;
-
-      // Update each object's position (skipNetworkSync prevents re-broadcasting)
-      positions.forEach((pos: {
-        id: string;
-        x?: number;
-        y?: number;
-        rotation?: number;
-        width?: number;
-        height?: number;
-        pivot?: { x: number; y: number };
-        rotationMarkerDistance?: number;
-        zIndex?: number;
-      }) => {
-        const existingObj = stateRef.current.objects[pos.id];
-        if (existingObj) {
-          localDispatch({
-            type: 'UPDATE_OBJECT',
-            payload: {
-              ...pos,
-              skipNetworkSync: true // Prevent re-broadcasting to host
-            }
-          });
-        }
-      });
-    } else if (data.type === 'HELO') {
-      // Host received new player info
-      const newPlayer = data.payload;
-      localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
-
-      // 🔥 CRITICAL FIX: Wait for state to update before sending SYNC_STATE
-      // localDispatch is async, so we need to wait for the next tick to get updated state
-      setTimeout(() => {
-        const stateToSend = { ...stateRef.current };
-
-        // 🔥 FIX: Verify that new player is in the state before sending
-        const playerExists = stateToSend.players?.some((p: any) => p.id === newPlayer.id);
-        if (!playerExists) {
-          // Retry after another tick
-          setTimeout(() => {
-            const retryState = { ...stateRef.current };
-            senderConn.send({ type: 'SYNC_STATE', payload: retryState });
-          }, 50);
-        } else {
-          senderConn.send({ type: 'SYNC_STATE', payload: stateToSend });
-        }
-      }, 0);
-
-      // Send player's individual panel settings back to them
-      const playerPanelSettings = stateRef.current.playerPanelSettings[newPlayer.id] || {};
-      if (Object.keys(playerPanelSettings).length > 0) {
-        senderConn.send({ type: 'PLAYER_PANEL_SETTINGS', payload: { playerId: newPlayer.id, settings: playerPanelSettings } });
-      }
-    } else if (data.type === 'UPDATE_PLAYER_NAME') {
-      // Host received player name update request
-      localDispatch(data.payload);
-    } else if (data.type === 'ACTION') {
-      // Host received action request from Guest
-      const actionType = data.payload?.type;
-
-      // Filter out local-only actions that should not affect host state
-      // These actions are screen-specific and should not be synced
-      const localOnlyActions = [
-        'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
-        'SET_PIXELS_PER_VU',      // Pixels per VU is screen-specific
-        'RESIZE_UI_OBJECT'        // Panel/window size is local (handled by UPDATE_PLAYER_PANEL_SETTINGS)
-      ];
-
-      // NOTE: MOVE_OBJECT_COMMIT is NOT in localOnlyActions because it needs to reach the host
-      // for panel position tracking. The GameContext reducer handles it correctly:
-      // - For panels/windows: saves to playerPanelSettings (individual per player)
-      // - For other objects: updates global position
-
-      if (localOnlyActions.includes(actionType)) {
-        // Ignoring local-only action
-      } else if (actionType === 'UPDATE_PLAYER_PANEL_SETTINGS') {
-        // Host received update to player panel settings from guest
-        localDispatch(data.payload);
-      } else {
-        localDispatch(data.payload);
-      }
-    } else if (data.type === 'DIRECT_SYNC') {
-      // 🔥 NEW: Direct P2P sync for sliders and character blocks
-      // This bypasses the host for faster updates
-      const directSyncMessage = data as DirectP2PMessage;
-
-      // Handle the direct sync message
-      const action = handleDirectSyncMessage(
-        directSyncMessage,
-        stateRef.current?.objects || {},
-        stateRef.current?.activePlayerId || ''
-      );
-
-      if (action) {
-        // Dispatch the action to update local state
-        localDispatch(action as Action);
-
-        // If we're host, relay the direct sync to other guests
-        if (isHost) {
-          connectionsRef.current.forEach((conn: any) => {
-            if (conn.open && conn.peer !== senderConn.peer) {
-              try {
-                conn.send(data);
-              } catch (e) {
-                // Direct sync relay failed
-              }
-            }
-          });
-        }
-      }
-    }
-  }, [localDispatch, updateP2PLoadingStep, isHost]);
+    protocolHandlerRef.current(data, senderConn);
+  }, []);
 
   // ============================================================================
   // SIGNALLING SERVER OPTIMIZATION
@@ -838,45 +465,9 @@ export function usePeerConnection(
     const communityServers = getCommunityServers();
     const PARALLEL_TIMEOUT = 8000;
 
-    // Try connection based on selected method only
-    if (method === 'trystero') {
-      // Use Trystero BitTorrent P2P only
-      updateP2PLoadingStep('connect', 'loading', 'Connecting via BitTorrent trackers...');
-      setConnectionStatus('connecting');
-
-      const trysteroRoom = await tryTrysteroTorrent(hostId, 20000);
-      if (trysteroRoom) {
-        roomRef.current = trysteroRoom;
-
-        trysteroRoom.onData((data: any, _peerId: string) => {
-          const trysteroConn = { send: (msg: any) => trysteroRoom.send(msg) };
-          handleNetworkData(data, trysteroConn);
-        });
-
-        const persistentPlayerId = getPlayerId();
-        const myPlayer: Player = {
-          id: persistentPlayerId,
-          name: playerName.trim() || `Player ${Math.floor(Math.random() * 100)}`,
-          color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-          isGM: false
-        };
-
-        trysteroRoom.send({ type: 'HELO', payload: myPlayer });
-
-        setConnectionStatus('connected');
-        updateP2PLoadingStep('connect', 'success', 'Connected via BitTorrent!');
-        localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
-        localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
-
-        return;
-      }
-
-      // Trystero failed
-      alert("Failed to connect via BitTorrent trackers. Check your network settings.");
-      setConnectionStatus('disconnected');
-      setWaitingForPlayerName(null);
-      return;
-    }
+    // Try connection based on selected method only.
+    // NOTE: method 'trystero' never reaches this hook — GameContext routes it
+    // to store/useTrysteroConnection.ts.
 
     // For 'peerjs' and 'iroh' methods, use PeerJS
     // Build list of servers to try based on method
@@ -1273,48 +864,9 @@ export function usePeerConnection(
             return;
           }
 
-          // 🔥 NEW: Send PACKS_NEEDED (simplified asset sync)
-          const usedPacks: Record<string, PackInfo> = stateRef.current?.usedPacks || {};
-          const packList = Object.values(usedPacks);
-
-          // 🔥 NEW: Calculate next player number (count non-GM players + 1)
-          const players: Player[] = stateRef.current?.players || [];
-          const nonGMCount = players.filter(p => !p.isGM).length;
-          const nextPlayerNumber = nonGMCount + 1;
-
-          if (packList.length > 0) {
-            conn.send({
-              type: 'PACKS_NEEDED',
-              payload: {
-                packs: packList.map(p => ({
-                  name: p.name,
-                  hash: p.hash,
-                  size: p.size
-                })),
-                nextPlayerNumber
-              }
-            });
-          } else {
-            conn.send({
-              type: 'PACKS_NEEDED',
-              payload: {
-                packs: [],
-                nextPlayerNumber
-              }
-            });
-          }
-
-          // Filter out local panel properties and individual objects before syncing
-          const stateToSend = { ...stateRef.current };
-          if (stateToSend.objects) {
-            let filteredObjects = filterLocalPanelProperties(stateToSend.objects);
-	            // Also filter out individual objects (on layers with individualObjects enabled)
-	            filteredObjects = filterObjectsForBroadcast(filteredObjects, stateToSend.hyperscaleLayers);
-	            stateToSend.objects = filteredObjects;
-          }
-
-          // Send state (now contains only hashes, not base64)
-          conn.send({ type: 'SYNC_STATE', payload: stateToSend });
+          // PACKS_NEEDED first, then the filtered initial SYNC_STATE
+          conn.send(buildPacksNeeded(stateRef.current));
+          conn.send(buildInitialSyncState(stateRef.current));
 
           // Store reference to connection for sending player panel settings later
           (conn as any).pendingPlayerId = null; // Will be set when HELO is received
@@ -1322,16 +874,14 @@ export function usePeerConnection(
 
         // Handle Disconnection
         conn.on('close', () => {
-          connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
+          notifyGuestDisconnected(localDispatch, connectionsRef, conn);
           syncSingleton(); // Sync to singleton after connection removed
-          localDispatch({ type: 'REMOVE_PLAYER', payload: { id: conn.peer } });
         });
 
         conn.on('error', (err) => {
           logger.error(`[P2P Host] Connection error with guest ${guestPeerId}:`, err);
-          connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
+          notifyGuestDisconnected(localDispatch, connectionsRef, conn);
           syncSingleton(); // Sync to singleton after connection removed
-          localDispatch({ type: 'REMOVE_PLAYER', payload: { id: conn.peer } });
         });
 
         // Monitor ICE state for this connection
@@ -1604,7 +1154,9 @@ export function usePeerConnection(
 
   // Old useEffect code removed - host now initializes on demand via initializeHost()
 
-  // 🔥 NEW: Pack loaded handler (guest side)
+  const onJoinWithoutPacks = proceedWithoutPacks;
+
+    // 🔥 NEW: Pack loaded handler (guest side)
   const onPackLoaded = useCallback((packName: string, hashes: string[]) => {
     // Track loaded pack
     loadedPacksRef.current.add(packName);
@@ -1627,17 +1179,10 @@ export function usePeerConnection(
       // Update loading step to success - modal stays open, managed by GameContext
       updateP2PLoadingStep('packs', 'success', `Loaded ${expectedPacksCountRef.current} asset pack(s)`);
 
-      // 🔥 FIX: Apply buffered SYNC_STATE after all packs are loaded
-      if (bufferedStateRef.current) {
-        updateP2PLoadingStep('state', 'loading', 'Synchronizing game state...');
-
-        localDispatch({ type: 'SYNC_STATE', payload: bufferedStateRef.current });
-
-        bufferedStateRef.current = null; // Clear buffer
-        updateP2PLoadingStep('state', 'success', 'Game synchronized!');
-      }
+      // Apply buffered SYNC_STATE after all packs are loaded
+      flushBufferedSyncState();
     }
-  }, [updateP2PLoadingStep]);
+  }, [updateP2PLoadingStep, flushBufferedSyncState]);
 
   return {
     peerId,
@@ -1649,17 +1194,13 @@ export function usePeerConnection(
     hostConnectionRef,
     connectionsRef,
     roomRef, // Trystero room ref for fallback
-    // Expose signalling control functions for manual management
-    disconnectFromSignalling,
-    reconnectToSignalling,
-    resetSignallingTimer,
     // 🔥 NEW: P2P Loading Progress
     p2pLoadingSteps,
     p2pLoadingProgress,
-    isP2PLoadingModalOpen,
     // 🔥 NEW: Pack download for guests
     requiredPacks,
     onPackLoaded,
+    onJoinWithoutPacks,
     // 🔥 NEW: Suggested player name for guests
     suggestedPlayerName,
   };

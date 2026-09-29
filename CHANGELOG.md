@@ -2,6 +2,31 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.3.0] - 2026-09-29
+
+### 🏗️ Architecture
+
+#### Universal P2P Session Layer
+**All connection methods now run on a shared session layer**
+
+- New `store/session/` module: wire-protocol dispatcher (`protocol.ts`), transport interface contract (`transport.ts`), shared session hook (`useGameSession.ts`) and pack negotiation / loading steps (`sessionUx.ts`)
+- PeerJS, Trystero (torrent) and Iroh transports refactored onto the unified transport interface
+- Removed the deprecated `store/p2p/` layer (action batcher, idle work scheduler)
+
+### 🛠️ Fixes
+
+#### Trystero (torrent) transport
+- **Torrent strategy**: explicit `@trystero-p2p/torrent` strategy with relay URLs and open flag instead of the default Nostr import
+- **Stale closure fix**: guest froze because the broadcast callback held an outdated connections ref when switching connection methods; connection method is now tracked and diagnostics tags added
+- Connection method surfaced in connection state (`connection.connectionMethod`)
+
+### 🧹 Cleanup
+
+- **Dead code removal**: 42 unreachable files removed
+- **Zero type errors**: `tsc --noEmit` goes 1122 → 0 with strict flags kept
+
+---
+
 ## [0.2.7] - 2026-09-13
 
 ### ✨ New Features

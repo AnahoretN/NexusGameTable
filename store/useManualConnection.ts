@@ -193,7 +193,7 @@ class DataChannelAdapter {
     }
 
     // Create new adapter and store it
-    const adapter = DataChannelAdapter.create(dataChannel, peerId);
+    const adapter = new DataChannelAdapter(dataChannel, peerId);
     DataChannelAdapter.adapterMap.set(dataChannel, adapter);
     return adapter;
   }

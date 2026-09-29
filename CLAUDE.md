@@ -76,7 +76,15 @@ store/
 ├── GameContext.tsx     # Main game state + dispatch
 ├── reducers/           # Modular reducers (appReducers.ts)
 ├── objectStore.ts      # Zustand store for objects
-└── p2p/                # Networking helpers (actionBatcher, idleWorkScheduler)
+├── session/            # Universal P2P session layer:
+│   ├── protocol.ts     #   THE wire-protocol dispatcher (all message types)
+│   ├── sessionUx.ts    #   Loading steps + pack negotiation (shared)
+│   ├── transport.ts    #   Transport interface contract
+│   ├── useGameSession.ts # The one session hook GameContext consumes
+│   └── index.ts
+├── usePeerConnection.ts    # PeerJS transport
+├── useTrysteroConnection.ts # Trystero (BitTorrent) transport
+└── useIrohConnection.ts    # Iroh transport (PeerJS-backed)
 
 utils/
 ├── objectActionHandlers.ts  # Card/deck actions

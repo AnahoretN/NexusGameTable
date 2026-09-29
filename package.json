@@ -1,7 +1,7 @@
 {
   "name": "nexus-table",
   "private": true,
-  "version": "0.2.7",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,7 @@
   "dependencies": {
     "@number0/iroh": "^0.35.0",
     "@tanstack/react-virtual": "^3.13.23",
+    "@trystero-p2p/torrent": "^0.23.1",
     "fflate": "^0.8.3",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",
