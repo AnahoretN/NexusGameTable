@@ -41,6 +41,7 @@ interface TabletopBackgroundProps {
   cursorSlotLength: number;
   rulerStep: number; // Step size in VU (0 = disabled)
   language: string; // Language for step text formatting
+  pixelsPerVU: number; // Viewport scale for DrawingCanvas VU <-> px conversion
 }
 
 /**
@@ -78,7 +79,8 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
   v2p,
   cursorSlotLength,
   rulerStep,
-  language
+  language,
+  pixelsPerVU
 }) => {
   return (
     <>
@@ -130,6 +132,7 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
         offsetX={0} // Will be passed from parent
         offsetY={0} // Will be passed from parent
         cursorSlotLength={cursorSlotLength}
+        pixelsPerVU={pixelsPerVU}
       />
 
       {/* Ruler overlay */}
@@ -240,7 +243,8 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
     prevProps.v2p === nextProps.v2p &&
     prevProps.cursorSlotLength === nextProps.cursorSlotLength &&
     prevProps.rulerStep === nextProps.rulerStep &&
-    prevProps.language === nextProps.language
+    prevProps.language === nextProps.language &&
+    prevProps.pixelsPerVU === nextProps.pixelsPerVU
   );
 });
 
@@ -257,7 +261,8 @@ export const TabletopBackgroundMemo = memo(TabletopBackground, (prevProps, nextP
     prevProps.currentTool === nextProps.currentTool &&
     prevProps.v2p === nextProps.v2p &&
     prevProps.cursorSlotLength === nextProps.cursorSlotLength &&
-    prevProps.rulerStep === nextProps.rulerStep
+    prevProps.rulerStep === nextProps.rulerStep &&
+    prevProps.pixelsPerVU === nextProps.pixelsPerVU
   );
 });
 

@@ -1035,6 +1035,11 @@ export default React.memo(DeckComponent, (prevProps, nextProps) => {
   if (prevProps.deck.rotation !== nextProps.deck.rotation) return false;
   if (prevProps.deck.locked !== nextProps.deck.locked) return false;
 
+  // IMPORTANT: Check pixelsPerVU - recalculated on window resize / browser zoom /
+  // fullscreen change. Deck size = deck.width * pixelsPerVU, so without this check
+  // the deck keeps its stale pixel size after the viewport scale changes.
+  if (prevProps.pixelsPerVU !== nextProps.pixelsPerVU) return false;
+
   // Check sprite config changes (affects card back rendering)
   const prevSpriteConfig = prevProps.deck.spriteConfig;
   const nextSpriteConfig = nextProps.deck.spriteConfig;

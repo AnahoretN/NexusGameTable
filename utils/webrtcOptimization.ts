@@ -176,16 +176,34 @@ export function debounce<T extends (...args: any[]) => any>(
   return new DebouncedFunction(func, delay);
 }
 
+// Actions that REMOVE objects from state — their changes become tombstones
+// (see getPartialState) so guests learn about deletions from partial sync.
+const DELETION_ACTIONS = new Set(['DELETE_OBJECT', 'DELETE_DICE_GROUP', 'DELETE_DRAWING_LAYER']);
+
+// Payload field that carries the removed object's id per deletion action
+const DELETION_ID_FIELD: Record<string, string> = {
+  DELETE_OBJECT: 'id',
+  DELETE_DICE_GROUP: 'groupId',
+  DELETE_DRAWING_LAYER: 'layerId',
+};
+
 // Differential sync for state changes
 interface ChangeSet {
   type: 'object' | 'player' | 'ui';
   action: any;
   timestamp: number;
+  // 🔧 Deletions: object ids removed by this action that are no longer
+  // recoverable from current state (e.g. dice inside a deleted group)
+  extraIds?: string[];
 }
 
 class DifferentialSyncManager {
   private pendingChanges: ChangeSet[] = [];
   private syncInProgress = false;
+  // 🔧 Object ids present at the last partial sync — the diff against current
+  // state yields ALL removals (cascades, dice groups, any code path), which
+  // are sent as tombstones so guests delete in step with the host.
+  private lastKnownIds: Set<string> | null = null;
 
   addChange(change: ChangeSet): void {
     this.pendingChanges.push(change);
@@ -195,6 +213,11 @@ class DifferentialSyncManager {
     return this.pendingChanges.length > WEBRTC_OPTIMIZATION_CONFIG.MAX_CHANGES_FOR_FULL_SYNC;
   }
 
+  // 🔧 Full sync replaces everything on the guest — rebase the diff baseline
+  resetKnownIds(objects: Record<string, unknown>): void {
+    this.lastKnownIds = new Set(Object.keys(objects));
+  }
+
   // Filter out changes for objects that don't exist in current state
   // (e.g., individual objects that were filtered from broadcast)
   filterInvalidChanges(currentState: any): void {
@@ -202,7 +225,9 @@ class DifferentialSyncManager {
     for (const change of this.pendingChanges) {
       if (change.type === 'object' && change.action.payload?.id) {
         const objId = change.action.payload.id;
-        if (currentState.objects[objId]) {
+        // 🔧 Deletion changes reference objects that are already gone — keep them
+        const isDeletion = DELETION_ACTIONS.has(change.action.type) || Array.isArray(change.extraIds);
+        if (isDeletion || currentState.objects[objId]) {
           validChanges.push(change);
         }
       } else {
@@ -222,12 +247,52 @@ class DifferentialSyncManager {
   getPartialState(currentState: any, currentStateTime: number): any {
     const changedObjectIds = new Set<string>();
     const hasPlayerChanges = this.pendingChanges.some(c => c.type === 'player');
+    // 🔧 Deletions: objects removed on the host that guests must remove too
+    const deletedIds = new Set<string>();
+
+    // 🔧 Diff-based removals: anything that vanished since the last sync
+    // (covers cascade deletions and every removal code path)
+    const removedSinceLastSync: string[] = this.lastKnownIds
+      ? Array.from(this.lastKnownIds).filter(id => !currentState.objects[id])
+      : [];
+
+    // 🔧 Diff-based additions: objects CREATED since the last sync whose id is
+    // generated in the reducer and absent from any action payload (e.g.
+    // CREATE_DRAWING_OBJECT). Without this newly created objects never reach
+    // guests through partial sync.
+    const addedSinceLastSync: string[] = this.lastKnownIds
+      ? Object.keys(currentState.objects).filter(id => !this.lastKnownIds!.has(id))
+      : [];
 
     // Collect IDs of changed objects
     this.pendingChanges.forEach(change => {
       if (change.type !== 'object') return;
 
       const action = change.action;
+
+      // 🔧 Deletion actions: the object is already gone from currentState —
+      // emit a tombstone so guests remove it too (partial merge can't express
+      // deletions otherwise).
+      if (DELETION_ACTIONS.has(action.type)) {
+        const idField = DELETION_ID_FIELD[action.type] || 'id';
+        const removedId = action.payload?.[idField] || action.payload?.id;
+        if (removedId && !currentState.objects[removedId]) {
+          deletedIds.add(removedId);
+        }
+        if (Array.isArray(change.extraIds)) {
+          change.extraIds.forEach((eid: string) => {
+            if (currentState.objects[eid]) {
+              // Survivor of the deletion (e.g. a die whose diceGroupId the
+              // reducer cleared) — sync its updated state, otherwise guests
+              // that missed the ACTION keep stale references forever.
+              changedObjectIds.add(eid);
+            } else {
+              deletedIds.add(eid);
+            }
+          });
+        }
+        return;
+      }
 
       // Most actions use payload.id
       if (action.payload?.id) {
@@ -257,10 +322,19 @@ class DifferentialSyncManager {
         return;
       }
 
-      // PLAY_TOP_CARD: modifies deck (deckId) and card (top card from deck)
+      // PLAY_TOP_CARD: modifies deck (deckId) and the PLAYED card (moved to cursor slot)
       if (action.type === 'PLAY_TOP_CARD' && action.payload?.deckId) {
         changedObjectIds.add(action.payload.deckId);
-        // Also include the top card that will be moved to cursor slot
+        // 🔧 FIX: the PLAYED card is no longer deck.cardIds[0] here — the
+        // reducer already removed it from the deck. Find it by its
+        // __pendingPlayTop marker, otherwise it never reaches guests and
+        // their state stays stale (location: DECK).
+        Object.entries(currentState.objects as Record<string, any>).forEach(([id, obj]) => {
+          if (obj?.__pendingPlayTop?.deckId === action.payload.deckId) {
+            changedObjectIds.add(id);
+          }
+        });
+        // Also include the new top card (top-deck display)
         const deck = currentState.objects[action.payload.deckId];
         if (deck?.cardIds?.[0]) {
           changedObjectIds.add(deck.cardIds[0]);
@@ -300,6 +374,18 @@ class DifferentialSyncManager {
         changedObjectIds.add(action.payload.id);
         return;
       }
+
+      // 🔧 GENERIC FALLBACK: any action referencing known objects via common
+      // payload fields (FLIP_CARD.cardId, ADD_STROKE_TO_DRAWING.drawingId,
+      // UPDATE_DRAWING_LAYER.layerId, RETURN_TO_DECK.deckId, ...). Without
+      // this the change is silently dropped from partial sync and never
+      // reaches guests.
+      (['objectId', 'cardId', 'deckId', 'pileId', 'panelId', 'windowId', 'drawingId', 'layerId'] as const).forEach(key => {
+        const ref = action.payload?.[key];
+        if (typeof ref === 'string' && currentState.objects[ref]) {
+          changedObjectIds.add(ref);
+        }
+      });
     });
 
     console.log('[DifferentialSyncManager] getPartialState', {
@@ -333,6 +419,37 @@ class DifferentialSyncManager {
           id,
           availableIds: Object.keys(currentState.objects).slice(0, 10)
         });
+      }
+    });
+
+    // 🔧 Append deletion tombstones — guests remove these objects on merge
+    deletedIds.forEach(id => {
+      if (!partialObjects[id]) {
+        partialObjects[id] = { id, _deleted: true };
+        validObjectIds.push(id);
+        if (import.meta.env.DEV) {
+          console.log('[DifferentialSyncManager] 🗑️ Including deletion tombstone:', id);
+        }
+      }
+    });
+
+    // 🔧 Diff-based deletion tombstones. NOT capped by MAX_PARTIAL_OBJECTS —
+    // tombstones are tiny and deferring them would strand removals until the
+    // next unrelated state change triggers another broadcast.
+    removedSinceLastSync.forEach(id => {
+      if (!partialObjects[id]) {
+        partialObjects[id] = { id, _deleted: true };
+        validObjectIds.push(id);
+      }
+    });
+    // Baseline for the next diff = current objects (all removals now sent)
+    this.lastKnownIds = new Set(Object.keys(currentState.objects));
+
+    // 🔧 New objects must always reach guests — uncapped like tombstones
+    addedSinceLastSync.forEach(id => {
+      if (!partialObjects[id]) {
+        partialObjects[id] = currentState.objects[id];
+        validObjectIds.push(id);
       }
     });
 

@@ -11,6 +11,7 @@ interface DrawingCanvasProps {
   offsetX: number;
   offsetY: number;
   cursorSlotLength: number; // Number of items in cursor slot
+  pixelsPerVU: number; // Scale factor for converting VU <-> canvas pixels
 }
 
 // Find ALL drawings that overlap with the given stroke (same color only)
@@ -94,8 +95,14 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   height,
   offsetX,
   offsetY,
-  cursorSlotLength = 0
+  cursorSlotLength = 0,
+  pixelsPerVU = 1
 }) => {
+  // Stroke points, thickness and drawing x/y are stored in VU (virtual units),
+  // NOT canvas pixels. This keeps drawings independent of browser zoom /
+  // window size / fullscreen: they scale with the world like every other object.
+  // Convert VU -> canvas px only where we touch the 2D context (const k below).
+  const k = pixelsPerVU;
   const { state, dispatch, isHost } = useGame();
   const activePlayerId = useActivePlayerId();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -263,15 +270,15 @@ setEraserThickness(newThickness);
 
         ctx.beginPath();
         ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = stroke.thickness;
+        ctx.lineWidth = stroke.thickness * k;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
 
         // Transform and draw each point (relative to drawing position)
-        // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
+        // Points are stored in VU - scale to canvas px; offsetX/Y are scroll px
         stroke.points.forEach((point, index) => {
-          const screenX = point.x + drawing.x - offsetX;
-          const screenY = point.y + drawing.y - offsetY;
+          const screenX = (point.x + drawing.x) * k - offsetX;
+          const screenY = (point.y + drawing.y) * k - offsetY;
 
           if (index === 0) {
             ctx.moveTo(screenX, screenY);
@@ -292,14 +299,14 @@ setEraserThickness(newThickness);
     if (isDrawing && currentStroke.length > 0 && currentTool === 'marker') {
       ctx.beginPath();
       ctx.strokeStyle = markerColor;
-      ctx.lineWidth = markerThickness;
+      ctx.lineWidth = markerThickness * k;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
       currentStroke.forEach((point, index) => {
-        // NOTE: offsetX/Y are scroll positions - subtract to offset by scroll
-        const screenX = point.x - offsetX;
-        const screenY = point.y - offsetY;
+        // Points are stored in VU - scale to canvas px; offsetX/Y are scroll px
+        const screenX = point.x * k - offsetX;
+        const screenY = point.y * k - offsetY;
 
         if (index === 0) {
           ctx.moveTo(screenX, screenY);
@@ -310,7 +317,7 @@ setEraserThickness(newThickness);
 
       ctx.stroke();
     }
-  }, [drawings, localDrawingsCache, offsetX, offsetY, currentTool, markerColor, markerThickness, eraserThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel]);
+  }, [drawings, localDrawingsCache, offsetX, offsetY, currentTool, markerColor, markerThickness, eraserThickness, isDrawing, currentStroke, isAltPressed, isShiftPressed, isOverPanel, pixelsPerVU]);
 
   // Helper function to redraw with cache for immediate eraser feedback
 
@@ -322,13 +329,13 @@ setEraserThickness(newThickness);
     const screenX = clientX - rect.left;
     const screenY = clientY - rect.top;
 
-    // Convert screen position to world position
-    // NOTE: offsetX/Y are scroll positions - add to convert screen to world
+    // Convert screen px to world position in VU
+    // (canvas px = VU * pixelsPerVU; offsetX/Y are scroll px)
     return {
-      x: screenX + offsetX,
-      y: screenY + offsetY
+      x: (screenX + offsetX) / k,
+      y: (screenY + offsetY) / k
     };
-  }, [offsetX, offsetY]);
+  }, [offsetX, offsetY, pixelsPerVU]);
 
   // Global mouse move handler to track cursor position even when over panels (canvas has pointer-events: none)
   useEffect(() => {
@@ -378,7 +385,8 @@ setEraserThickness(newThickness);
     redrawCanvasRef.current = redrawCanvas;
   }, [redrawCanvas]);
 
-  // Redraw canvas when drawings or view transform changes (for displaying drawings even when tool is 'none')
+  // Redraw canvas when drawings, view transform or viewport scale changes
+  // (pixelsPerVU changes canvas px size, so drawings must be redrawn in new scale)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas) {
@@ -387,7 +395,7 @@ setEraserThickness(newThickness);
         redrawCanvasRef.current(ctx);
       }
     }
-  }, [state.objects, offsetX, offsetY]); // Only depend on things that affect drawing display
+  }, [state.objects, offsetX, offsetY, pixelsPerVU]); // Only depend on things that affect drawing display
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (currentTool !== 'marker' && currentTool !== 'eraser') return;
@@ -541,7 +549,8 @@ setEraserThickness(newThickness);
       lastEraserProcessTimeRef.current = now;
 
       // Eraser effect is 30% larger than the setting for better coverage
-      const eraserRadius = eraserThickness * 0.65;
+      // (eraserThickness is a screen-px setting; eraser math runs in VU)
+      const eraserRadius = (eraserThickness * 0.65) / k;
 
       // Partial eraser: remove only touched points from strokes (uses cached drawings for immediate feedback)
 
@@ -708,13 +717,13 @@ setEraserThickness(newThickness);
 
             ctx.beginPath();
             ctx.strokeStyle = stroke.color;
-            ctx.lineWidth = stroke.thickness;
+            ctx.lineWidth = stroke.thickness * k;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
 
             stroke.points.forEach((point, index) => {
-              const screenX = point.x + drawingToDraw.x - offsetX;
-              const screenY = point.y + drawingToDraw.y - offsetY;
+              const screenX = (point.x + drawingToDraw.x) * k - offsetX;
+              const screenY = (point.y + drawingToDraw.y) * k - offsetY;
 
               if (index === 0) {
                 ctx.moveTo(screenX, screenY);
@@ -740,23 +749,24 @@ setEraserThickness(newThickness);
         const lastPoint = currentStroke[currentStroke.length - 1];
 
         // Draw only the new line segment from last point to current position
+        // (points are in VU - scale to canvas px)
         ctx.beginPath();
         ctx.strokeStyle = markerColor;
-        ctx.lineWidth = markerThickness;
+        ctx.lineWidth = markerThickness * k;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
 
-        const lastScreenX = lastPoint.x - offsetX;
-        const lastScreenY = lastPoint.y - offsetY;
-        const screenX = pos.x - offsetX;
-        const screenY = pos.y - offsetY;
+        const lastScreenX = lastPoint.x * k - offsetX;
+        const lastScreenY = lastPoint.y * k - offsetY;
+        const screenX = pos.x * k - offsetX;
+        const screenY = pos.y * k - offsetY;
 
         ctx.moveTo(lastScreenX, lastScreenY);
         ctx.lineTo(screenX, screenY);
         ctx.stroke();
       }
     }
-  }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartPos, dragStartDrawingPos, currentTool, getWorldPosition, currentStroke, redrawCanvas, markerColor, markerThickness, offsetX, offsetY, dispatch]);
+  }, [isDrawing, isDraggingDrawing, draggedDrawingId, dragStartPos, dragStartDrawingPos, currentTool, getWorldPosition, currentStroke, redrawCanvas, markerColor, markerThickness, offsetX, offsetY, pixelsPerVU, dispatch]);
 
   const handleMouseUp = useCallback(() => {
     // Handle drawing drag end
@@ -1078,8 +1088,8 @@ setEraserThickness(newThickness);
       : currentTool === 'eraser' && isShiftPressed
         ? 'default' // Will be overridden by inline style
         : currentTool === 'marker'
-          ? generateMarkerCursor(markerColor, markerThickness)
-          : generateEraserCursor(eraserThickness);
+          ? generateMarkerCursor(markerColor, markerThickness * k)
+          : generateEraserCursor(eraserThickness * k);
 
   // Custom cursor for eraser+shift (trash icon)
   const eraserShiftCursor = currentTool === 'eraser' && isShiftPressed
@@ -1115,6 +1125,9 @@ export default React.memo(DrawingCanvas, (prevProps, nextProps) => {
   if (prevProps.offsetX !== nextProps.offsetX) return false;
   if (prevProps.offsetY !== nextProps.offsetY) return false;
   if (prevProps.cursorSlotLength !== nextProps.cursorSlotLength) return false;
+  // IMPORTANT: re-render when viewport scale changes (browser zoom / fullscreen),
+  // otherwise strokes keep stale pixel scaling
+  if (prevProps.pixelsPerVU !== nextProps.pixelsPerVU) return false;
 
   // All props are the same - skip re-render
   return true;

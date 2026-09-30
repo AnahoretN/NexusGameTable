@@ -561,5 +561,13 @@ export const BoardWithResizeMemo = React.memo(BoardWithResize, (prevProps, nextP
         return false; // Re-render when zoom changes
     }
 
+    // IMPORTANT: Check pixelsPerVU changes - recalculated on window resize /
+    // browser zoom / fullscreen change. Without this the grid SVG inside keeps
+    // its stale pixel size while the board wrapper resizes around it, so the
+    // grid no longer covers the whole board until it is moved.
+    if (prevProps.pixelsPerVU !== nextProps.pixelsPerVU) {
+        return false; // Re-render when viewport scale changes
+    }
+
     return true; // Skip re-render by default
 });

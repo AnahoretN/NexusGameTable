@@ -2,6 +2,34 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.3.1] - 2026-09-30
+
+### 🛠️ Fixes
+
+#### Differential (partial) sync
+- **Deletion tombstones**: partial syncs now append tombstones for objects removed on the host — cascade deletions in the window before a guest's first full sync are no longer lost
+- **Diff baseline rebase**: after the initial full sync the deletion-diff baseline is rebased (`resetKnownIds`), so subsequent partial syncs only carry changes
+- **Actions without `payload.id`**: `FLIP_CARD`, `PLAY_TOP_CARD` and other deck actions are mapped to the affected objects via a generic fallback instead of being dropped from partial syncs
+
+#### Cursor slot / hand drops
+- The host's `inCursorSlot` flag is now authoritative; the old `x > -90000` requirement broke hand drops (card coordinates could legitimately be in the hidden range)
+
+#### Panels & windows on individual layers
+- Panels/windows sync their **creation position** — moving a panel locally no longer moves guests' copies
+- **Hidden/visible** state of panels syncs from the host (host show/hide applies to everyone)
+
+#### Drawing canvas & VU system
+- Stroke points, thickness and drawing positions are stored in **VU (virtual units)**, not canvas pixels — drawings now scale correctly with browser zoom, window resize and fullscreen
+- Decks recalculate their pixel size when `pixelsPerVU` changes (previously kept a stale size after viewport scale changes)
+
+#### Connection lock
+- A locked host now rejects new Trystero players (`HELO` is refused, guest receives a `CONNECTION_LOCKED` notice) — parity with the PeerJS host path
+
+#### Player updates
+- `UPDATE_PLAYER` accepts both flat and wrapped (`{id, updates}`) payload formats; returning players are matched by name
+
+---
+
 ## [0.3.0] - 2026-09-29
 
 ### 🏗️ Architecture

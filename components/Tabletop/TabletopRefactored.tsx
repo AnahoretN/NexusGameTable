@@ -1185,6 +1185,7 @@ export const Tabletop: React.FC = () => {
         cursorSlotLength={cursorSlot.length}
         rulerStep={rulerStep}
         language={language}
+        pixelsPerVU={pixelsPerVU}
       />
 
       {/* Remote Objects Layer */}

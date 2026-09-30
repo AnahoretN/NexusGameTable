@@ -16,6 +16,7 @@ import { logger } from '../../utils/logger';
 import { decompressWebRTCData } from '../../utils/dataCompression';
 import { filterLocalPanelProperties } from '../../utils/panelSync';
 import { filterObjectsForBroadcast } from '../../utils/individualPositions';
+import { differentialSyncManager } from '../../utils/webrtcOptimization';
 import {
   handleDirectSyncMessage,
   DirectP2PMessage
@@ -118,6 +119,13 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
   return (data: any, senderConn: SenderConn) => {
     // 🔧 DEV diagnostic: mark which layer processed each network message
     logger.log('[Session] Received data:', data?.type);
+
+    // Host has locked new connections (guest side). PeerJS guests get the same
+    // treatment from their transport's data handler.
+    if (data.type === 'CONNECTION_LOCKED') {
+      alert('The host has locked new connections. Please contact the host to join.');
+      return;
+    }
 
     // Process PACKS_NEEDED BEFORE SYNC_STATE
     // This ensures guest knows which packs are needed before state sync
@@ -291,23 +299,41 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
     } else if (data.type === 'HELO') {
       // Host received new player info
       const newPlayer = data.payload;
+
+      // Connection lock enforcement (parity with the PeerJS host accept path):
+      // a locked host does not accept new players.
+      if (stateRef.current?.connectionsLocked) {
+        senderConn.send({ type: 'CONNECTION_LOCKED' });
+        return;
+      }
+
       localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
 
       // Wait for state to update before sending SYNC_STATE
       // localDispatch is async, so we need to wait for the next tick to get updated state
       setTimeout(() => {
-        const stateToSend = { ...stateRef.current };
+        // Filtered initial state (same as the backup push): strips local panel
+        // props and individual-object positions the guest must not receive —
+        // the raw state also leaks those and is slightly larger.
+        const reply = buildInitialSyncState(stateRef.current);
 
         // Verify that new player is in the state before sending
-        const playerExists = stateToSend.players?.some((p: any) => p.id === newPlayer.id);
+        const playerExists = reply.payload.players?.some((p: any) => p.id === newPlayer.id);
         if (!playerExists) {
           // Retry after another tick
           setTimeout(() => {
-            const retryState = { ...stateRef.current };
-            senderConn.send({ type: 'SYNC_STATE', payload: retryState });
+            senderConn.send({ type: 'SYNC_STATE', payload: buildInitialSyncState(stateRef.current).payload });
+            // Guest received everything — rebase the deletion-diff baseline so
+            // the next partial sync only reports changes from now on.
+            differentialSyncManager.resetKnownIds(stateRef.current?.objects || {});
           }, 50);
         } else {
-          senderConn.send({ type: 'SYNC_STATE', payload: stateToSend });
+          senderConn.send({ type: 'SYNC_STATE', payload: reply.payload });
+          // Guest received everything — rebase the deletion-diff baseline so
+          // the next partial sync only reports changes from now on (otherwise
+          // it stays null until the first full sync and cascade deletions in
+          // that window are never tombstoned to this guest).
+          differentialSyncManager.resetKnownIds(stateRef.current?.objects || {});
         }
       }, 0);
 

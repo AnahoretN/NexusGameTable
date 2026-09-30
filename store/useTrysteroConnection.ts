@@ -24,6 +24,8 @@ import {
   buildPacksNeeded,
   buildInitialSyncState
 } from './session/protocol';
+import { registerP2PConnections } from '../utils/directP2PSync';
+import { differentialSyncManager } from '../utils/webrtcOptimization';
 
 // ============================================================================
 // TYPES
@@ -224,6 +226,16 @@ export function useTrysteroConnection(
   // Whether the guest has received at least one state sync from the host
   const receivedSyncRef = useRef(false);
 
+  // Peers rejected because the host locked connections. Trystero has no way to
+  // close a peer connection, so without this set the add-only reconcile loop
+  // (and handleNetworkData's inbound-sender push) would re-add the rejected
+  // peer and the host would keep streaming game state to it.
+  const rejectedPeersRef = useRef<Set<string>>(new Set());
+
+  // Set on the guest when the host answers with CONNECTION_LOCKED — stops the
+  // HELO retry loop (each retry would pop another blocking alert).
+  const connectionLockedRef = useRef(false);
+
   // Interval keeping the connection list in sync with the room's peer set
   const reconcileTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -231,6 +243,16 @@ export function useTrysteroConnection(
     const room = roomRef.current;
     if (!room) return;
     reconcileConnections(room, connectionsRef.current, sendRef.current);
+    // Drop peers this host has rejected — reconcile is add-only and would
+    // otherwise resurrect them from getPeers() on every tick.
+    if (rejectedPeersRef.current.size > 0) {
+      const list = connectionsRef.current;
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (rejectedPeersRef.current.has(list[i].peerId)) {
+          list.splice(i, 1);
+        }
+      }
+    }
   }, []);
 
   // Room ID for Trystero
@@ -252,6 +274,21 @@ export function useTrysteroConnection(
   const handleNetworkData = useCallback((data: any, peerId: string) => {
     if (data?.type === 'SYNC_STATE') {
       receivedSyncRef.current = true;
+    }
+    // A locked host keeps rejecting this guest. Remember it so the HELO retry
+    // loop stops (each retry pops another blocking alert) and surface the
+    // failure in the loading modal — the PeerJS guest path does the same
+    // (setConnectionStatus('disconnected') + modal cleanup).
+    if (data?.type === 'CONNECTION_LOCKED' && !isHost) {
+      connectionLockedRef.current = true;
+      setConnectionStatus('disconnected');
+      updateP2PLoadingStep('handshake', 'error', 'The host has locked new connections');
+    }
+    // Rejected peers must never re-enter the broadcast list — their inbound
+    // traffic would otherwise re-add them below and re-leak game state.
+    if (peerId && rejectedPeersRef.current.has(peerId)) {
+      sendRef.current?.({ type: 'CONNECTION_LOCKED' }, peerId);
+      return;
     }
     // An inbound message is the STRONGEST proof of connectivity — trystero only
     // delivers data from ACTIVE peers (pending peers are dropped internally),
@@ -279,7 +316,7 @@ export function useTrysteroConnection(
       },
     };
     protocolHandlerRef.current(data, senderConn);
-  }, [reconcile]);
+  }, [reconcile, isHost, setConnectionStatus, updateP2PLoadingStep]);
 
   // ============================================================================
   // INITIALIZE HOST
@@ -337,9 +374,28 @@ export function useTrysteroConnection(
     if (reconcileTimerRef.current) clearInterval(reconcileTimerRef.current);
     reconcileTimerRef.current = setInterval(reconcile, 2000);
 
+    // Register for direct P2P sync (token sliders/counters, character blocks) —
+    // broadcast*() in directP2PSync reads these; without registration those
+    // updates silently go nowhere on this transport.
+    registerP2PConnections({
+      hostConnection: null,
+      connections: connectionsRef.current,
+      isHost: true,
+    });
+
     // Handle peer join
     room.onPeerJoin((peerId: string) => {
       console.log('[Trystero] Peer joined:', peerId);
+
+      // Connection lock (parity with the PeerJS host accept path): reject the
+      // peer without adding it to the broadcast list.
+      if (stateRef.current?.connectionsLocked) {
+        console.log('[Trystero] Connections locked — rejecting peer', peerId);
+        rejectedPeersRef.current.add(peerId);
+        sendRef.current?.({ type: 'CONNECTION_LOCKED' }, peerId);
+        return;
+      }
+
       reconcile();
       updateP2PLoadingStep('p2p', 'success', 'P2P connection established');
 
@@ -351,6 +407,10 @@ export function useTrysteroConnection(
           console.log('[Trystero] Sending backup packs+state to', peerId);
           sendRef.current(buildPacksNeeded(stateRef.current), peerId);
           sendRef.current(buildInitialSyncState(stateRef.current), peerId);
+          // The guest just received everything — rebase the deletion-diff
+          // baseline so the next partial sync only reports changes from now on
+          // (and cascade deletions are covered from the very first sync).
+          differentialSyncManager.resetKnownIds(stateRef.current?.objects || {});
         }
       }, 1500);
     });
@@ -400,12 +460,22 @@ export function useTrysteroConnection(
 
       // Expose the send channel via hostConnectionRef — GameContext sends all
       // guest→host actions through hostConnectionRef.current.send(...)
+      // `open: true` is also required: directP2PSync's guest path checks
+      // hostConnection.open before sending.
       hostConnectionRef.current = {
+        open: true,
         send: (data: any) => {
           const current = sendRef.current;
           if (current) current(data);
         },
       };
+
+      // Register for direct P2P sync (token sliders/counters, character blocks)
+      registerP2PConnections({
+        hostConnection: hostConnectionRef.current,
+        connections: connectionsRef.current,
+        isHost: false,
+      });
 
       // Mark connected as soon as the send channel exists — the guest's
       // dispatch path drops actions silently while connectionStatus is
@@ -447,9 +517,15 @@ export function useTrysteroConnection(
       // Retry HELO until the host's state sync arrives — the first reply can
       // be lost while the peer connection is still settling on either side.
       receivedSyncRef.current = false;
+      connectionLockedRef.current = false;
       let heloRetries = 0;
       const heloTimer = setInterval(() => {
-        if (receivedSyncRef.current || heloRetries >= 12 || roomRef.current !== room) {
+        if (
+          receivedSyncRef.current ||
+          heloRetries >= 12 ||
+          roomRef.current !== room ||
+          connectionLockedRef.current
+        ) {
           clearInterval(heloTimer);
           return;
         }
@@ -460,7 +536,9 @@ export function useTrysteroConnection(
 
       setConnectionStatus('connected');
       updateP2PLoadingStep('p2p', 'success', 'Connected to room');
-      updateP2PLoadingStep('handshake', 'success', 'Handshake complete');
+      // Handshake is NOT complete yet — HELO was just sent. The protocol marks
+      // this step 'Connected to host!' when the host's PACKS_NEEDED arrives.
+      updateP2PLoadingStep('handshake', 'loading', 'Waiting for host response...');
 
     } catch (error) {
       console.error('[Trystero] Failed to connect:', error);

@@ -23,7 +23,7 @@ import {
   initialViewTransformState,
   ViewTransform,
 } from './contextTypes';
-import { calculatePixelsPerVU } from '../../utils/vuSystem';
+import { calculatePixelsPerVU, trackViewportResize } from '../../utils/vuSystem';
 import { viewportToWorld as utilViewportToWorld, worldToViewport as utilWorldToViewport } from '../../utils/coordinateUtils';
 
 // ============================================================================
@@ -104,14 +104,16 @@ export function ViewTransformProvider({ children }: { children: React.ReactNode 
   const [state, dispatch] = useReducer(viewTransformReducer, initialViewTransformState);
 
   // Handle window resize to update pixelsPerVU
+  // resize covers: window resize, browser zoom (Ctrl+scroll / Ctrl±), fullscreen
+  // transition. fullscreenchange and orientationchange are added as insurance
+  // for browsers/systems where resize may lag or not fire.
   useEffect(() => {
     const handleResize = () => {
       const newPixelsPerVU = calculatePixelsPerVU(window.innerWidth, window.innerHeight);
       dispatch({ type: 'SET_PIXELS_PER_VU', payload: newPixelsPerVU });
     };
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return trackViewportResize(handleResize);
   }, []);
 
   // Actions

@@ -32,10 +32,19 @@ interface GuestConnectionModalProps {
   // Connection progress
   connectionSteps: P2PLoadingStep[];
   connectionProgress: number;
+  // Which P2P transport is in use (badge in the header)
+  connectionMethod?: 'peerjs' | 'iroh' | 'trystero';
   // Ready to join
   canJoin: boolean;
   onJoin: () => void;
 }
+
+/** Badge shown in the modal's top-right corner for the active P2P transport. */
+const CONNECTION_BADGES: Record<'peerjs' | 'iroh' | 'trystero', { label: string; className: string }> = {
+  peerjs: { label: 'P2P · PeerJS', className: 'border-blue-500/50 bg-blue-500/10 text-blue-300' },
+  trystero: { label: 'P2P · BitTorrent (Trystero)', className: 'border-cyan-500/50 bg-cyan-500/10 text-cyan-300' },
+  iroh: { label: 'P2P · Iroh', className: 'border-amber-500/50 bg-amber-500/10 text-amber-300' },
+};
 
 export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
   isOpen,
@@ -46,6 +55,7 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
   dispatch,
   connectionSteps,
   connectionProgress,
+  connectionMethod,
   canJoin,
   onJoin,
 }) => {
@@ -234,7 +244,15 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
     <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-slate-900 border border-purple-500/50 rounded-lg shadow-2xl w-[550px] max-h-[90vh] overflow-hidden flex flex-col relative">
         {/* Header */}
-        <div className="p-6 border-b border-slate-800">
+        <div className="p-6 border-b border-slate-800 relative">
+          {connectionMethod && (
+            <div
+              className={`absolute top-3 right-3 px-2.5 py-1 rounded-full border text-xs font-medium ${CONNECTION_BADGES[connectionMethod].className}`}
+              title="Active P2P connection system"
+            >
+              {CONNECTION_BADGES[connectionMethod].label}
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <div className="w-14 h-14 rounded-full bg-purple-500/20 flex items-center justify-center">
               <Wifi className="text-purple-500" size={28} />

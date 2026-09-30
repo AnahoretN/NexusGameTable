@@ -3,8 +3,18 @@
  * Handles object positions and visibility on hyperscale layers with individualObjects enabled
  */
 
-import { TableObject, HyperscaleLayer } from '../types';
+import { TableObject, HyperscaleLayer, ItemType } from '../types';
 import { PlayerObjectPositions } from '../store/gameState';
+
+/**
+ * 🔧 Panels/windows on individual objects layers sync their CREATION position:
+ * guests must see a new panel where the host created it. Their subsequent
+ * MOVEMENT stays per-player (position changes are excluded from sync in the
+ * GameContext change tracker and rendering uses playerObjectPositions).
+ */
+export function individualObjectKeepsPosition(obj: TableObject): boolean {
+  return obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW;
+}
 
 /**
  * Check if an object is on a hyperscale layer with individualObjects enabled
@@ -90,10 +100,17 @@ export function filterObjectsForBroadcast(
       const filteredObj: any = { ...obj };
 
       // Remove position-related properties
-      delete filteredObj.x;
-      delete filteredObj.y;
-      delete filteredObj.rotation;
-      delete filteredObj.zIndex;
+      // 🔧 Panels/windows keep x/y/rotation/zIndex — their creation position
+      // must sync to guests (movement is per-player and is excluded from sync)
+      if (!individualObjectKeepsPosition(obj)) {
+        delete filteredObj.x;
+        delete filteredObj.y;
+        delete filteredObj.rotation;
+        delete filteredObj.zIndex;
+      }
+
+      // 🔧 Panels/windows: hidden/visible SYNC from the host (host shows/hides
+      // → everyone sees it). Minimized/expanded state and size stay per-player.
 
       // Lock/unlock state is individual per player
       delete filteredObj.locked;
@@ -104,12 +121,13 @@ export function filterObjectsForBroadcast(
       delete filteredObj.expandedPinnedPosition;
       delete filteredObj.collapsedPinnedPosition;
 
-      // Visibility properties are individual per player
-      delete filteredObj.hidden;
-      delete filteredObj.visible;
+      // Visibility properties are individual per player —
+      // 🔧 EXCEPT panels/windows: host show/hide syncs to everyone
+      if (!individualObjectKeepsPosition(obj)) {
+        delete filteredObj.hidden;
+        delete filteredObj.visible;
+      }
       delete filteredObj.visibleToOthers;
-
-      // Note: width/height are kept because they affect rendering, not position
 
       filteredObjects[id] = filteredObj;
     } else {

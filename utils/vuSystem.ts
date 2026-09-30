@@ -48,3 +48,23 @@ export function pixelsToVu(px: number, pixelsPerVU: number): number {
   }
   return px / pixelsPerVU;
 }
+
+/**
+ * Wire up every viewport-change event that can alter pixelsPerVU:
+ * - resize: window resize, browser zoom (Ctrl+scroll / Ctrl±), fullscreen transition
+ * - fullscreenchange / orientationchange: insurance for browsers/systems where
+ *   resize may lag or not fire.
+ *
+ * Single source of truth shared by GameContext and ViewTransformContext —
+ * returns a cleanup function for the effect's return.
+ */
+export function trackViewportResize(handler: () => void): () => void {
+  window.addEventListener('resize', handler);
+  document.addEventListener('fullscreenchange', handler);
+  window.addEventListener('orientationchange', handler);
+  return () => {
+    window.removeEventListener('resize', handler);
+    document.removeEventListener('fullscreenchange', handler);
+    window.removeEventListener('orientationchange', handler);
+  };
+}

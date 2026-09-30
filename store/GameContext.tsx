@@ -27,7 +27,7 @@ import {
   measureSyncTime,
   WEBRTC_OPTIMIZATION_CONFIG
 } from '../utils/webrtcOptimization';
-import { calculatePixelsPerVU } from '../utils/vuSystem';
+import { calculatePixelsPerVU, trackViewportResize } from '../utils/vuSystem';
 import { logger } from '../utils/logger';
 import { clearCardDimensionsCache } from '../utils/cardUtils';
 import { findAvailableTerritory } from '../utils/territoryManager';
@@ -41,7 +41,7 @@ import {
   syncTokenImageToCharacter
 } from '../utils/characterTokenSync';
 import { allocateZIndexInHyperslice, defragmentHyperslice } from '../utils/zIndexAllocator';
-import { isObjectIndividual } from '../utils/individualPositions';
+import { isObjectIndividual, individualObjectKeepsPosition } from '../utils/individualPositions';
 import { addPackToGameReducer } from './reducers/appReducers';
 
 const GameContext = createContext<{
@@ -80,11 +80,20 @@ const gameReducer = (state: GameState, action: Action): GameState => {
   // Exclude objects on individual position/objects layers (local-only changes)
   // Exclude UPDATE_PLAYER_OBJECT_POSITION (host-only action, should not broadcast)
   const wrappedUpdates = action.type === 'UPDATE_OBJECT' ? getWrappedUpdates(action) : undefined;
+  // 🔧 FIX: hidden-position (-999999) updates must still sync when they carry
+  // final state — e.g. dropping a card to HAND sets x:-999999 + location:HAND +
+  // ownerId. Previously the whole update was excluded and guests never learned
+  // the card left the table ("карта пропала при сбросе в руку").
+  const isCursorSlotHide =
+    wrappedUpdates !== undefined &&
+    wrappedUpdates.inCursorSlot !== false &&
+    ((wrappedUpdates.x !== undefined && wrappedUpdates.x < -900000) ||
+      (wrappedUpdates.y !== undefined && wrappedUpdates.y < -900000));
   let shouldExcludeFromSync =
     action.type === 'SYNC_STATE' ||
     action.type === 'UPDATE_PLAYER_OBJECT_POSITION' || // Host-only: stores individual position, don't broadcast
     (wrappedUpdates?.inCursorSlot === true) ||
-    (wrappedUpdates !== undefined && (wrappedUpdates.x !== undefined && wrappedUpdates.x < -900000 || wrappedUpdates.y !== undefined && wrappedUpdates.y < -900000));
+    isCursorSlotHide;
 
   // SIMPLIFIED: For individualObjects layers, exclude local-only properties from P2P sync
   if (action.type === 'UPDATE_OBJECT' && action.payload?.id) {
@@ -129,6 +138,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
   // For individualObjects layers, exclude lock/pin state changes from P2P sync
   // These are individual per player (each player has their own lock/pin state)
+  // 🔧 Panels/windows on individual layers: MOVEMENT is per-player — the host
+  // moving their panel must not move guests' copies (creation position synced)
+  if ((action.type === 'MOVE_OBJECT' || action.type === 'MOVE_OBJECT_COMMIT') && action.payload?.id) {
+    const obj = state.objects[action.payload.id];
+    if (obj && (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) && isObjectIndividual(obj, state.hyperscaleLayers)) {
+      shouldExcludeFromSync = true;
+    }
+  }
   if ((action.type === 'TOGGLE_LOCK' || action.type === 'PIN_TO_VIEWPORT' || action.type === 'UNPIN_FROM_VIEWPORT') && action.payload?.id) {
     const obj = state.objects[action.payload.id];
     if (obj && obj.hyperscaleLayerId) {
@@ -158,10 +175,21 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       changeType = 'player';
     }
 
+    // 🔧 Deletions: capture ids that become unrecoverable once the reducer
+    // removes them (needed for partial-sync tombstones)
+    let extraIds: string[] | undefined;
+    if (action.type === 'DELETE_DICE_GROUP' && action.payload?.groupId) {
+      const group = (state as any).diceGroups?.find((g: any) => g.id === action.payload.groupId);
+      if (group?.diceIds?.length) {
+        extraIds = [action.payload.groupId, ...group.diceIds];
+      }
+    }
+
     differentialSyncManager.addChange({
       type: changeType,
       action: action,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      extraIds,
     });
   }
 
@@ -226,20 +254,67 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
                 // Update or add each incoming object
                 Object.entries(incomingObjects).forEach(([id, obj]) => {
-                  // Skip individual objects - they are per-player and should not be synced from host
-                  if (isObjectIndividual(obj, state.hyperscaleLayers)) {
+                  // 🔧 Deletion tombstone — the host removed this object
+                  if (obj && (obj as any)._deleted) {
+                    delete finalObjects[id];
+                    if (isInCursorSlot(id)) {
+                      removeFromCursorSlot(id);
+                    }
                     return;
                   }
 
-                  // 🔥 FIX: Check if object is in cursor slot and host sent valid coordinates
-                  // If host sent coordinates other than -999999, it means the drop was confirmed
+                  // 🔧 Individual Objects layers: ALL objects on them have per-player
+                  // local coordinates. Merge rule:
+                  //   - non-position properties (content, counters, character data...)
+                  //     always sync from the host;
+                  //   - LOCAL position is preserved (movement is per-player);
+                  //   - LOCAL minimized/expand state and size are preserved
+                  //     (per-player panel state);
+                  //   - host hidden/visible DO apply (host show/hide → everyone);
+                  //   - objects NEW to this client take the host's creation position.
+                  // Existence and deletion always sync (tombstones above).
+                  if (isObjectIndividual(obj, state.hyperscaleLayers)) {
+                    const local = state.objects[id] as any;
+                    if (local && local.x !== undefined) {
+                      const merged: any = {
+                        ...obj,
+                        x: local.x,
+                        y: local.y,
+                        rotation: local.rotation ?? obj.rotation,
+                        zIndex: local.zIndex ?? obj.zIndex,
+                        width: local.width ?? obj.width,
+                        height: local.height ?? obj.height,
+                      };
+                      // Per-player panel state — keep local when present
+                      if ((local as any).minimized !== undefined || (obj as any).minimized !== undefined) {
+                        merged.minimized = (local as any).minimized ?? (obj as any).minimized;
+                      }
+                      if ((local as any).expandedState !== undefined || (obj as any).expandedState !== undefined) {
+                        merged.expandedState = (local as any).expandedState ?? (obj as any).expandedState;
+                      }
+                      if ((local as any).collapsedState !== undefined || (obj as any).collapsedState !== undefined) {
+                        merged.collapsedState = (local as any).collapsedState ?? (obj as any).collapsedState;
+                      }
+                      finalObjects[id] = merged;
+                    } else {
+                      finalObjects[id] = obj;
+                    }
+                    return;
+                  }
+
+                  // 🔥 FIX: Check if object is in cursor slot and the host released it.
+                  // The host's inCursorSlot flag is authoritative: false means the object
+                  // left every cursor slot — dropped on the table (real coordinates) OR
+                  // moved to a hand (hidden at -999999).
                   // Remove from cursor slot so object becomes visible at new position
                   if (isInCursorSlot(id)) {
                     const localObj = state.objects[id] as any;
                     const originalPos = getOriginalPosition(id);
 
-                    // Check if host confirmed the drop (coordinates are not -999999)
-                    const hostConfirmedDrop = obj.x > -90000 && obj.y > -90000 && obj.inCursorSlot === false;
+                    // 🔧 FIX: the old `x > -90000` requirement broke hand drops — a card
+                    // dropped to a hand stays at -999999 and was forever re-preserved as
+                    // "still dragging", so it never appeared in the guest's hand panel.
+                    const hostConfirmedDrop = obj.inCursorSlot === false;
 
                     if (hostConfirmedDrop) {
                       // Host confirmed the drop - remove from cursor slot
@@ -285,8 +360,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                   const localObj = state.objects[id] as any;
                   const originalPos = getOriginalPosition(id);
 
-                  // Check if host confirmed the drop (coordinates are not -999999)
-                  const hostConfirmedDrop = incomingObj.x > -90000 && incomingObj.y > -90000 && incomingObj.inCursorSlot === false;
+                  // 🔧 FIX: host's inCursorSlot flag is authoritative (see partial-merge
+                  // comment) — the old x > -90000 check broke hand drops (card stays at
+                  // -999999 in a hand and was forever preserved as "still dragging")
+                  const hostConfirmedDrop = incomingObj.inCursorSlot === false;
 
                   if (hostConfirmedDrop) {
                     // Host confirmed the drop - remove from cursor slot
@@ -751,9 +828,36 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'ADD_PLAYER': {
         // Prevent duplicates
         if (state.players.find(p => p.id === action.payload.id)) return state;
+
+        // 🔧 Individual-object positions AND per-player panel settings are keyed
+        // by session player id, but must survive across sessions per PLAYER NAME:
+        // when a returning player joins (same name, new random id), migrate the
+        // data saved under their old id so their individual-layer objects load
+        // where they left them and their panel states (minimized/size/position)
+        // are restored.
+        const returning = state.players.find(
+          p => p.name === action.payload.name && p.id !== action.payload.id
+        );
+        let playerObjectPositions = state.playerObjectPositions;
+        if (returning && state.playerObjectPositions?.[returning.id]) {
+          playerObjectPositions = {
+            ...state.playerObjectPositions,
+            [action.payload.id]: state.playerObjectPositions[returning.id],
+          };
+        }
+        let playerPanelSettings = state.playerPanelSettings;
+        if (returning && state.playerPanelSettings?.[returning.id]) {
+          playerPanelSettings = {
+            ...state.playerPanelSettings,
+            [action.payload.id]: state.playerPanelSettings[returning.id],
+          };
+        }
+
         return {
             ...state,
-            players: [...state.players, action.payload]
+            players: [...state.players, action.payload],
+            playerObjectPositions,
+            playerPanelSettings,
         };
     }
     case 'REMOVE_PLAYER': {
@@ -822,10 +926,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'UPDATE_PLAYER': {
+        // 🔧 FIX: support both flat ({id, name, ...}) and wrapped ({id, updates: {...}})
+        // payloads. HandPanel dispatches the wrapped format — the old code spread the
+        // whole payload onto the player, so `updates.handCardOrder` was never applied
+        // (a garbage `updates` key was added instead) and hand tabs never sorted/updated.
+        const playerUpdates = (action.payload as any).updates ?? action.payload;
         return {
             ...state,
             players: state.players.map(p =>
-                p.id === action.payload.id ? { ...p, ...action.payload } : p
+                p.id === action.payload.id ? { ...p, ...playerUpdates } : p
             )
         };
     }
@@ -1089,9 +1198,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         ];
 
         // Check if updates contain only local-only properties
-        const updates = wrapped || {};
+        // 🔧 FIX: fall back to flatUpdates — for flat-format payloads ({id, isOnTable})
+        // `wrapped` is undefined and the vacuous `[].every()` returned true, making
+        // this branch return `{...obj}` UNCHANGED: every flat-format update to a
+        // panel/window (hide/show, position) was silently DROPPED.
+        const updates = wrapped || flatUpdates;
         const updateKeys = Object.keys(updates);
-        const hasOnlyLocalProps = updateKeys.every(key => localOnlyProps.includes(key));
+        const hasOnlyLocalProps = updateKeys.length > 0 && updateKeys.every(key => localOnlyProps.includes(key));
 
         // If only local properties are being updated, apply them locally and skip network sync
         if (hasOnlyLocalProps && updateKeys.length > 0) {
@@ -6910,8 +7023,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     });
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    // resize covers: window resize, browser zoom (Ctrl+scroll / Ctrl±), fullscreen
+    // transition. fullscreenchange and orientationchange are added as insurance
+    // for browsers/systems where resize may lag or not fire.
+    return trackViewportResize(handleResize);
   }, []);
 
   // Initialize Default Board and Standard Deck (or load from storage)
@@ -7238,6 +7353,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Middleware Dispatcher - memoized with useCallback to prevent infinite loops
   const dispatch = useCallback((action: Action) => {
+      // 🔧 FIX: read the FRESH state through the ref. This callback's deps do
+      // not include `state` (it must stay stable), so the closure `state` is
+      // stale from whenever isHost/connectionStatus last changed. Stale state
+      // broke the per-player logic below (e.g. individual-layer position
+      // updates were sent to the host instead of staying local).
+      const state = stateRef.current;
+
       // Local-only actions are executed locally but never sent over network
       if (action._localOnly) {
           localDispatch(action);
@@ -7355,6 +7477,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               return;
           }
 
+          // 🔧 Individual panels/windows: minimize/expand is PER-PLAYER — strictly
+          // local, never sent to the host (the host's own minimize state is separate).
+          if (action.type === 'TOGGLE_MINIMIZE' && action.payload?.id) {
+              const obj = state.objects[action.payload.id];
+              if (obj && (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) &&
+                  isObjectIndividual(obj, state.hyperscaleLayers)) {
+                  localDispatch(action);
+                  return;
+              }
+          }
+
           // 🔥 NEW: Batch position updates for UPDATE_OBJECT
           if (action.type === 'UPDATE_OBJECT' && action.payload) {
             const payload = action.payload;
@@ -7428,7 +7561,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   // Wait for sync to avoid desync
               } else {
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
-                  // Wait for sync to avoid desync
+                  // Optimistic: cursor-slot pickup/clear markers must render
+                  // immediately. Without this, taking a card from the hand or
+                  // the top deck shows nothing in the guest's cursor slot until
+                  // the host echo arrives (slow on Trystero).
+                  // UPDATE_OBJECT payloads come in both shapes — flat
+                  // {id, inCursorSlot, ...} and wrapped {id, updates:{...}} —
+                  // so resolve the updates the same way the reducer does.
+                  if (action.type === 'UPDATE_OBJECT' && action.payload && typeof action.payload === 'object') {
+                      const p = action.payload as any;
+                      const updates = 'updates' in p ? p.updates : p;
+                      if (updates && typeof updates === 'object' && 'inCursorSlot' in updates) {
+                          localDispatch(action);
+                      }
+                  }
               }
           } else if (hasManualConnection) {
               // Using manual P2P connection (DataChannelAdapter has PeerJS-compatible interface)
@@ -7462,17 +7608,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return throttle((currentState: GameState) => {
       const connRef = connectionsRefRef.current;
       if (!isHostRef.current || !connRef.current || connRef.current.length === 0) {
-        // 🔧 DEV diagnostic: why is the host not broadcasting?
-        // NOTE: eager primitives only — Chrome shows object args lazily, which
-        // made past `connections: 0` reports unreliable.
-        if (import.meta.env.DEV) {
-          console.log(
-            '[Broadcast] SKIP isHost=' + isHostRef.current,
-            'len=' + (connRef.current?.length ?? -1),
-            'tag=' + ((connRef.current as any)?.__instanceId ?? 'none'),
-            'dbgSame=' + (connRef.current === (window as any).__trysteroDebug?.connections)
-          );
-        }
         return;
       }
 
@@ -7491,7 +7626,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // 🔥 FIX: Individual Objects - filter out position, visibility, locked, and pinned properties
           // Character data, counters, and all other properties MUST sync
+          // 🔧 Panels/windows on individual layers: position AND hidden/visible sync
+          // (host show/hide → everyone; creation position → guests). Minimize/expand
+          // state and size stay per-player (guest merge preserves local values).
           if (layer?.individualObjects) {
+            const isPanelLike = individualObjectKeepsPosition(obj as any);
             const {
               x, y, rotation, zIndex,
               hidden, visible, visibleToOthers,
@@ -7500,7 +7639,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               expandedPinnedPosition, collapsedPinnedPosition,
               ...objWithoutIndividualProps
             } = obj as any;
-            filteredObjects[id] = objWithoutIndividualProps;
+            filteredObjects[id] = isPanelLike
+              ? {
+                  ...objWithoutIndividualProps,
+                  x: (obj as any).x,
+                  y: (obj as any).y,
+                  rotation: (obj as any).rotation,
+                  zIndex: (obj as any).zIndex,
+                  hidden: (obj as any).hidden,
+                  visible: (obj as any).visible,
+                }
+              : objWithoutIndividualProps;
             return;
           }
 
@@ -7551,6 +7700,41 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return broadcastState;
       })();
 
+      // 🔥 NEW: Check if we can use differential sync — decide ONCE for all
+      // connections. getPartialState mutates the deletion-diff baseline
+      // (lastKnownIds), so calling it per connection made guests 2..N compute
+      // an empty removal diff and miss cascade-deletion tombstones.
+      // Filter out invalid changes (e.g., individual objects) before checking.
+      differentialSyncManager.filterInvalidChanges(stateForBroadcast);
+
+      // 🔥 NEW: Check if we need to force full sync (e.g., when disabling individual settings)
+      const forceFullSync = (currentState as any)._forceFullSync === true;
+      const shouldSendFullState = forceFullSync || differentialSyncManager.shouldSendFullState();
+      let partialState: any = null;
+
+      if (forceFullSync) {
+        // GameContext: Force full sync triggered
+        // Clear the force flag after use
+        localDispatch({ type: 'CLEAR_FORCE_FULL_SYNC' });
+        differentialSyncManager.clearChanges();
+      }
+
+      // 🔧 Full state replaces everything on the guest — rebase the
+      // deletion-diff baseline so removed objects aren't re-tombstoned
+      if (shouldSendFullState || forceFullSync) {
+        differentialSyncManager.resetKnownIds(stateForBroadcast.objects);
+      }
+
+      if (!shouldSendFullState && !forceFullSync) {
+        partialState = differentialSyncManager.getPartialState(stateForBroadcast, Date.now());
+        // If partialState is null (no valid objects for sync), skip this sync entirely
+        if (!partialState) {
+          // GameContext: Skipping sync - no valid objects for partial sync
+          differentialSyncManager.clearChanges();
+          return;
+        }
+      }
+
       // Broadcast state to each connection (state now contains sha256 hashes, not base64)
       connRef.current.forEach(conn => {
         // 🔧 DEV diagnostic
@@ -7558,39 +7742,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.log('[Broadcast] conn peer=' + (conn.peer || conn.peerId), 'open=' + conn.open);
         }
         if (conn.open) {
-          // 🔥 NEW: Check if we can use differential sync
-          // Filter out invalid changes (e.g., individual objects) before checking
-	          differentialSyncManager.filterInvalidChanges(stateForBroadcast);
-
-	          // 🔥 NEW: Check if we need to force full sync (e.g., when disabling individual settings)
-          const forceFullSync = (currentState as any)._forceFullSync === true;
-          const shouldSendFullState = forceFullSync || differentialSyncManager.shouldSendFullState();
-          let stateToSend = stateForBroadcast;
+          let stateToSend: any = stateForBroadcast;
           let isPartialSync = false;
           let changeCount = 0;
 
-          if (forceFullSync) {
-            // GameContext: Force full sync triggered
-            // Clear the force flag after use
-            localDispatch({ type: 'CLEAR_FORCE_FULL_SYNC' });
-            differentialSyncManager.clearChanges();
-          }
-
-          if (!shouldSendFullState && !forceFullSync) {
-            const partialState = differentialSyncManager.getPartialState(stateForBroadcast, Date.now());
-            // If partialState is null (no valid objects for sync), skip this sync entirely
-	            if (!partialState) {
-	              // GameContext: Skipping sync - no valid objects for partial sync
-	              differentialSyncManager.clearChanges();
-	              return;
-	            }
-
-	            isPartialSync = partialState._isPartial || false;
+          if (!shouldSendFullState && !forceFullSync && partialState) {
+            isPartialSync = partialState._isPartial || false;
             changeCount = partialState._changeCount || 0;
 
             // 🔥 OPTIMIZATION: If only 1-2 objects changed and they're just position updates,
             // send lightweight POSITION_UPDATE instead of full SYNC_STATE
-            if (isPartialSync && changeCount <= 2) {
+            // 🔧 FIX: require changeCount > 0 — a players-only partial (objects: {})
+            // vacuously passed isOnlyPositionUpdates (empty .every() === true) and was
+            // silently swallowed here: handCardOrder and other player updates never
+            // reached guests, and clearChanges() never ran.
+            if (isPartialSync && changeCount > 0 && changeCount <= 2) {
               const changedObjects = Object.entries(partialState.objects);
               // Check if changes are only position updates (no images, no other properties)
               const isOnlyPositionUpdates = changedObjects.every(([id, obj]: [string, any]) => {
@@ -7603,6 +7769,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return keys.length === Object.keys(existingObj).length &&
                   keys.every(key => allowedKeys.has(key));
               });
+
+              // 🔧 DEV diagnostic: silent POSITION_UPDATE rerouting
+              if (import.meta.env.DEV) {
+                console.log('[Broadcast] partial changeCount=' + changeCount,
+                  'isOnlyPositionUpdates=' + isOnlyPositionUpdates,
+                  'objects=' + changedObjects.map(([id]) => id.slice(0, 8)).join(','));
+              }
 
               if (isOnlyPositionUpdates && changedObjects.length <= 2) {
                 // Filter out position updates for objects on individual objects layers
@@ -7648,22 +7821,31 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           // 🔥 OPTIMIZED: Measure sync time and track statistics
-          measureSyncTime(
-            () => {
-              const stateJson = JSON.stringify(stateToSend);
-              // Send state with sha256 hashes (assets are loaded from packs by guest)
-              conn.send({ type: 'SYNC_STATE', payload: stateToSend });
-              // 🔧 DEV diagnostic
-              if (import.meta.env.DEV) {
-                console.log('[Broadcast] SENT SYNC_STATE', { size: stateJson.length, isPartial: isPartialSync, changes: changeCount });
-              }
-              return { stateSize: stateJson.length, isPartial: isPartialSync };
-            },
-            (result, syncTime) => {
-              // 🔥 OPTIMIZED: Record statistics
-              webrtcStatsMonitor.recordSync(result.isPartial, result.stateSize, syncTime);
+          try {
+            if (import.meta.env.DEV) {
+              console.log('[Broadcast] sending isPartial=' + isPartialSync, 'changes=' + changeCount, 'conn=' + (conn.peer || conn.peerId));
             }
-          );
+            measureSyncTime(
+              () => {
+                const stateJson = JSON.stringify(stateToSend);
+                // Send state with sha256 hashes (assets are loaded from packs by guest)
+                conn.send({ type: 'SYNC_STATE', payload: stateToSend });
+                // 🔧 DEV diagnostic
+                if (import.meta.env.DEV) {
+                  console.log('[Broadcast] SENT SYNC_STATE', { size: stateJson.length, isPartial: isPartialSync, changes: changeCount });
+                }
+                return { stateSize: stateJson.length, isPartial: isPartialSync };
+              },
+              (result, syncTime) => {
+                // 🔥 OPTIMIZED: Record statistics
+                webrtcStatsMonitor.recordSync(result.isPartial, result.stateSize, syncTime);
+              }
+            );
+          } catch (e: any) {
+            // 🔧 DEV diagnostic: silent broadcast deaths (e.g. JSON.stringify on
+            // circular structures) previously stopped here without any trace
+            console.error('[Broadcast] FAILED to send:', e?.message, e?.stack?.split('\n')[1]);
+          }
         }
       });
 
@@ -7753,6 +7935,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                               if (layer?.individualObjects) {
                                 // Filter out position, visibility, locked, and pinned properties
+                                // 🔧 Panels/windows: position AND hidden/visible sync
+                                const isPanelLike = individualObjectKeepsPosition(obj as any);
                                 const {
                                   x, y, rotation, zIndex,
                                   hidden, visible, visibleToOthers,
@@ -7761,7 +7945,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                   expandedPinnedPosition, collapsedPinnedPosition,
                                   ...objWithoutIndividualProps
                                 } = obj as any;
-                                filteredObjects[id] = objWithoutIndividualProps;
+                                filteredObjects[id] = isPanelLike
+                                  ? {
+                                      ...objWithoutIndividualProps,
+                                      x: (obj as any).x,
+                                      y: (obj as any).y,
+                                      rotation: (obj as any).rotation,
+                                      zIndex: (obj as any).zIndex,
+                                      hidden: (obj as any).hidden,
+                                      visible: (obj as any).visible,
+                                    }
+                                  : objWithoutIndividualProps;
                               } else {
                                 filteredObjects[id] = obj;
                               }
@@ -7890,6 +8084,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         dispatch={localDispatch}
         connectionSteps={p2pLoadingSteps}
         connectionProgress={p2pLoadingProgress}
+        connectionMethod={connectionMethod}
         canJoin={guestReadyToJoin}
         onJoin={handleJoinGame}
       />

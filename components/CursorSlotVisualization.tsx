@@ -254,9 +254,13 @@ export const CursorSlotVisualization = (({
     }
 
     return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-      }
+      // 🔧 FIX: do NOT cancel rafRef here! This effect re-runs on every
+      // state.objects change (host echo) while items are in the slot, but the
+      // RAF follow-loop lives in the effect below with deps [cursorSlot.length]
+      // — which does NOT re-run. Cancelling here killed cursor-following
+      // forever after the first echo: the card froze in place ("в слоте есть,
+      // но не двигается за курсором"). The RAF effect cleans itself up when
+      // the slot empties.
       // Cleanup all elements
       itemElementsRef.current.forEach(el => el.remove());
       itemElementsRef.current.clear();
@@ -280,7 +284,12 @@ export const CursorSlotVisualization = (({
 
     const updatePositions = () => {
       const pos = cursorPositionRef.current;
-      if (!pos) return;
+      if (!pos) {
+        // Position may be briefly unset — keep the loop alive so the item can
+        // still follow the cursor once a position arrives.
+        rafRef.current = requestAnimationFrame(updatePositions);
+        return;
+      }
 
       for (const [id, itemData] of itemDataRef.current) {
         const element = itemElementsRef.current.get(id);

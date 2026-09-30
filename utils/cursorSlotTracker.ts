@@ -35,10 +35,20 @@ export function subscribeToCursorSlotChanges(callback: () => void): () => void {
 
 /**
  * Notify all subscribers of changes
+ *
+ * 🔧 FIX: callbacks are deferred to a macrotask. notifyChange can run inside
+ * the game reducer (i.e. during GameProvider's render phase) — e.g. when a
+ * SYNC_STATE merge releases cursor-slot items via removeFromCursorSlot. The
+ * subscriber (useObjectFilters) calls setState, and doing that synchronously
+ * during another component's render triggered React's
+ * "Cannot update a component while rendering a different component" warning.
+ * The version counter still increments synchronously.
  */
 function notifyChange() {
   cursorSlotVersion++;
-  changeCallbacks.forEach(cb => cb());
+  setTimeout(() => {
+    changeCallbacks.forEach(cb => cb());
+  }, 0);
 }
 
 /**
