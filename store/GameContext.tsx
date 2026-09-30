@@ -72,6 +72,14 @@ function getFlatUpdates(action: Extract<Action, { type: 'UPDATE_OBJECT' }>): Par
   return rest as Partial<TableObject>;
 }
 
+/**
+ * 🔧 Main menu panels are "virtually individual": ONE shared object per session,
+ * but position/size/minimized state are per-player (never synced).
+ */
+function isMainMenuPanelObj(obj: any): boolean {
+  return !!obj && obj.type === ItemType.PANEL && (obj as any).panelType === PanelType.MAIN_MENU;
+}
+
 const gameReducer = (state: GameState, action: Action): GameState => {
   // 🔥 OPTIMIZED: Track changes for differential sync
   // Exclude SYNC_STATE to avoid loops
@@ -94,6 +102,33 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     action.type === 'UPDATE_PLAYER_OBJECT_POSITION' || // Host-only: stores individual position, don't broadcast
     (wrappedUpdates?.inCursorSlot === true) ||
     isCursorSlotHide;
+
+  // 🔧 Main menu: position/size/minimized are per-player — never sync them.
+  // (Non-position menu properties DO sync — the menu is one shared object.)
+  if (wrappedUpdates !== undefined && isMainMenuPanelObj(state.objects[(action as any).payload?.id])) {
+    const menuUpdateKeys = Object.keys(wrappedUpdates).filter(k => k !== 'id');
+    const menuPerPlayerKeys = [
+      'x', 'y', 'rotation', 'zIndex',
+      'width', 'height',
+      'minimized', 'expandedState', 'collapsedState',
+      'isPinnedToViewport', 'pinnedScreenPosition',
+      'expandedPinnedPosition', 'collapsedPinnedPosition',
+    ];
+    if (menuUpdateKeys.length > 0 && menuUpdateKeys.every(k => menuPerPlayerKeys.includes(k))) {
+      shouldExcludeFromSync = true;
+    }
+  }
+
+  // 🔧 Main menu movement is per-player
+  if ((action.type === 'MOVE_OBJECT' || action.type === 'MOVE_OBJECT_COMMIT') &&
+      isMainMenuPanelObj(state.objects[(action as any).payload?.id])) {
+    shouldExcludeFromSync = true;
+  }
+
+  // 🔧 Main menu minimize is per-player
+  if (action.type === 'TOGGLE_MINIMIZE' && isMainMenuPanelObj(state.objects[(action as any).payload?.id])) {
+    shouldExcludeFromSync = true;
+  }
 
   // SIMPLIFIED: For individualObjects layers, exclude local-only properties from P2P sync
   if (action.type === 'UPDATE_OBJECT' && action.payload?.id) {
@@ -254,6 +289,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
                 // Update or add each incoming object
                 Object.entries(incomingObjects).forEach(([id, obj]) => {
+                  // 🔧 Main menu panels are FULLY LOCAL per client: every player has
+                  // their own menu with their own position/size/minimized state
+                  // (the "ensure menu exists" logic creates it locally). Never apply
+                  // a host's main menu — it would duplicate/conflict with the local one.
+                  if (obj?.type === ItemType.PANEL &&
+                      (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
+                    return;
+                  }
+
                   // 🔧 Deletion tombstone — the host removed this object
                   if (obj && (obj as any)._deleted) {
                     delete finalObjects[id];
@@ -342,12 +386,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
               // SYNC_STATE: Partial sync merged
             } else {
-              // For full sync, REPLACE all objects (except local main menu and cursor slot items)
+              // For full sync, REPLACE all objects (except cursor slot items).
+              // 🔧 Main menu: ADOPT the host's menu (one shared object per session),
+              // keeping the local per-player position/size/minimized state.
               const incomingObjects = { ...action.payload.objects };
               const incomingMainMenuId = Object.keys(incomingObjects).find(id => {
                 const obj = incomingObjects[id];
                 return obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU;
               });
+              // 🔧 Main menu panels are FULLY LOCAL per client — drop incoming
+              // main menus entirely; the client keeps its own local menu.
               if (incomingMainMenuId) {
                 delete incomingObjects[incomingMainMenuId];
               }
@@ -391,6 +439,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               const localIndividualObjects: Record<string, TableObject> = {};
               Object.values(state.objects).forEach(obj => {
                 if (isObjectIndividual(obj, state.hyperscaleLayers)) {
+                  // 🔧 Main menu: the adopted (host's) menu was merged above with
+                  // per-player overrides — never re-add the local pre-connect menu
+                  if ((obj as PanelObject).panelType === PanelType.MAIN_MENU) {
+                    return;
+                  }
                   localIndividualObjects[obj.id] = obj;
                 }
               });
@@ -443,6 +496,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             ...(state.playerObjectPositions?.[currentPlayerId] || {})
           }
         };
+
 
         // SIMPLIFIED: Apply current player's panel settings to objects
         // For individualObjects layers, objects are already fully local (no need to apply settings)
@@ -1147,6 +1201,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         if (hasOnlyLocalProps) {
           // This is a local-only update - just apply it locally, don't sync to other players
+          if (import.meta.env.DEV) console.log('[MM-reducer] local apply', JSON.stringify(mergedUpdates).slice(0, 80));
           // Update the object directly with local changes
           return {
             ...state,
@@ -1927,6 +1982,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const currentPlayerId = state.activePlayerId;
         const roundedX = Math.round(action.payload.x);
         const roundedY = Math.round(action.payload.y);
+        if (import.meta.env.DEV) console.log('[MM-reducer] MOVE_OBJECT apply x=' + roundedX + ' y=' + roundedY);
 
         // Update individual panel settings for host
         return {
@@ -7261,13 +7317,30 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, 100);
   }, []);
 
-  // Update main menu on window resize
+  // Update main menu on window resize — SAFETY NET only: a REAL window resize
+  // re-glues the menu to the right scrollbar at full height. Spurious resize
+  // events (scrollbar toggles, zoom/layout noise — they fire with an unchanged
+  // or barely-changed window size) must NOT snap the menu back to the default
+  // position mid-game.
+  const lastWindowSizeRef = useRef<{ w: number; h: number } | null>(null);
   useEffect(() => {
     const handleResize = () => {
       // Find main menu in objects
       const mainMenu = Object.values(state.objects).find(
         obj => obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU
       ) as PanelObject | undefined;
+
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const prevSize = lastWindowSizeRef.current;
+      // Update the baseline first: only the DELTA since the last event matters
+      lastWindowSizeRef.current = { w, h };
+
+      // 🔧 Ignore noise: an event without a real size change (or a tiny one —
+      // scrollbar toggles shift the layout by ~15-17px) never snaps the menu.
+      if (prevSize && Math.abs(prevSize.w - w) < 20 && Math.abs(prevSize.h - h) < 20) {
+        return;
+      }
 
       if (mainMenu) {
         // ALWAYS recalculate position and size based on current screen
@@ -7437,7 +7510,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (obj) {
               const layerId = obj.hyperscaleLayerId || 'tokens';
               const layer = state.hyperscaleLayers.find(l => l.id === layerId);
-              const isIndividualObjectsLayer = layer?.individualObjects === true;
+              // 🔧 Main menu is "virtually individual" (per-player position)
+              const isIndividualObjectsLayer = layer?.individualObjects === true || isMainMenuPanelObj(obj);
 
               if (isIndividualObjectsLayer) {
                 // For individualObjects layers, send position to host to store in playerObjectPositions
@@ -7477,12 +7551,37 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               return;
           }
 
+          // 🔧 Per-player objects (individual layers + main menu): raw MOVE_OBJECT
+          // stays LOCAL — position is per-player. The final position is stored via
+          // MOVE_OBJECT_COMMIT (→ UPDATE_PLAYER_OBJECT_POSITION) at drag end.
+          if (action.type === 'MOVE_OBJECT' && action.payload?.id) {
+              const obj = state.objects[action.payload.id];
+              if (obj && (isObjectIndividual(obj, state.hyperscaleLayers) || isMainMenuPanelObj(obj))) {
+                  if (import.meta.env.DEV) console.log('[MM-wrapper] MOVE_OBJECT local ->', action.payload.x, action.payload.y);
+                  localDispatch(action);
+                  // 🔧 Main menu: inform the host about the new position (stored
+                  // per player for the save file, never applied by the host).
+                  if (isMainMenuPanelObj(obj) && hostConnectionRef.current) {
+                      hostConnectionRef.current.send({
+                          type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+                          payload: {
+                              playerId: state.activePlayerId,
+                              panelId: action.payload.id,
+                              settings: { x: action.payload.x, y: action.payload.y },
+                          },
+                      });
+                  }
+                  return;
+              }
+          }
+
           // 🔧 Individual panels/windows: minimize/expand is PER-PLAYER — strictly
           // local, never sent to the host (the host's own minimize state is separate).
+          // 🔧 Main menu: minimize is per-player too.
           if (action.type === 'TOGGLE_MINIMIZE' && action.payload?.id) {
               const obj = state.objects[action.payload.id];
-              if (obj && (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) &&
-                  isObjectIndividual(obj, state.hyperscaleLayers)) {
+              if (obj && ((obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) &&
+                  isObjectIndividual(obj, state.hyperscaleLayers) || isMainMenuPanelObj(obj))) {
                   localDispatch(action);
                   return;
               }
@@ -7503,11 +7602,31 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const obj = state.objects[payload.id];
               const individualLayerId = obj?.hyperscaleLayerId || 'tokens';
               const individualLayer = state.hyperscaleLayers.find(l => l.id === individualLayerId);
-              const isIndividualObjectsLayer = individualLayer?.individualObjects === true;
+              // 🔧 Main menu is "virtually individual": position/size stay local
+              const isIndividualObjectsLayer = individualLayer?.individualObjects === true ||
+                isMainMenuPanelObj(obj);
 
               if ((isPositionUpdate || isVisibilityUpdate) && isIndividualObjectsLayer) {
                 // Position and visibility updates on individual objects layers - execute locally only
                 localDispatch(action);
+                // 🔧 Main menu: inform the host about the new position — the host
+                // stores it per player (for the save file) but never applies it.
+                if (isMainMenuPanelObj(obj) && isPositionUpdate && hostConnectionRef.current) {
+                  const p = payload as any;
+                  if (p.x !== undefined || p.y !== undefined) {
+                    hostConnectionRef.current.send({
+                      type: 'UPDATE_PLAYER_PANEL_SETTINGS',
+                      payload: {
+                        playerId: state.activePlayerId,
+                        panelId: payload.id,
+                        settings: {
+                          ...(p.x !== undefined ? { x: p.x } : {}),
+                          ...(p.y !== undefined ? { y: p.y } : {}),
+                        },
+                      },
+                    });
+                  }
+                }
                 return; // Skip sending to host
               }
 
@@ -7615,6 +7734,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const stateForBroadcast = (() => {
         const filteredObjects: Record<string, TableObject> = {};
         Object.entries(currentState.objects).forEach(([id, obj]) => {
+          // 🔧 Main menu panels DO sync (one shared object per session) — the
+          // guest merge adopts the host's menu and keeps per-player position.
+
           // Skip windows with ownerId (they are local to the owner)
           if (obj.type === ItemType.WINDOW && (obj as WindowObject).ownerId) {
             return;

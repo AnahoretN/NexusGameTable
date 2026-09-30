@@ -261,19 +261,25 @@ export const CursorSlotVisualization = (({
       // forever after the first echo: the card froze in place ("в слоте есть,
       // но не двигается за курсором"). The RAF effect cleans itself up when
       // the slot empties.
-      // Cleanup all elements
+      // Detach elements immediately (visual cleanup)…
       itemElementsRef.current.forEach(el => el.remove());
       itemElementsRef.current.clear();
-      // Cleanup React roots asynchronously
+      // …and unmount the React roots DOUBLE-DEFERRED. root.unmount() internally
+      // calls flushSync, which synchronously renders the whole GameProvider
+      // while React is still finishing its own commit/effect phases — that
+      // nested render could discard pending game-state updates (a guest's
+      // menu move silently never applied).
       setTimeout(() => {
-        rootRefsRef.current.forEach(root => {
-          try {
-            root.unmount();
-          } catch (e) {
-            // Ignore unmount errors
-          }
-        });
-        rootRefsRef.current.clear();
+        setTimeout(() => {
+          rootRefsRef.current.forEach(root => {
+            try {
+              root.unmount();
+            } catch (e) {
+              // Ignore unmount errors
+            }
+          });
+          rootRefsRef.current.clear();
+        }, 0);
       }, 0);
     };
   }, [cursorSlot, pixelsPerVU, getCardSettings, state.objects]);
