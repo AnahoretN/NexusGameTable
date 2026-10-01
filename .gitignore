@@ -19,11 +19,6 @@ Thumbs.db
 # Executables
 ngrok.exe
 tmpclaude-*
-tmpclaude-*
-
-# Graphify build cache (rebuildable)
-graphify-out/cache/
-.graphify_chunk_*.json
 
 # Local env files
 .env*.local

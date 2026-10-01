@@ -93,6 +93,5 @@ When adding new actions, verify:
 
 ## Related Files
 
-- `components/ObjectSettings/constants.ts` - Action lists and helpers
-- `components/ObjectSettingsModal.tsx` - Main settings UI
+- `components/ObjectSettingsModal.tsx` - Action lists (`getAvailableActions()`, `getDeckActions()`, `getMoveToActions()`) and main settings UI
 - `types.ts` - ContextAction type definition

@@ -58,7 +58,7 @@ npm update
 ### Architecture
 - **Type**: Client-side React application with WebRTC peer-to-peer communication
 - **Data Storage**: Local browser storage (localStorage)
-- **Network**: Direct peer-to-peer connections via PeerJS
+- **Network**: Direct peer-to-peer connections; signaling via PeerJS cloud/community servers, with Trystero (BitTorrent trackers) and Iroh as fallback transports (`store/session/`)
 
 ### Security Considerations
 - No server-side data storage (reduces server attack surface)
@@ -82,4 +82,4 @@ npm audit
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License with Commons Clause - see the LICENSE file for details.

@@ -25,18 +25,6 @@
 **Current version:** 0.3.2
 **Status:** ✅ Production Ready
 
-### Knowledge Graph
-
-The project contains an integrated **graphify knowledge graph** for understanding the architecture:
-
-```bash
-# Graph report (statistics reflect the last graphify run):
-graphify-out/GRAPH_REPORT.md
-
-# For querying the graph:
-graphify query "your question" --graph graphify-out/graph.json
-```
-
 ---
 
 ## Features
@@ -158,8 +146,13 @@ NexusGameTable/
 │   ├── objectStore.ts         # Zustand store for objects
 │   ├── gameActions.ts         # Action definitions
 │   ├── gameState.ts           # State types
-│   ├── p2p/                   # Networking helpers (batching, scheduling)
-│   ├── usePeerConnection.ts   # WebRTC with fallback signaling
+│   ├── session/               # Universal P2P session layer
+│   │   ├── protocol.ts        #   Wire-protocol dispatcher (all message types)
+│   │   ├── sessionUx.ts       #   Loading steps + pack negotiation
+│   │   ├── transport.ts       #   Transport interface contract
+│   │   ├── useGameSession.ts  #   The session hook GameContext consumes
+│   │   └── index.ts
+│   ├── usePeerConnection.ts   # PeerJS transport
 │   ├── useTrysteroConnection.ts / useIrohConnection.ts
 │   ├── useManualConnection.ts # Manual signaling
 │   └── useAutoSave.ts         # Auto-save
@@ -186,33 +179,8 @@ NexusGameTable/
 │   ├── sr.json
 │   └── uk.json
 ├── types.ts                   # TypeScript types
-├── constants.ts               # Constants
-└── graphify-out/              # Knowledge graph
-    ├── GRAPH_REPORT.md        # Graph report
-    ├── graph.json             # Graph data
-    └── graph.html             # Visualization
+└── constants.ts               # Constants
 ```
-
-### Key Communities (from graph)
-
-| Community | Description |
-|------------|----------|
-| **Object Actions Handlers** | Object action handlers (`executeClickAction()`, `handleFlip()`) |
-| **Object Settings & Translations** | Object settings and translations |
-| **Player Context & Hooks** | Player management (`usePlayers()`, `useActivePlayer()`) |
-| **Game Context & State** | Game state (`useGame()`) |
-| **WebRTC & Networking** | P2P connections and synchronization |
-| **Tabletop Core** | Main game table |
-| **Drawing & Canvas** | Drawing tools |
-| **Performance Monitoring** | FPS and optimization |
-
-### God Nodes (most connected nodes, per last graphify run — regenerate the graph after major refactors)
-
-1. `dispatch()` — central dispatcher
-2. `executeClickAction()` — click handler
-3. `MemoryManager` — memory optimization
-4. `useUI()` — UI context
-5. `DifferentialSyncManager` — state sync
 
 ---
 
@@ -733,19 +701,21 @@ const stateForBroadcast = {
 - 🔒 [SECURITY.md](./SECURITY.md) — security policy
 - 📋 [CHANGELOG.md](./CHANGELOG.md) — version history
 - 🚀 [QUICK_START.md](./QUICK_START.md) — quick start guide (Russian)
-- 📗 [store/p2p/README.md](./store/p2p/README.md) — networking layer
+- 🧩 [components/ACTION_INDEPENDENCE.md](./components/ACTION_INDEPENDENCE.md) — action settings invariant for developers
+- 📄 [LICENSE](./LICENSE) — MIT + Commons Clause
 
 ### Removed Documents (merged into this README)
 
 - ~~DEVELOPER_GUIDE.md~~ — included in "For Developers" section (deleted)
 - ~~DOCUMENTATION.md~~ — included in "Features" and "How to Play" sections (deleted)
 - ~~FALLBACK_SIGNALING.md~~ — included in "WebRTC Multiplayer" section
+- ~~store/p2p/README.md~~ — the store/p2p/ layer was removed; replaced by store/session/
 
 ---
 
 ## License
 
-MIT License
+MIT License with Commons Clause — free to use, modify and redistribute, but selling the Software or a paid product/service derived from it is not permitted. See [LICENSE](./LICENSE).
 
 ---
 
