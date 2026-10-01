@@ -14,6 +14,7 @@ import { Action } from '../gameActions';
 import { Player, PackInfo } from '../../types';
 import { logger } from '../../utils/logger';
 import { decompressWebRTCData } from '../../utils/dataCompression';
+import { registerRemoteMovement } from '../../utils/remoteMovementAnimator';
 import { filterLocalPanelProperties } from '../../utils/panelSync';
 import { filterObjectsForBroadcast } from '../../utils/individualPositions';
 import { differentialSyncManager } from '../../utils/webrtcOptimization';
@@ -285,8 +286,18 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
         rotationMarkerDistance?: number;
         zIndex?: number;
       }) => {
+        // 🔧 Objects held in a cursor slot are position-frozen for everyone
+        // except the holder
+        if (stateRef.current.objects[pos.id]?.inCursorSlot === true) {
+          return;
+        }
         const existingObj = stateRef.current.objects[pos.id];
         if (existingObj) {
+          // 🔧 Remote movement animation for big sync jumps
+          if (pos.x !== undefined && pos.y !== undefined && existingObj.x !== undefined &&
+              (Math.abs(existingObj.x - pos.x) > 20 || Math.abs(existingObj.y - pos.y) > 20)) {
+            registerRemoteMovement(pos.id, existingObj.x, existingObj.y, pos.x, pos.y);
+          }
           localDispatch({
             type: 'UPDATE_OBJECT',
             payload: {
@@ -348,6 +359,30 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
     } else if (data.type === 'ACTION') {
       // Host received action request from Guest
       const actionType = data.payload?.type;
+
+
+      // 🔧 Remote cursor-slot pickup: sync ONLY the inCursorSlot flag — the
+      // -999999 hide position stays on the holding client. The host's object
+      // keeps its origin, rendered locked/dimmed until the holder drops.
+      // 🔧 FIX: the rebuild previously dropped the `payload` wrapper entirely
+      // ({type, id, inCursorSlot} instead of {type, payload: {id, ...}}) — the
+      // reducer crashed on payload.id and the guest's pickup was silently lost,
+      // so the host and the other guests never saw the lock or the movement.
+      // Accept both payload shapes: flat {id, inCursorSlot} and wrapped
+      // {id, updates: {inCursorSlot, x: -999999, ...}}.
+      const incomingAction: any = data.payload;
+      const incomingBody: any = incomingAction?.payload;
+      if (incomingAction?.type === 'UPDATE_OBJECT' && incomingBody?.inCursorSlot === true) {
+        data.payload = {
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: incomingAction.id ?? incomingBody.id,
+            inCursorSlot: true,
+            // The holder is the SENDING client, not the host
+            cursorSlotOwnerId: senderConn.peer || senderConn.peerId,
+          },
+        };
+      }
 
       // Filter out local-only actions that should not affect host state
       // These actions are screen-specific and should not be synced

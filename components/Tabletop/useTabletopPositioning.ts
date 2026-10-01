@@ -5,6 +5,7 @@
 
 import { useMemo, useCallback } from 'react';
 import { vuToPixels, pixelsToVu } from '../../utils/vuSystem';
+import { getMovementExtraStyle } from '../../utils/remoteMovementAnimator';
 
 /**
  * Hook for positioning and coordinate transformations
@@ -98,7 +99,10 @@ export const usePositionedStyle = (
       height: number,
       zIndex: number,
       layerId: string,
-      additionalStyle: React.CSSProperties = {}
+      additionalStyle: React.CSSProperties = {},
+      // 🔧 Remote movement animation: objectId enables the glide transition
+      // (non-interactive while the object flies to its target position)
+      objectId?: string
     ): React.CSSProperties => {
       const inverseScale = getLayerInverseScale(layerId);
       return {
@@ -112,7 +116,8 @@ export const usePositionedStyle = (
           transform: `scale(${inverseScale})`,
           transformOrigin: 'top left'
         }),
-        ...additionalStyle
+        ...additionalStyle,
+        ...getMovementExtraStyle(objectId ?? '')
       };
     },
     [getLayerInverseScale]

@@ -1,4 +1,6 @@
-import React, { memo, useState, useEffect, useRef } from 'react';
+import React, { memo, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { getLockedInSlotStyle, isInCursorSlot } from '../../utils/cursorSlotTracker';
+import { getMovementExtraStyle, subscribeToMovementChanges, getMovementVersion } from '../../utils/remoteMovementAnimator';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { BoardWithResizeMemo } from './BoardWithResize';
 import { NexusBoardMemo } from '../NexusBoard';
@@ -90,6 +92,11 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     return map;
   }, [visibleTableObjects, onMouseDown, onContextMenu]);
 
+  // 🔧 Remote movement: re-render (and recompute effect styles) when an
+  // animation starts/ends — EffectTemplateRendererMemo would otherwise never
+  // see the movement transition (its memo comparator ignores style changes).
+  const movementVersion = useSyncExternalStore(subscribeToMovementChanges, getMovementVersion);
+
   // Memoize style and className for effects to prevent unnecessary re-renders
   const effectStyleMap = React.useMemo(() => {
     const map = new Map<string, {
@@ -116,14 +123,16 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
       const style: React.CSSProperties = isPermeable ? { pointerEvents: 'none' } : {};
 
       map.set(obj.id, {
-        style,
+        // 🔧 Remote movement: glide via left/top transition + non-interactive
+        // while flying
+        style: { ...style, ...getMovementExtraStyle(obj.id) },
         className: draggingClass,
         isDragging: isDraggingEffect
       });
     });
 
     return map;
-  }, [visibleTableObjects, draggingId, selectedHyperscaleLayerIds]);
+  }, [visibleTableObjects, draggingId, selectedHyperscaleLayerIds, movementVersion]);
 
   // DEBUG: Check for duplicate DOM elements for effects
   // Use timeout to avoid catching transient React render states during drag operations
@@ -306,7 +315,8 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             v2p(resizingId === obj.id && liveResizeSizeRef.current ? liveResizeSizeRef.current.height : board.height),
             globalZIndex,
             objLayer,
-            { pointerEvents: isPermeable ? 'none' : 'auto' }
+            { pointerEvents: isPermeable ? 'none' : 'auto', ...getLockedInSlotStyle(obj) },
+            obj.id
           )}
         >
           <BoardWithResizeMemo
@@ -503,7 +513,10 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
               transform: `rotate(${obj.rotation || 0}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
               pointerEvents: isPermeable ? 'none' : 'auto',
               borderRadius: '5px',
-            }
+              ...getLockedInSlotStyle(obj),
+              ...getMovementExtraStyle(obj.id),
+            },
+            obj.id
           )}
         >
           {/* Counter content with scale compensation */}
@@ -605,12 +618,14 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
               transform: `rotate(${obj.rotation}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''} scale(${currentScale})`,
               pointerEvents: isPermeable ? 'none' : 'auto',
               filter: glowColor ? `drop-shadow(0 0 8px ${glowColor}) drop-shadow(0 0 4px ${glowColor})` : undefined,
-              transition: getTransitionDuration(),
               transformOrigin: 'center center',
               overflow: 'visible',
               // Optimize for smooth dragging
               willChange: isDragging ? 'transform, left, top' : undefined,
-            }
+              ...getLockedInSlotStyle(obj),
+              ...getMovementExtraStyle(obj.id, getTransitionDuration()),
+            },
+            obj.id
           )}
         >
           <SvgTokenShape
@@ -1016,9 +1031,12 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
       return renderEffectTemplate(obj, globalZIndex);
     }
 
-    // 🔥 FIX: Don't render objects in cursor slot on the table at all
-    // They are rendered in CursorSlotVisualization instead
-    if ((obj as any).inCursorSlot === true) {
+    // 🔥 FIX: Don't render objects in THE LOCAL PLAYER'S cursor slot on the
+    // table — they are rendered in CursorSlotVisualization instead.
+    // 🔧 Objects held in ANOTHER player's cursor slot stay rendered at their
+    // origin, locked and dimmed (getLockedInSlotStyle). Returning null here
+    // made cells (and anything below this line) vanish for everyone else.
+    if ((obj as any).inCursorSlot === true && isInCursorSlot(obj.id)) {
       return null;
     }
 
@@ -1035,8 +1053,16 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     return null;
   };
 
+  // 🔧 Objects held in OTHER players' cursor slots: locked visual (dimmed,
+  // semi-transparent, non-interactive) while the holder drags them
+  const lockedInSlotStyleTag = visibleTableObjects
+    .filter((o: any) => o.inCursorSlot === true && !isInCursorSlot(o.id))
+    .map((o: any) => `[data-object-id="${o.id}"] { pointer-events: none !important; filter: brightness(0.9); opacity: 0.9; }`)
+    .join('\n');
+
   return (
     <>
+      {lockedInSlotStyleTag && <style>{lockedInSlotStyleTag}</style>}
       {visibleTableObjects.map(obj => {
         const element = renderGameObject(obj);
         // Use only obj.id as key - pixelsPerVU changes should trigger re-render via props, not remount

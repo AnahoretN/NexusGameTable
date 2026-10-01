@@ -1,5 +1,8 @@
 import React, { memo } from 'react';
 import { DeckComponent } from '../DeckComponent';
+import { useSyncExternalStore } from 'react';
+import { subscribeToMovementChanges, getMovementVersion, getMovementExtraStyle } from '../../utils/remoteMovementAnimator';
+import { getLockedInSlotStyle } from '../../utils/cursorSlotTracker';
 import { UIObjectRendererOptimizedMemo as UIObjectRendererMemo } from '../UIObjectRendererOptimized';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { TableObject, Deck as DeckType, PanelObject, WindowObject } from '../../types';
@@ -56,6 +59,9 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   offset = { x: 0, y: 0 },
   zoom = 1,
 }) => {
+  // Re-render when remote movement animations start/end (lock visuals)
+  useSyncExternalStore(subscribeToMovementChanges, getMovementVersion);
+
   const { v2p } = context;
 
   // Helper to calculate z-index for a deck based on its hyperscale layer
@@ -81,7 +87,9 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
         style={{
           left: pinnedPosition.x,
           top: pinnedPosition.y,
-          pointerEvents: 'auto',
+          pointerEvents: getLockedInSlotStyle(deckObj) ? 'none' : 'auto',
+          filter: getLockedInSlotStyle(deckObj) ? 'brightness(0.9)' : undefined,
+          opacity: getLockedInSlotStyle(deckObj) ? 0.9 : undefined,
         }}
       >
         <PinnedIndicator />
@@ -125,6 +133,8 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
           left: v2p(deckObj.x),
           top: v2p(deckObj.y),
           zIndex: globalZIndex,
+          ...getLockedInSlotStyle(deckObj),
+          ...getMovementExtraStyle(deckObj.id),
         }}
         onMouseDown={(e) => onMouseDown(e, deckObj.id)}
         onDoubleClick={(e) => onDoubleClick?.(e, deckObj)}

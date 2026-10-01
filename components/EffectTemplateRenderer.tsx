@@ -1123,8 +1123,13 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
 export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProps, nextProps) => {
   // Compare style object by value (only pointerEvents matters for effects)
+  // 🔧 FIX: the movement animation arrives as a `transition` style (left/top
+  // glide) — a pointerEvents-only comparison swallowed it and the effect
+  // template teleported instead of animating.
   const prevPointerEvents = prevProps.style?.pointerEvents;
   const nextPointerEvents = nextProps.style?.pointerEvents;
+  const prevTransition = prevProps.style?.transition;
+  const nextTransition = nextProps.style?.transition;
 
   return (
     prevProps.obj.id === nextProps.obj.id &&
@@ -1147,6 +1152,7 @@ export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProp
     prevProps.rulerStep === nextProps.rulerStep &&
     prevProps.className === nextProps.className &&
     prevPointerEvents === nextPointerEvents &&
+    prevTransition === nextTransition &&
     prevProps.onMouseDown === nextProps.onMouseDown &&
     prevProps.onContextMenu === nextProps.onContextMenu &&
     prevProps.dispatch === nextProps.dispatch

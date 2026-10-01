@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 /**
  * Cursor Slot Tracker
  *
@@ -129,3 +130,21 @@ if (typeof window !== 'undefined') {
     clearCursorSlot,
   };
 }
+
+/**
+ * 🔧 Visual state for objects held in ANOTHER player's cursor slot:
+ * the object stays at its origin but is locked (10% darker, 10% more
+ * transparent, non-interactive) until the holder drops it.
+ */
+export function getLockedInSlotStyle(obj: { id: string; inCursorSlot?: boolean }): CSSProperties | undefined {
+  if (obj.inCursorSlot === true && !isInCursorSlot(obj.id)) {
+    return {
+      filter: 'brightness(0.9)',
+      opacity: 0.9,
+      pointerEvents: 'none',
+      cursor: 'default',
+    };
+  }
+  return undefined;
+}
+

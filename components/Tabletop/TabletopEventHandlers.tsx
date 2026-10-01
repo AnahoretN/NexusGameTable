@@ -25,6 +25,7 @@ import type { LocalSettings } from '../../utils/localSettings';
 import { getTokenWithAppliedState } from '../../hooks/useTokenWithState';
 import { findDrawingAtPosition } from '../../utils/drawingUtils';
 import { addToCursorSlot, removeFromCursorSlot, isInCursorSlot, getCursorSlotObjects } from '../../utils/cursorSlotTracker';
+import { isRemoteMovementActive } from '../../utils/remoteMovementAnimator';
 import { executeClickAction, type ActionHandlerContext } from '../../utils/objectActionHandlers';
 import { applyCellEdgeMagnetism, type CellEdgeSnapCell } from '../../utils/cellEdgeMagnetism';
 
@@ -1789,6 +1790,21 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
   // Mouse down handler
   const handleMouseDown = useCallback((e: React.MouseEvent, objId?: string) => {
+    // 🔧 Remote movement animation: objects in flight are non-interactive
+    const movingId = objId || (() => {
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-object-id]');
+      return el ? el.getAttribute('data-object-id') : null;
+    })();
+    if (movingId && isRemoteMovementActive(movingId)) {
+      return; // Object is flying to its target position — ignore interactions
+    }
+    // 🔧 Object held in ANOTHER player's cursor slot: locked, non-interactive
+    if (objId) {
+      const heldObj = state.objects[objId];
+      if (heldObj?.inCursorSlot === true && !isInCursorSlot(objId)) {
+        return; // Locked while another player holds it in their cursor slot
+      }
+    }
 
     // Check if cursor is over an EFFECT_TEMPLATE that might be stuck
     if (!objId) {

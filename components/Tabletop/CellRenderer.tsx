@@ -1,4 +1,6 @@
-import React, { memo, useMemo } from 'react';
+import React, {useSyncExternalStore,  memo, useMemo } from 'react';
+import { subscribeToMovementChanges, getMovementVersion, getMovementExtraStyle } from '../../utils/remoteMovementAnimator';
+import { getLockedInSlotStyle } from '../../utils/cursorSlotTracker';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { BoardBackgroundImageMemo } from './BoardWithResize';
 import { PinnedIndicator } from '../PinnedIndicator';
@@ -17,7 +19,8 @@ interface CellRendererProps {
     height: number,
     zIndex: number,
     layerId: string,
-    extraStyles?: React.CSSProperties
+    additionalStyle?: React.CSSProperties,
+    objectId?: string
   ) => React.CSSProperties;
   getLayerInverseScale: (layerId: string) => number;
   draggingId: string | null;
@@ -63,6 +66,7 @@ export const CellRenderer = memo(({
     return 'cursor-default';
   }, [currentTool, isDragging, isDraggingByOther, canDrag]);
 
+  useSyncExternalStore(subscribeToMovementChanges, getMovementVersion);
   const positionStyle = useMemo(() => {
     const inverseScale = getLayerInverseScale(objLayer);
     const transform = `rotate(${obj.rotation || 0}deg)${inverseScale !== 1 ? ` scale(${inverseScale})` : ''}`;
@@ -76,14 +80,17 @@ export const CellRenderer = memo(({
       objLayer,
       {
         transform,
+        ...getMovementExtraStyle(obj.id),
+        // 🔧 Locked while held in ANOTHER player's cursor slot
+        ...getLockedInSlotStyle(obj),
         overflow: 'visible',
         willChange: isDragging ? 'transform, left, top' : undefined,
-        opacity: isDraggingByOther ? 0.5 : undefined,
-        pointerEvents: isDraggingByOther ? 'none' : undefined,
+        opacity: isDraggingByOther ? 0.5 : (getLockedInSlotStyle(obj)?.opacity as number | undefined),
+        pointerEvents: isDraggingByOther ? 'none' : (getLockedInSlotStyle(obj)?.pointerEvents as 'none' | undefined),
       }
     );
     return style;
-  }, [obj.x, obj.y, obj.rotation, cell.width, cell.height, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale, isDragging, isDraggingByOther]);
+  }, [obj.x, obj.y, obj.rotation, cell.width, cell.height, obj.inCursorSlot, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale, isDragging, isDraggingByOther]);
 
   return (
     <Tooltip

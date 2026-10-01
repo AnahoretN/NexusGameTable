@@ -7,6 +7,7 @@ import { Tooltip } from './Tooltip';
 import { getCardShapeStyles } from '../utils/shapeUtils';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
 import { useCursorSlotHover, useImageUrl } from '../hooks';
+import { isInCursorSlot } from '../utils/cursorSlotTracker';
 
 // 🔥 OPTIMIZED: Zustand version of DeckComponent
 // Replaces: components/DeckComponent.tsx
@@ -448,8 +449,12 @@ export const DeckComponent: React.FC<DeckComponentProps> = React.memo(({
     };
   }, [deck.id]);
 
-  // Don't render if deck is in cursor slot (it's being dragged)
-  if (deck.inCursorSlot) {
+  // Don't render if deck is in THE LOCAL PLAYER'S cursor slot (it's being
+  // dragged and rendered by CursorSlotVisualization instead).
+  // 🔧 FIX: decks held by ANOTHER player stay rendered at their origin —
+  // locked and dimmed (style carries getLockedInSlotStyle). Returning null
+  // here made the deck simply vanish for everyone else during the drag.
+  if (deck.inCursorSlot && isInCursorSlot(deck.id)) {
     return null;
   }
 

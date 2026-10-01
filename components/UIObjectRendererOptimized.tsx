@@ -1,7 +1,7 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelObject, WindowObject, ItemType, PanelType, WindowType, AppLanguage } from '../types';
-import { X, Minus, Plus, Eye, EyeOff, Lock, Unlock, Settings, Trash2, Clock, Keyboard, Palette, Network, Server, PlusCircle, XCircle } from 'lucide-react';
+import { X, Minus, Plus, EyeOff, Lock, Unlock, Settings, Trash2, Clock, Keyboard, Palette, Network, Server, PlusCircle, XCircle } from 'lucide-react';
 import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
 import { useActivePlayerId, useIsGM, usePixelsPerVU, usePlayerPermissions, useLanguage, useHyperscaleLayers, useLanguageActions } from '../store/contexts';
 import { getConnectionSettings, updateConnectionSettings, removeCustomSignalingServer, clearCustomSignalingServers } from '../utils/localSettings';
@@ -36,7 +36,7 @@ import { PanelResizeHandleMemo } from './PanelResizeHandle';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.3.1';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.3.2';
 
 // Support links
 const SUPPORT_LINKS = [
@@ -151,7 +151,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
   const [newServerSecure, setNewServerSecure] = useState(true);
   const [newServerPath, setNewServerPath] = useState('/peerjs');
   const [connectionSettings, setConnectionSettings] = useState(getConnectionSettings());
-  const { settings: localSettings, updateSetting, updateEffectSetting } = useLocalSettings();
+  const { settings: localSettings, updateSetting } = useLocalSettings();
 
   // Secret style selector: press 'S' 3 times within 2 seconds
   useEffect(() => {
@@ -1476,34 +1476,6 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                   </div>
                 </div>
               )}
-
-              {/* Effects Section */}
-              <div className="pt-3 pb-2 border-t border-slate-700">
-                <h4 className="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-                  <Eye size={14} />
-                  {translate('Effects', language as Locale)}
-                </h4>
-                <label
-                  className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer "
-                  title={translate('Show ghost/locked version of objects when another player has them in cursor slot', language as Locale)}
-                >
-                  <span className="text-xs text-gray-300">{translate('Show shadow objects held by other players', language as Locale)}</span>
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      updateEffectSetting('showRemoteCursorSlotObjects', !localSettings.effects.showRemoteCursorSlotObjects);
-                    }}
-                    className={`w-10 h-5 rounded-full transition-colors ${
-                      localSettings.effects.showRemoteCursorSlotObjects ? 'bg-green-600' : 'bg-slate-700'
-                    }`}
-                  >
-                    <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                      localSettings.effects.showRemoteCursorSlotObjects ? 'translate-x-5' : 'translate-x-0.5'
-                    }`} />
-                  </button>
-                </label>
-              </div>
 
               {/* Hotkeys Section */}
               <div className="pt-3 pb-2 border-t border-slate-700">

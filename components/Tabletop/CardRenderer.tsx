@@ -1,4 +1,5 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useSyncExternalStore } from 'react';
+import { subscribeToMovementChanges, getMovementVersion } from '../../utils/remoteMovementAnimator';
 import { Card as CardComponent } from '../Card';
 import { TableObject, Card as CardType, Deck as DeckType, CardLocation } from '../../types';
 import { Eye, EyeOff, RefreshCw, RotateCw, Hand, ArrowUp, Undo, Trash2 } from 'lucide-react';
@@ -17,7 +18,8 @@ interface CardRendererProps {
     height: number,
     zIndex: number,
     layerId: string,
-    extraStyles?: React.CSSProperties
+    extraStyles?: React.CSSProperties,
+    objectId?: string
   ) => React.CSSProperties;
   getLayerInverseScale: (layerId: string) => number;
   draggingId: string | null;
@@ -57,6 +59,9 @@ export const CardRenderer = memo(({
   const card = obj as CardType;
   const deck = card.deckId ? allObjects[card.deckId] as DeckType | undefined : undefined;
   // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
+  // Re-render when a remote movement animation for this object ends
+  useSyncExternalStore(subscribeToMovementChanges, getMovementVersion);
+
   // Only check if explicitly locked or being dragged by another player
   const canDrag = !obj.locked && (!obj.isDragging || obj.dragOwnerId === activePlayerId);
   const isDragging = draggingId === obj.id;
@@ -94,9 +99,11 @@ export const CardRenderer = memo(({
         // Visual feedback when dragged by another player
         opacity: isDraggingByOther ? 0.5 : undefined,
         pointerEvents: isDraggingByOther ? 'none' : undefined,
-      }
+      },
+      // 🔧 Remote movement: glide to the new position; non-interactive while flying
+      obj.id
     );
-  }, [obj.x, obj.y, obj.rotation, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale, isDragging, isDraggingByOther, card.width, card.height, deck?.cardWidth, deck?.cardHeight]);
+  }, [obj.x, obj.y, obj.rotation, globalZIndex, objLayer, v2p, createPositionedStyle, getLayerInverseScale, isDragging, isDraggingByOther, card.width, card.height, deck?.cardWidth, deck?.cardHeight]); // movement style via getMovementExtraStyle
 
   // Memoize dimensions
   const dimensions = useMemo(() => {

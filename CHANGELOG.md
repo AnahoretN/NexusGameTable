@@ -2,6 +2,34 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.3.2] - 2026-10-01
+
+### ✨ New Features
+
+#### 🎬 Remote Movement Animation
+- Objects moved by another player (or shifted by a sync) now **animate smoothly** from the old to the new position instead of teleporting (~2000 VU/s, clamped 0.2–3 s; tiny jumps apply instantly)
+- While in flight the object ignores pointer events, so the animation cannot be interrupted by grabbing the moving object
+- Your own moves never animate — the sync echo arrives with zero distance and is skipped (new `utils/remoteMovementAnimator.ts`)
+
+#### 🔒 Drag Locking
+- An object picked up by a player is now **position-frozen, locked and dimmed** for everyone else until it is dropped — no more tug-of-war over one object
+- The legacy remote-drag shadow objects are removed; live co-drag movement flows through the normal object rendering
+- The menu panel is pinned to the viewport (screen-space position), so it stays visible at any scroll/zoom and never leaves the visible area
+
+### 🛠️ Fixes
+
+#### Sync & networking
+- Cursor-slot pickup now syncs only the `inCursorSlot` flag — the host's object keeps its origin instead of jumping to the hide position
+- **Payload wrapper fix**: the rebuilt pickup message dropped the `payload` wrapper (`{type, id, ...}` instead of `{type, payload: {...}}`), the reducer crashed on `payload.id` and guest pickups were silently lost — both flat and wrapped payload shapes are now accepted
+- Main menu panels are fully local per client — a host's menu object is never applied on top of the local one
+- Assorted minor sync corrections
+
+#### Main menu
+- **Scrollbar** added to the menu panel
+- The menu **adapts its size and position when the window is resized** (minimized state preserved)
+
+---
+
 ## [0.3.1] - 2026-09-30
 
 ### 🛠️ Fixes

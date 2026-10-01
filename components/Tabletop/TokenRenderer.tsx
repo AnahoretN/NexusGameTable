@@ -1,4 +1,6 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useSyncExternalStore } from 'react';
+import { subscribeToMovementChanges, getMovementVersion, getMovementExtraStyle } from '../../utils/remoteMovementAnimator';
+import { getLockedInSlotStyle } from '../../utils/cursorSlotTracker';
 import { SvgTokenShape } from '../SvgTokenShape';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Lock, Unlock, RefreshCw, Trash2, Copy, ArrowUp, ChevronsUp, ChevronsDown, Eye, EyeOff, Pin, RotateCw, SkipForward, SkipBack, Rewind } from 'lucide-react';
@@ -19,7 +21,8 @@ interface TokenRendererProps {
     height: number,
     zIndex: number,
     layerId: string,
-    extraStyles?: React.CSSProperties
+    additionalStyle?: React.CSSProperties,
+    objectId?: string
   ) => React.CSSProperties;
   getLayerInverseScale: (layerId: string) => number;
   draggingId: string | null;
@@ -79,6 +82,9 @@ export const TokenRenderer = memo(({
     return 'cursor-default';
   }, [currentTool, isDragging, isDraggingByOther, canDrag]);
 
+  // Re-render when a remote movement animation for this object ends
+  useSyncExternalStore(subscribeToMovementChanges, getMovementVersion);
+
   // Memoize position style
   const positionStyle = useMemo(() => {
     const inverseScale = getLayerInverseScale(objLayer);
@@ -96,6 +102,9 @@ export const TokenRenderer = memo(({
       objLayer,
       {
         transform,
+        // 🔧 Held in another player's cursor slot: locked at origin
+        ...getLockedInSlotStyle(obj),
+        ...getMovementExtraStyle(obj.id),
         overflow: 'visible',
         // Optimize for smooth dragging
         willChange: isDragging ? 'transform, left, top' : undefined,

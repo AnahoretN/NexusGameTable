@@ -15,6 +15,7 @@ import { useAutoSave } from './useAutoSave';
 import { useGameSession, resetAllTransports } from './session';
 import { getConnectionSettings, ConnectionMethod } from '../utils/localSettings';
 import { isInCursorSlot, getOriginalPosition, removeFromCursorSlot } from '../utils/cursorSlotTracker';
+import { registerRemoteMovement } from '../utils/remoteMovementAnimator';
 import {
   initAssetDB,
   autoMigrate,
@@ -87,7 +88,30 @@ const gameReducer = (state: GameState, action: Action): GameState => {
   // Also exclude objects at -999999 position (cursor slot hidden position)
   // Exclude objects on individual position/objects layers (local-only changes)
   // Exclude UPDATE_PLAYER_OBJECT_POSITION (host-only action, should not broadcast)
-  const wrappedUpdates = action.type === 'UPDATE_OBJECT' ? getWrappedUpdates(action) : undefined;
+  const flatUpdates0 = action.type === 'UPDATE_OBJECT' ? getFlatUpdates(action as any) : undefined;
+  let wrappedUpdates = action.type === 'UPDATE_OBJECT' ? getWrappedUpdates(action as any) : undefined;
+  // 🔧 Cursor slot pickup (flat OR wrapped format): sync ONLY the inCursorSlot
+  // flag. The -999999 hide position and drag offsets stay local to the holding
+  // client; other clients keep the object at its origin — locked, dimmed,
+  // non-interactive — until the drop animates it to the new position.
+  let trackedAction: any = action;
+  const cursorSlotEnter = wrappedUpdates?.inCursorSlot === true ||
+    (wrappedUpdates === undefined && flatUpdates0?.inCursorSlot === true) ||
+    ((action as any).payload?.inCursorSlot === true);
+  if (cursorSlotEnter && (action as any).payload?.id) {
+    trackedAction = {
+      ...action,
+      payload: {
+        id: (action as any).payload.id,
+        inCursorSlot: true,
+        // Who holds it (for per-client visuals). The protocol handler stamps
+        // the SENDING client's id on guest pickups; a local pickup uses the
+        // local player.
+        cursorSlotOwnerId: (action as any).payload.cursorSlotOwnerId ?? state.activePlayerId,
+      },
+    };
+    wrappedUpdates = { inCursorSlot: true };
+  }
   // 🔧 FIX: hidden-position (-999999) updates must still sync when they carry
   // final state — e.g. dropping a card to HAND sets x:-999999 + location:HAND +
   // ownerId. Previously the whole update was excluded and guests never learned
@@ -100,7 +124,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
   let shouldExcludeFromSync =
     action.type === 'SYNC_STATE' ||
     action.type === 'UPDATE_PLAYER_OBJECT_POSITION' || // Host-only: stores individual position, don't broadcast
-    (wrappedUpdates?.inCursorSlot === true) ||
     isCursorSlotHide;
 
   // 🔧 Main menu: position/size/minimized are per-player — never sync them.
@@ -222,7 +245,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
     differentialSyncManager.addChange({
       type: changeType,
-      action: action,
+      action: trackedAction,
       timestamp: Date.now(),
       extraIds,
     });
@@ -295,6 +318,36 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                   // a host's main menu — it would duplicate/conflict with the local one.
                   if (obj?.type === ItemType.PANEL &&
                       (obj as PanelObject).panelType === PanelType.MAIN_MENU) {
+                    return;
+                  }
+
+                  // 🔧 Cursor-slot flag-only update (the object is held in another
+                  // player's cursor slot): merge the flag into the existing object.
+                  // Its position was NOT synced — other clients keep it rendered at
+                  // its origin, locked and dimmed, until the holder drops it.
+                  if (obj && (obj as any).inCursorSlot !== undefined && (obj as any).type === undefined) {
+                    const local = state.objects[id] as any;
+                    if (local) {
+                      finalObjects[id] = {
+                        ...local,
+                        inCursorSlot: (obj as any).inCursorSlot,
+                        cursorSlotOwnerId: (obj as any).cursorSlotOwnerId,
+                      };
+                    }
+                    return;
+                  }
+
+                  // 🔧 Position-only update (MOVE_OBJECT sync): merge coordinates
+                  // into the existing object — the full object (strokes, content)
+                  // was never broadcast for this change, minimal traffic.
+                  if (obj && (obj as any).type === undefined && obj.x !== undefined) {
+                    const local = state.objects[id];
+                    if (local) {
+                      finalObjects[id] = { ...local, x: obj.x, y: obj.y };
+                      if ((obj as any).rotation !== undefined) {
+                        finalObjects[id].rotation = obj.rotation;
+                      }
+                    }
                     return;
                   }
 
@@ -384,11 +437,26 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                   finalObjects[id] = obj;
                 });
 
+                // 🔧 Remote movement animation: objects whose position jumped via
+                // this sync glide from their old position to the new one
+                // (1000 VU/s). Objects the merge skipped (individual layers,
+                // main menu) don't move and don't animate.
+                Object.entries(incomingObjects).forEach(([id, obj]) => {
+                  if (!obj || obj.x === undefined) return;
+                  if ((obj as any)._deleted) return;
+                  if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) return;
+                  if (isObjectIndividual(obj, state.hyperscaleLayers)) return;
+                  const pre = state.objects[id] as any;
+                  if (pre && pre.x !== undefined && (pre.x !== obj.x || pre.y !== obj.y)) {
+                    registerRemoteMovement(id, pre.x, pre.y, obj.x, obj.y);
+                  }
+                });
+
               // SYNC_STATE: Partial sync merged
             } else {
               // For full sync, REPLACE all objects (except cursor slot items).
-              // 🔧 Main menu: ADOPT the host's menu (one shared object per session),
-              // keeping the local per-player position/size/minimized state.
+              // 🔧 Main menu panels are fully local per client — dropped here; the
+              // client keeps its own local menu.
               const incomingObjects = { ...action.payload.objects };
               const incomingMainMenuId = Object.keys(incomingObjects).find(id => {
                 const obj = incomingObjects[id];
@@ -1174,6 +1242,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         }
       }
 
+      // 🔧 Remote movement animation: a significant position jump arriving via
+      // UPDATE_OBJECT (e.g. a guest's cursor-slot drop applied by the host)
+      // glides the object instead of teleporting. Cursor-slot bookkeeping
+      // positions (-999999) never animate, and POSITION_UPDATE-driven updates
+      // are skipped — the protocol handler already registered those.
+      {
+        const animUpdates: any = wrapped || flatUpdates;
+        if (!(action as any)._localOnly && !(action as any).skipNetworkSync &&
+            animUpdates && animUpdates.x !== undefined && animUpdates.y !== undefined &&
+            obj.x !== undefined && obj.y !== undefined &&
+            obj.x > -90000 && obj.y > -90000 &&
+            animUpdates.x > -90000 && animUpdates.y > -90000 &&
+            (Math.abs(obj.x - animUpdates.x) > 20 || Math.abs(obj.y - animUpdates.y) > 20)) {
+          registerRemoteMovement(obj.id, obj.x, obj.y, animUpdates.x, animUpdates.y);
+        }
+      }
+
       // Check if object is on a hyperscale layer with individualObjects enabled
       const individualLayerId = obj.hyperscaleLayerId || 'tokens';
       const individualLayer = state.hyperscaleLayers.find(l => l.id === individualLayerId);
@@ -1201,7 +1286,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         if (hasOnlyLocalProps) {
           // This is a local-only update - just apply it locally, don't sync to other players
-          if (import.meta.env.DEV) console.log('[MM-reducer] local apply', JSON.stringify(mergedUpdates).slice(0, 80));
           // Update the object directly with local changes
           return {
             ...state,
@@ -1975,6 +2059,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'MOVE_OBJECT': {
       const obj = state.objects[action.payload.id];
       if (!obj || obj.locked) return state;
+      // 🔧 Objects held in a cursor slot are position-frozen for everyone
+      // except the holder (their drag positions stream locally only)
+      if ((obj as any).inCursorSlot === true) return state;
+
+      // 🔧 Remote movement animation: a significant jump means this move came
+      // from another client — the receiving clients glide the object to the
+      // new position (1000 VU/s). Own small drag steps stay instant.
+      if (obj.x !== undefined && obj.y !== undefined &&
+          (Math.abs(obj.x - action.payload.x) > 20 || Math.abs(obj.y - action.payload.y) > 20)) {
+        registerRemoteMovement(action.payload.id, obj.x, obj.y, action.payload.x, action.payload.y);
+      }
 
       // For panels and windows, save position to playerPanelSettings (for host's own panels)
       // This ensures host's panel positions are also saved and restored
@@ -1985,6 +2080,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         if (import.meta.env.DEV) console.log('[MM-reducer] MOVE_OBJECT apply x=' + roundedX + ' y=' + roundedY);
 
         // Update individual panel settings for host
+        // 🔧 Pinned panels: keep pinnedScreenPosition in sync with the move —
+        // the pinned render path positions the panel from this field, so the
+        // panel visually follows the drag.
+        const pinnedScreen = (obj as any).isPinnedToViewport
+          ? { pinnedScreenPosition: { x: roundedX, y: roundedY } }
+          : {};
         return {
           ...state,
           playerPanelSettings: {
@@ -1995,6 +2096,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 ...(state.playerPanelSettings[currentPlayerId]?.[obj.id] || {}),
                 x: roundedX,
                 y: roundedY,
+                ...pinnedScreen,
                 // Preserve existing settings
                 width: state.playerPanelSettings[currentPlayerId]?.[obj.id]?.width || obj.width,
                 height: state.playerPanelSettings[currentPlayerId]?.[obj.id]?.height || obj.height,
@@ -2009,7 +2111,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             [obj.id]: {
               ...obj,
               x: roundedX,
-              y: roundedY
+              y: roundedY,
+              ...(obj as any).isPinnedToViewport ? { pinnedScreenPosition: { x: roundedX, y: roundedY } } : {},
             }
           }
         };
@@ -2747,6 +2850,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
     case 'DROP_FROM_CURSOR_SLOT': {
         const obj = state.objects[action.payload.objectId];
         if (!obj) return state;
+
+        // 🔧 Remote movement animation: a significant jump means this drop came
+        // from another client — receiving clients glide the object (1000 VU/s).
+        if (obj.x !== undefined && obj.y !== undefined &&
+            (Math.abs(obj.x - action.payload.x) > 20 || Math.abs(obj.y - action.payload.y) > 20)) {
+          registerRemoteMovement(action.payload.objectId, obj.x, obj.y, action.payload.x, action.payload.y);
+        }
 
         // All draggable objects can be in cursor slot
         if (obj.type !== ItemType.CARD && obj.type !== ItemType.TOKEN && obj.type !== ItemType.DICE_OBJECT && obj.type !== ItemType.COUNTER && obj.type !== ItemType.DECK && obj.type !== ItemType.RANDOMIZER && obj.type !== ItemType.BOARD && obj.type !== ItemType.EFFECT_TEMPLATE) return state;
@@ -4941,6 +5051,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const panel: PanelObject = {
         id: panelId,
         type: ItemType.PANEL,
+        // 🔧 Main menu: create pinned to the viewport (screen-space position)
+        ...((panelType === PanelType.MAIN_MENU && action.payload.isPinnedToViewport) ? {
+          isPinnedToViewport: true,
+          pinnedScreenPosition: action.payload.pinnedScreenPosition,
+        } : {}),
         name: title || panelType,
         panelType,
         title: title || panelType,
@@ -6382,6 +6497,14 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // Store individual object position for a player on layers with individualObjects (host only)
       const { playerId, objectId, x, y, rotation, zIndex } = action.payload;
 
+      // 🔧 Remote movement animation: glide the object from its shared position
+      // to the mover's new position (1000 VU/s)
+      const ppObj = state.objects[objectId] as any;
+      if (ppObj && ppObj.x !== undefined &&
+          (Math.abs(ppObj.x - x) > 20 || Math.abs(ppObj.y - y) > 20)) {
+        registerRemoteMovement(objectId, ppObj.x, ppObj.y, x, y);
+      }
+
       // Initialize player positions if not exists
       if (!state.playerObjectPositions[playerId]) {
         return {
@@ -7307,7 +7430,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         y: menuY,
         width: menuWidth,
         height: menuHeight,
-        title: 'Main Menu'
+        title: 'Main Menu',
+        isPinnedToViewport: true,
+        pinnedScreenPosition: { x: menuX, y: menuY },
       }
     });
 
@@ -7346,16 +7471,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // ALWAYS recalculate position and size based on current screen
         // Main menu should always be: right side flush with scrollbar, full height
         const calculated = calculateMainMenuPosition();
+        // 🔧 Clamp: never let the menu leave the visible viewport
+        const clampedX = Math.max(0, calculated.x);
 
-        // Update menu with calculated position and size
+        // Update menu: pin to the recalculated default SCREEN position
+        // (viewport-space → visible at any scroll/zoom). Minimized state is
+        // preserved — a collapsed menu just moves to the top-right corner.
+        const isMinimized = !!(mainMenu as any).minimized;
         localDispatch({
           type: 'UPDATE_OBJECT',
           payload: {
             id: mainMenu.id,
-            x: calculated.x,
-            y: 0, // Always at top
+            isPinnedToViewport: true,
+            pinnedScreenPosition: { x: clampedX, y: 0 },
             width: calculated.width,
-            height: calculated.height // Full height minus horizontal scrollbar
+            height: calculated.height, // Full height minus horizontal scrollbar
+            ...(isMinimized ? { collapsedPinnedPosition: { x: clampedX, y: 0 } } : {}),
           }
         });
 
@@ -7572,6 +7703,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       });
                   }
                   return;
+              }
+          }
+
+          // 🔧 CURSOR SLOT PICKUP: the -999999 hide position and drag offsets are
+          // LOCAL to the holding client. Sync ONLY the flag — other clients keep
+          // the object rendered at its origin, locked and dimmed, until the drop.
+          // Handles BOTH payload shapes: flat {id, inCursorSlot, ...} and wrapped
+          // {id, updates: {inCursorSlot: true, x: -999999, ...}} — the wrapped
+          // shape previously leaked the -999999 hide position to the host.
+          if (action.type === 'UPDATE_OBJECT' && action.payload && typeof action.payload === 'object') {
+              const p: any = action.payload;
+              const updates: any = (p.updates && typeof p.updates === 'object') ? p.updates : p;
+              if (updates.inCursorSlot === true && p.id) {
+                  const limited = {
+                      type: 'UPDATE_OBJECT' as const,
+                      payload: { id: p.id, inCursorSlot: true },
+                  };
+                  localDispatch(action);   // full local apply (hide + drag offsets)
+                  action = limited;        // network sees ONLY the flag
               }
           }
 
@@ -8117,8 +8267,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 rotationMarkerDistance?: number;
                 zIndex?: number;
               }) => {
+                // 🔧 Objects held in a cursor slot are position-frozen for everyone
+                // except the holder (parity with the session protocol handler)
+                if (stateRef.current.objects[pos.id]?.inCursorSlot === true) {
+                  return;
+                }
                 const existingObj = stateRef.current.objects[pos.id];
                 if (existingObj) {
+                  // 🔧 Remote movement animation for big sync jumps
+                  if (pos.x !== undefined && pos.y !== undefined && existingObj.x !== undefined &&
+                      (Math.abs(existingObj.x - pos.x) > 20 || Math.abs(existingObj.y - pos.y) > 20)) {
+                    registerRemoteMovement(pos.id, existingObj.x, existingObj.y, pos.x, pos.y);
+                  }
                   localDispatch({
                     type: 'UPDATE_OBJECT',
                     payload: {
@@ -8191,6 +8351,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <GameContext.Provider value={{ state, dispatch, isHost, peerId, connectionStatus, waitingForPlayerName, setPlayerName, initializeHost, stateRef, connectionMethod, ticket, nodeId, roomId: sessionRoomId }}>
+      {/* 🔧 Objects held in OTHER players' cursor slots: locked visual (dimmed,
+          semi-transparent, non-interactive) while the holder drags them */}
+      <style>{Object.values(state.objects)
+        .filter((o: any) => o.inCursorSlot === true && !isInCursorSlot(o.id))
+        .map((o: any) => `[data-object-id="${o.id}"] { pointer-events: none !important; filter: brightness(0.9); opacity: 0.9; }`)
+        .join('\n')}</style>
       {children}
       <InitialLoadModal
         steps={initialLoadSteps}

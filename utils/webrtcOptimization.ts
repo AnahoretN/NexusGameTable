@@ -249,6 +249,11 @@ class DifferentialSyncManager {
     const hasPlayerChanges = this.pendingChanges.some(c => c.type === 'player');
     // 🔧 Deletions: objects removed on the host that guests must remove too
     const deletedIds = new Set<string>();
+    // 🔧 Position-only changes: objects whose SYNC carries just coordinates —
+    // emit a limited {id, x, y} entry instead of the full object (minimal
+    // traffic for big objects like drawings with many strokes)
+    const positionOnlyIds = new Set<string>();
+    const fullChangedIds = new Set<string>();
 
     // 🔧 Diff-based removals: anything that vanished since the last sync
     // (covers cascade deletions and every removal code path)
@@ -297,6 +302,15 @@ class DifferentialSyncManager {
       // Most actions use payload.id
       if (action.payload?.id) {
         changedObjectIds.add(action.payload.id);
+        // 🔧 Position-only detection: MOVE_OBJECT with just coordinates
+        if (action.type === 'MOVE_OBJECT') {
+          const keys = Object.keys(action.payload).filter(k => k !== 'id');
+          if (keys.length > 0 && keys.every(k => k === 'x' || k === 'y')) {
+            positionOnlyIds.add(action.payload.id);
+            return;
+          }
+        }
+        fullChangedIds.add(action.payload.id);
         return;
       }
 
@@ -407,6 +421,24 @@ class DifferentialSyncManager {
     objectIds.forEach(id => {
       if (currentState.objects[id]) {
         const obj = currentState.objects[id];
+        // 🔧 Object held in a cursor slot: sync ONLY the flag — its real
+        // position never leaves the holding client, so other clients keep it
+        // rendered at its origin, locked and dimmed until the drop.
+        if ((obj as any).inCursorSlot === true) {
+          partialObjects[id] = {
+            id,
+            inCursorSlot: true,
+            cursorSlotOwnerId: (obj as any).cursorSlotOwnerId,
+          };
+          validObjectIds.push(id);
+          return;
+        }
+        // 🔧 Position-only change: sync ONLY coordinates — minimal traffic
+        if (positionOnlyIds.has(id)) {
+          partialObjects[id] = { id, x: obj.x, y: obj.y };
+          validObjectIds.push(id);
+          return;
+        }
         partialObjects[id] = obj;
         validObjectIds.push(id);
         console.log('[DifferentialSyncManager] Including object', {

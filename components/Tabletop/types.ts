@@ -30,7 +30,9 @@ export interface TabletopRenderContext {
     height: number,
     zIndex: number,
     layerId: string,
-    additionalStyle?: React.CSSProperties
+    additionalStyle?: React.CSSProperties,
+    /** 🔧 Remote movement animation: enables glide + non-interactive while flying */
+    objectId?: string
   ) => React.CSSProperties;
   /** Ruler step size in VU (0 = disabled) */
   rulerStep: number;

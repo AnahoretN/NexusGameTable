@@ -83,7 +83,7 @@ export type Action =
   | BaseAction<'PIN_TO_VIEWPORT', { id: string; screenX: number; screenY: number; pixelWidth?: number; pixelHeight?: number }>
   | BaseAction<'UNPIN_FROM_VIEWPORT', { id: string; worldX: number; worldY: number; pixelsPerVU?: number }>
   // UI Object actions
-  | BaseAction<'CREATE_PANEL', { panelType: PanelType; x?: number; y?: number; width?: number; height?: number; title?: string; deckId?: string }>
+  | BaseAction<'CREATE_PANEL', { panelType: PanelType; x?: number; y?: number; width?: number; height?: number; title?: string; deckId?: string; isPinnedToViewport?: boolean; pinnedScreenPosition?: { x: number; y: number } }>
   | BaseAction<'CREATE_WINDOW', { windowType: WindowType; x?: number; y?: number; title?: string; targetObjectId?: string; targetLayerId?: string }>
   | BaseAction<'CLOSE_UI_OBJECT', { id: string }>
   | BaseAction<'TOGGLE_MINIMIZE', { id: string }>
