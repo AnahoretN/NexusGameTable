@@ -12,7 +12,7 @@ if (typeof window !== 'undefined') {
 }
 
 // Drawing tools
-export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'zoom';
+export type DrawingTool = 'none' | 'marker' | 'eraser' | 'ruler' | 'text' | 'zoom';
 
 // Cursor settings
 interface CursorSettings {
@@ -45,6 +45,22 @@ interface ZoomSettings {
   showVerticalSlider: boolean;
 }
 
+// Text tool settings
+interface TextSettings {
+  defaultFontSizeVU: number; // Default font size for new text objects, in VU
+  fontColor: string; // Default text color for new text objects
+  borderColor: string; // Default text border (stroke) color
+  borderWidth: number; // Default text border width in VU (0 = no stroke)
+  showButton: boolean; // Show quick-select button in the top-left tool panel
+}
+
+// Grid settings (local per-player, never synced)
+interface GridSettings {
+  enabled: boolean; // Grid visible + snapping active
+  cellSizeVU: number; // Grid cell size in VU
+  showButton: boolean; // Show grid toggle button in the top-left tool panel
+}
+
 // All tool settings
 interface ToolSettings {
   selectedTool: DrawingTool;
@@ -53,6 +69,8 @@ interface ToolSettings {
   eraser: EraserSettings;
   ruler: RulerSettings;
   zoom: ZoomSettings;
+  text: TextSettings;
+  grid: GridSettings;
 }
 
 // Default settings
@@ -82,13 +100,29 @@ const DEFAULT_ZOOM_SETTINGS: ZoomSettings = {
   showVerticalSlider: true
 };
 
+const DEFAULT_TEXT_SETTINGS: TextSettings = {
+  defaultFontSizeVU: 42, // ≈42 screen px (menu text-sm ×3); converted to VU at creation
+  fontColor: '#ffffff',
+  borderColor: '#9333ea', // App-wide purple (purple-600)
+  borderWidth: 3,
+  showButton: true
+};
+
+const DEFAULT_GRID_SETTINGS: GridSettings = {
+  enabled: false,
+  cellSizeVU: 20,
+  showButton: true
+};
+
 const DEFAULT_TOOL_SETTINGS: ToolSettings = {
   selectedTool: 'none',
   cursor: DEFAULT_CURSOR_SETTINGS,
   marker: DEFAULT_MARKER_SETTINGS,
   eraser: DEFAULT_ERASER_SETTINGS,
   ruler: DEFAULT_RULER_SETTINGS,
-  zoom: DEFAULT_ZOOM_SETTINGS
+  zoom: DEFAULT_ZOOM_SETTINGS,
+  text: DEFAULT_TEXT_SETTINGS,
+  grid: DEFAULT_GRID_SETTINGS
 };
 
 interface ToolSettingsContextType {
@@ -99,6 +133,8 @@ interface ToolSettingsContextType {
   updateEraserSettings: (settings: Partial<EraserSettings>) => void;
   updateRulerSettings: (settings: Partial<RulerSettings>) => void;
   updateZoomSettings: (settings: Partial<ZoomSettings>) => void;
+  updateTextSettings: (settings: Partial<TextSettings>) => void;
+  updateGridSettings: (settings: Partial<GridSettings>) => void;
 }
 
 const ToolSettingsContext = createContext<ToolSettingsContextType | undefined>(undefined);
@@ -188,6 +224,26 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
       return {
         ...prev,
         zoom: updatedZoom
+      };
+    });
+  };
+
+  const updateTextSettings = (newSettings: Partial<TextSettings>) => {
+    setSettings(prev => {
+      const updatedText = { ...prev.text, ...newSettings };
+      return {
+        ...prev,
+        text: updatedText
+      };
+    });
+  };
+
+  const updateGridSettings = (newSettings: Partial<GridSettings>) => {
+    setSettings(prev => {
+      const updatedGrid = { ...prev.grid, ...newSettings };
+      return {
+        ...prev,
+        grid: updatedGrid
       };
     });
   };
@@ -287,7 +343,7 @@ export const ToolSettingsProvider: React.FC<ToolSettingsProviderProps> = ({ chil
   }, []);
 
   return (
-    <ToolSettingsContext.Provider value={{ settings, setSelectedTool, updateCursorSettings, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings }}>
+    <ToolSettingsContext.Provider value={{ settings, setSelectedTool, updateCursorSettings, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings, updateTextSettings, updateGridSettings }}>
       {children}
     </ToolSettingsContext.Provider>
   );
@@ -325,4 +381,14 @@ export function useEraserSettings(): EraserSettings {
 export function useRulerSettings(): RulerSettings {
   const { settings } = useToolSettings();
   return settings.ruler;
+}
+
+export function useTextSettings(): TextSettings {
+  const { settings } = useToolSettings();
+  return settings.text;
+}
+
+export function useGridSettings(): GridSettings {
+  const { settings } = useToolSettings();
+  return settings.grid;
 }

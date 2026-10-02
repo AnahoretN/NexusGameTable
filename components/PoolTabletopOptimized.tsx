@@ -2619,6 +2619,7 @@ export const PoolTabletopOptimized: React.FC<PoolTabletopProps> = ({ poolZone, z
     <div
       ref={containerRef}
       data-pool-panel={poolZone.panelId}
+      data-pool-tabletop="true"
       className={`relative ${getCursorSlotObjects(state.objects).length > 0 ? 'cursor-grabbing' : ''}`}
       style={{
         width: poolBounds.widthPx,

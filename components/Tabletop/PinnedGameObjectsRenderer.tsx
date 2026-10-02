@@ -3,8 +3,9 @@ import { SvgTokenShape } from '../SvgTokenShape';
 import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Pin, RefreshCw, Trash2, Copy, Lock, Unlock, Plus, Minus } from 'lucide-react';
-import { TableObject, Token as TokenType, ItemType, TokenSlider, TokenSliderDisplay, Counter, DiceObject, EffectTemplate, TokenShape } from '../../types';
+import { TableObject, Token as TokenType, ItemType, TokenSlider, TokenSliderDisplay, Counter, DiceObject, EffectTemplate, TextObject, TokenShape } from '../../types';
 import { useTokenWithState } from '../../hooks/useTokenWithState';
+import { TextObjectRendererMemo } from './TextObjectRenderer';
 
 interface PinnedGameObjectsRendererProps {
   pinnedGameObjects: TableObject[];
@@ -676,7 +677,7 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
   pinnedGameObjects,
   state,
   draggingId,
-  currentTool: _currentTool,
+  currentTool,
   isCtrlPressed: _isCtrlPressed,
   isGM,
   activePlayerId,
@@ -741,6 +742,22 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
     }
     if (obj.type === ItemType.EFFECT_TEMPLATE) {
       return renderPinnedEffect(obj);
+    }
+    if (obj.type === ItemType.TEXT) {
+      const pinnedPosition = (obj as any).pinnedScreenPosition;
+      if (!pinnedPosition) return null;
+      return (
+        <TextObjectRendererMemo
+          key={obj.id}
+          obj={obj as TextObject}
+          v2p={(vu: number) => vu * pixelsPerVU}
+          currentTool={currentTool}
+          dispatch={dispatch}
+          onMouseDown={(e) => onMouseDown(e, obj.id)}
+          onContextMenu={(e) => onContextMenu(e, obj)}
+          style={{ left: pinnedPosition.x, top: pinnedPosition.y }}
+        />
+      );
     }
     if (obj.type === ItemType.COUNTER) {
       return (

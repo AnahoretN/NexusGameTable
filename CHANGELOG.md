@@ -2,6 +2,25 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.3.3] - 2026-10-02
+
+### ✨ New Features
+
+#### 📝 Text Tool
+- New **text labels**: place transparent text objects on the table (`Type` button in the left tool panel)
+- Auto-sized to the content, with configurable font size, color, bold/italic (new `components/Tabletop/TextObjectRenderer.tsx`)
+
+#### 🔲 Alignment Grid
+- New **grid tool**: toggle an alignment grid on the board to line up objects (per-player local setting, `Grid3x3` toggle in the tool panel)
+
+#### 🎛️ Tool Panel Flyouts
+- **Tokens and effects are now submenus** of the left mini-panel: hovering the token/effect launcher opens a flyout with session token types / effect templates (previews rendered as real token shapes)
+- Flyouts stay open while picking several items (picked tokens go into the cursor slot, next click drops them); they close on mouse leave (new `components/Tabletop/ToolPanelFlyout.tsx`)
+- Per-tool visibility toggles extended to the text, grid and flyout launchers; vertical zoom slider retained
+- Locales updated (ru, be, sr, uk)
+
+---
+
 ## [0.3.2] - 2026-10-01
 
 ### ✨ New Features

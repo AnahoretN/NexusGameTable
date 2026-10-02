@@ -16,6 +16,7 @@ import {
   NexusBoard,
   NexusCellObject,
   EffectTemplate,
+  TextObject,
   CardPile,
   ItemType,
   TokenShape,
@@ -241,6 +242,41 @@ export function createTokenType(params: BaseObjectParams & { shape?: TokenShape;
     namePrefix: '',
     spawnCount: 0,
     maxCopies,
+    ...rest,
+  };
+}
+
+// ============================================
+// TEXT LABEL FACTORY
+// ============================================
+
+/**
+ * Create a transparent text label object (text tool).
+ * Width/height are placeholders - the renderer auto-sizes to the text content.
+ */
+export function createTextObject(params: BaseObjectParams & { content?: string; fontSize?: number; fontColor?: string; borderColor?: string; borderWidth?: number; bold?: boolean; italic?: boolean } = {}): TextObject {
+  const { x = 0, y = 0, id = generateUUID(), name = 'Text', content = '', fontSize = 40, fontColor = '#ffffff', bold, italic, ...rest } = params;
+
+  return {
+    id,
+    type: ItemType.TEXT,
+    name,
+    x,
+    y,
+    width: 100,   // Placeholder - renderer auto-sizes to content
+    height: 20,   // Placeholder - renderer auto-sizes to content
+    rotation: rest.rotation ?? 0,
+    content,
+    fontSize,
+    fontColor,
+    bold,
+    italic,
+    isOnTable: rest.isOnTable ?? true,
+    locked: rest.locked ?? true, // Locked by default - cursor drag bypasses the lock for text
+    // Text labels are shared world objects: ALWAYS on the shared 'tokens' layer.
+    // On 'interface' (individualObjects) x/y would be treated as per-player and
+    // stripped from updates, so dragged text would "jump back".
+    hyperscaleLayerId: 'tokens',
     ...rest,
   };
 }

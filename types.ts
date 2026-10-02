@@ -16,6 +16,7 @@ export enum ItemType {
   DRAWING = 'DRAWING',    // Drawings created with marker tool
   PAGE = 'PAGE',          // Pages
   EFFECT_TEMPLATE = 'EFFECT_TEMPLATE', // Effect templates for area-of-effect visualization (explosions, cones, lines)
+  TEXT = 'TEXT',          // Transparent text labels created with the text tool
 }
 
 // Visual subtypes for tokens to handle Chips, Figurines, Badges
@@ -647,7 +648,18 @@ export interface EffectTemplate extends GameItem {
   playerControlEnabled?: boolean;
 }
 
-export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing | BattlefieldCell | NexusBoard | NexusCellObject | EffectTemplate;
+// Text label object - transparent object containing editable text (text tool)
+export interface TextObject extends GameItem {
+  type: ItemType.TEXT;
+  // Font size in VU (rendered as fontSize * pixelsPerVU screen px, scales with zoom)
+  fontSize: number;
+  // Text color (default: '#ffffff')
+  fontColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+}
+
+export type TableObject = Card | Deck | Token | TokenType | DiceObject | Counter | Board | Randomizer | PanelObject | WindowObject | Drawing | BattlefieldCell | NexusBoard | NexusCellObject | EffectTemplate | TextObject;
 
 // Language settings
 export type AppLanguage = 'en' | 'ru' | 'be' | 'uk' | 'sr';

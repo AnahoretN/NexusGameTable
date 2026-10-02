@@ -28,6 +28,7 @@ import { addToCursorSlot, removeFromCursorSlot, isInCursorSlot, getCursorSlotObj
 import { isRemoteMovementActive } from '../../utils/remoteMovementAnimator';
 import { executeClickAction, type ActionHandlerContext } from '../../utils/objectActionHandlers';
 import { applyCellEdgeMagnetism, type CellEdgeSnapCell } from '../../utils/cellEdgeMagnetism';
+import { createTextObject } from '../../utils/objectFactories';
 
 interface TabletopEventHandlersProps {
   state: any;
@@ -100,6 +101,23 @@ interface TabletopEventHandlersProps {
   setTopDeckModalDeck: React.Dispatch<React.SetStateAction<any>>;
   setZoom?: (zoom: number) => void; // Optional setZoom from ViewTransformContext
   setScroll?: (x: number, y: number) => void; // Optional setScroll from ViewTransformContext
+  // Local per-player grid (ToolSettingsContext) - used for snap-on-drop/panel-snap.
+  // gridEnabled/gridCellSizeVU mirror the ref for convenience; ALWAYS prefer reading
+  // the ref: some memoized renderers (e.g. BoardWithResize) hold old handler
+  // closures, so captured props can be stale but the ref is stable and fresh.
+  gridEnabled: boolean;
+  gridCellSizeVU: number;
+  gridSettingsRef: React.MutableRefObject<{ enabled: boolean; cellSizeVU: number }>;
+  // Text tool defaults (ToolSettingsContext) - read via stable ref (see grid docs)
+  textSettingsRef: React.MutableRefObject<{
+    defaultFontSizeVU: number;
+    fontColor: string;
+    borderColor: string;
+    borderWidth: number;
+  }>;
+  // Latest game state, updated every render. Memoized renderers keep old handler
+  // closures whose props.state is stale - read state via this ref instead.
+  stateRef?: React.MutableRefObject<any>;
 }
 
 // Helper function to add object to cursor slot
@@ -108,7 +126,8 @@ const addToCursorSlotLocal = (
   item: TableObject,
   mousePosition: { x: number; y: number } | undefined,
   props: TabletopEventHandlersProps,
-  source: 'hold' | 'shift' = 'hold'
+  source: 'hold' | 'shift' = 'hold',
+  ignoreLock: boolean = false
 ) => {
   const {
     cursorSlot: _cursorSlot,
@@ -164,9 +183,11 @@ const addToCursorSlotLocal = (
     return; // Max 100 items in slot
   }
 
-  // Check if item is locked - locked objects can't be added to cursor slot
+  // Check if item is locked - locked objects can't be added to cursor slot.
+  // Text labels and marker drawings are created locked: the cursor respects the
+  // lock (only move handles / marker Shift+drag ignore it).
   const obj = state.objects[id];
-  if (obj.locked) {
+  if (obj.locked && !ignoreLock) {
     return; // Locked objects can't be picked up
   }
 
@@ -552,6 +573,19 @@ const addToCursorSlotLocal = (
   // Track when item was added to prevent immediate drop on mouse up
   cursorSlotLastAddedRef.current = Date.now();
 
+  // Handle picks (ignoreLock, e.g. move handles) mark the threshold so mouseup
+  // DROPS the slot exactly like a normal cursor drag-and-drop would
+  // (wasAddedViaDragThreshold in handleMouseUp), instead of clearing it.
+  if (ignoreLock) {
+    props.dragThresholdRef.current = {
+      initialX: mousePosition?.x ?? 0,
+      initialY: mousePosition?.y ?? 0,
+      targetId: id,
+      addedToSlot: true,
+      skipThreshold: true,
+    };
+  }
+
   // Remove object from table temporarily (hide it while in slot)
   // If object is pinned, unpin it temporarily during drag
   if ((obj as any).isPinnedToViewport) {
@@ -641,7 +675,6 @@ const dropCursorSlot = (
     cursorSlotSource,
     cursorSlotLastDroppedRef,
     unpinnedDuringDragRef,
-    state,
     dispatch,
     scrollContainerRef,
     viewTransform,
@@ -649,6 +682,13 @@ const dropCursorSlot = (
     hyperscaleLayers,
     dragThresholdRef
   } = props;
+
+  // 🔧 Read state through the fresh-state ref: this function is often invoked
+  // from OLD handler closures held by memoized renderers (BoardWithResize etc.),
+  // whose props.state may be many renders stale (missing newly added objects),
+  // which corrupts magnetism bookkeeping. The ref object is stable across the
+  // hook's renders, so .current is always the latest state.
+  const state = props.stateRef?.current ?? props.state;
 
   // IMPORTANT: Clear drag threshold immediately when dropping
   // This prevents cards from becoming undraggable after being dropped
@@ -1047,6 +1087,10 @@ const dropCursorSlot = (
   }
 
   // Drop all items from cursor slot
+  // Local magnet-state overrides: several items dropped in one pass must see each
+  // other's magnet points (state.objects is stale within this loop)
+  const boardMagnetOverrides = new Map<string, BoardType>();
+  const cellMagnetOverrides = new Map<string, any>();
   sortedItems.forEach((item, sortedIndex) => {
     let finalX, finalY;
 
@@ -1115,10 +1159,9 @@ const dropCursorSlot = (
     // Battlefield cells can snap to board grid cells like tokens (per-cell setting)
     const isBattlefieldCellItem = item.type === ItemType.BATTLEFIELD_CELL;
     const cellSnapsToBoard = isBattlefieldCellItem && (item as BattlefieldCell).snapToBoardGrid === true;
-    // Count tokens in cursor slot - if multiple tokens, drop as stack without magnetism
-    const tokenCount = itemsToDrop.filter(i => i.type === ItemType.TOKEN).length;
-    // For cards, we check board.snapCardsToGrid inside the loop (not item.snapToGrid)
-    const shouldSnapToGrid = (isToken && tokenCount <= 1) || isCard || cellSnapsToBoard;
+    // All tokens in the slot snap (each takes the next magnet point of the cell
+    // via addObjectToGridCellMagnet / addObjectToCellMagnet)
+    const shouldSnapToGrid = isToken || isCard || cellSnapsToBoard;
     // Whether the object actually snapped to a board grid cell during this drop
     let snappedToGrid = false;
 
@@ -1151,7 +1194,7 @@ const dropCursorSlot = (
       const centerY = finalY + objHeight / 2;
 
       for (const boardId of Object.keys(state.objects)) {
-        const board = state.objects[boardId] as BoardType;
+        const board = boardMagnetOverrides.get(boardId) ?? (state.objects[boardId] as BoardType);
         if (board.type !== ItemType.BOARD) continue;
 
         // Skip hidden boards - magnetism should not work when board is hidden
@@ -1286,7 +1329,6 @@ const dropCursorSlot = (
           gridW,
           gridH
         );
-
         // Update board with new magnet points
         if (magnetResult.updatedBoard.gridCellMagnetPoints) {
           dispatch({
@@ -1298,6 +1340,11 @@ const dropCursorSlot = (
               }
             }
           });
+          // Track for subsequent items in this drop pass
+          boardMagnetOverrides.set(board.id, {
+            ...board,
+            gridCellMagnetPoints: magnetResult.updatedBoard.gridCellMagnetPoints,
+          } as BoardType);
         }
 
         // Move other objects that were repositioned
@@ -1340,7 +1387,7 @@ const dropCursorSlot = (
       // Cells themselves are excluded - they use edge magnetism instead (see below)
       if (!isBattlefieldCellItem) {
       for (const cellId of Object.keys(state.objects)) {
-        const cell = state.objects[cellId] as any;
+        const cell = cellMagnetOverrides.get(cellId) ?? (state.objects[cellId] as any);
         if (cell.type !== ItemType.BATTLEFIELD_CELL) continue;
 
         // Skip hidden cells - magnetism should not work when cell is hidden
@@ -1376,6 +1423,11 @@ const dropCursorSlot = (
             id: cell.id,
             updates: magnetResult.updatedCell
           }
+        });
+        // Track for subsequent items in this drop pass
+        cellMagnetOverrides.set(cell.id, {
+          ...cell,
+          ...magnetResult.updatedCell,
         });
 
         // Move other objects that were repositioned
@@ -1460,6 +1512,17 @@ const dropCursorSlot = (
         finalX = snap.x;
         finalY = snap.y;
       }
+
+    // Local world grid snap (ToolSettingsContext, per-player): align the final
+    // drop position to grid lines (multiples of the cell size). Applied after
+    // board/cell magnetism - the local grid wins over edge magnetism.
+    // Read via the stable ref - captured props may be stale (see props docs).
+    const gridSnap = props.gridSettingsRef?.current;
+    if (gridSnap?.enabled && gridSnap.cellSizeVU > 0) {
+      const cell = gridSnap.cellSizeVU;
+      finalX = Math.round(finalX / cell) * cell;
+      finalY = Math.round(finalY / cell) * cell;
+    }
 
     // Restore object to table at new position
     // Change location from HAND to TABLE for cards
@@ -1740,6 +1803,39 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
   // Check if settings modal is open (to block context menus)
   const isSettingsModalOpen = useIsSettingsModalOpen();
 
+  // 🔧 Fresh-state ref: memoized renderers (BoardWithResize etc.) keep old handler
+  // closures whose props.state is stale (missing recently added objects). The ref
+  // object is stable across this hook's renders, so closures reading
+  // stateRef.current always see the latest state.
+  const stateRef = useRef(props.state);
+  stateRef.current = props.state;
+  // Same for the whole props object (used by the handle-pick listener below)
+  const propsRef = useRef(props);
+  propsRef.current = props;
+
+  // Move handles (text labels, marker drawings) pick objects into the cursor slot
+  // via this event - the SAME pipeline as cursor drag-and-drop: ghost follows the
+  // cursor, mouseup drops via dropCursorSlot (magnetism, clamping, z-index).
+  // ignoreLock: handles may move locked text/drawings.
+  useEffect(() => {
+    const handlePickToSlot = (e: Event) => {
+      const ce = e as CustomEvent<{ objectId: string; clientX: number; clientY: number }>;
+      const { objectId, clientX, clientY } = ce.detail;
+      const obj = stateRef.current?.objects?.[objectId];
+      if (!obj) return;
+      addToCursorSlotLocal(
+        objectId,
+        obj,
+        { x: clientX, y: clientY },
+        propsRef.current,
+        'hold',
+        true // handles ignore the lock
+      );
+    };
+    window.addEventListener('handle-pick-to-cursor-slot', handlePickToSlot);
+    return () => window.removeEventListener('handle-pick-to-cursor-slot', handlePickToSlot);
+  }, []);
+
   // Track previous deck for cursor hover detection
   const previousDeckIdRef = useRef<string | null>(null);
 
@@ -1884,6 +1980,31 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         return;
       }
 
+      // Cursor tool: clicking a marker drawing starts a normal drag-and-drop.
+      // Drawings have no DOM element of their own, so they never reach the object
+      // branch - hit-test them here. Drawing lock is ignored (cursor may drag).
+      if (currentTool === 'none' && e.button === 0 && scrollContainerRef.current) {
+        const rect = scrollContainerRef.current.getBoundingClientRect();
+        const scrollX = viewTransform?.scroll?.x || 0;
+        const scrollY = viewTransform?.scroll?.y || 0;
+        const worldX = p2v(e.clientX - rect.left + scrollX);
+        const worldY = p2v(e.clientY - rect.top + scrollY);
+        const drawings = (Object.values(state.objects) as TableObject[]).filter((obj): obj is Drawing =>
+          obj.type === ItemType.DRAWING && obj.isOnTable && !obj.inCursorSlot
+        );
+        const clickedDrawing = findDrawingAtPosition(worldX, worldY, drawings, 1);
+        if (clickedDrawing && !state.objects[clickedDrawing.id]?.isDragging) {
+          dragThresholdRef.current = {
+            initialX: e.clientX,
+            initialY: e.clientY,
+            targetId: clickedDrawing.id,
+            addedToSlot: false,
+            skipThreshold: false
+          };
+          return;
+        }
+      }
+
       // Pan view: Ctrl + left mouse drag on empty space
       // Special handling for marker tool: check if cursor is over a drawing
       if ((e.ctrlKey || e.metaKey) && e.button === 0 && scrollContainerRef.current) {
@@ -1934,6 +2055,55 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         return;
       }
 
+      // Text tool: create a new transparent text object at the click position
+      // and immediately enter edit mode
+      if (currentTool === 'text' && e.button === 0 && scrollContainerRef.current) {
+        // Never create text on UI panels (tool panel, hand/pool/menu panels, flyouts)
+        // or on portals (modals, context menus, tooltips) - portal events bubble
+        // through the React tree into this handler, but their DOM nodes live under
+        // document.body, outside the scroll container.
+        // Exception: the pool panel's inner game space - creation is allowed there.
+        const clickedPoolGameSpace = elementUnderCursor?.closest('[data-pool-tabletop]');
+        if (!clickedPoolGameSpace) {
+          const targetOutsideContainer =
+            !(e.target instanceof Node) || !scrollContainerRef.current.contains(e.target);
+          const clickedUiPanel = elementUnderCursor?.closest(
+            '[data-ui-object], [data-pool-panel], [data-hand-panel], [data-tokens-panel], ' +
+            '[data-tools-panel], [data-character-panel], [data-floating-ui]'
+          );
+          if (targetOutsideContainer || clickedUiPanel) {
+            return; // UI panel or portal handled the click - no text creation
+          }
+        }
+        const rect = scrollContainerRef.current.getBoundingClientRect();
+        const scrollX = viewTransform?.scroll?.x || 0;
+        const scrollY = viewTransform?.scroll?.y || 0;
+        const worldX = p2v(e.clientX - rect.left + scrollX);
+        const worldY = p2v(e.clientY - rect.top + scrollY);
+        const textId = `text-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const textDefaults = props.textSettingsRef?.current;
+        dispatch({
+          type: 'ADD_OBJECT',
+          payload: createTextObject({
+            id: textId,
+            x: worldX,
+            y: worldY,
+            // Convert the screen-px default to VU for the current zoom
+            fontSize: Math.round(((textDefaults?.defaultFontSizeVU ?? 42) / pixelsPerVU) * 10) / 10,
+            fontColor: textDefaults?.fontColor,
+            borderColor: textDefaults?.borderColor,
+            borderWidth: textDefaults?.borderWidth,
+          }),
+        });
+        // Enter edit mode once the object mounts (TextObjectRenderer listens for this)
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('text-object-edit', { detail: { id: textId } }));
+        }, 0);
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       // Ruler tool: start measuring on left mouse down (hold and drag behavior)
       if (currentTool === 'ruler' && e.button === 0) {
         startRulerMeasurement();
@@ -1966,8 +2136,23 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       return;
     }
 
+    // Text tool: clicking a text object enters in-place editing. Editing is NOT
+    // movement, so it works even on locked text labels.
+    if (currentTool === 'text') {
+      if (obj.type === ItemType.TEXT && e.button === 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent('text-object-edit', { detail: { id: objId } }));
+      }
+      // Text tool never starts drags (mirrors ruler behavior)
+      return;
+    }
+
     // 🔥 FIX: All objects are shared - anyone can move them regardless of ownership
-    // Only check if explicitly locked or being dragged by another player
+    // Only check if explicitly locked or being dragged by another player.
+    // Text labels and marker drawings are created locked: the cursor respects the
+    // lock (cannot drag them); other move methods (move handles, marker Shift+drag)
+    // ignore it.
     if (obj.locked) {
       return;
     }
@@ -2444,8 +2629,12 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
             // Mark as added to prevent duplicate adds
             dragThresholdRef.current.addedToSlot = true;
 
-            // Add object to cursor slot (same as shift+click)
-            addToCursorSlotLocal(targetId, obj, { x: e.clientX, y: e.clientY }, props, 'hold');
+            // Add object to cursor slot (same as shift+click).
+            // IMPORTANT: use the ORIGINAL mousedown coords, not the current mouse
+            // position - by the time the threshold fires (RAF-delayed) the cursor
+            // has moved, and a stale offset makes board/cell magnetism snap to a
+            // cell offset from where the user grabbed the object.
+            addToCursorSlotLocal(targetId, obj, { x: initialX, y: initialY }, props, 'hold');
           }
         } else {
           // Object not found in state, skip
@@ -2635,6 +2824,19 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
 
         newX = magnetismResult.x;
         newY = magnetismResult.y;
+
+        // Local grid snap for panels (per-player ToolSettingsContext). Panels are
+        // viewport-pinned and live in screen px, so snap to on-screen multiples of
+        // the cell size. Applied AFTER panel magnetism - the grid wins.
+        // Read via the stable ref - captured props may be stale (see props docs).
+        const gridSnap = props.gridSettingsRef?.current;
+        if (gridSnap?.enabled && gridSnap.cellSizeVU > 0) {
+          const cellPx = props.v2p(gridSnap.cellSizeVU);
+          if (cellPx > 0) {
+            newX = Math.round(newX / cellPx) * cellPx;
+            newY = Math.round(newY / cellPx) * cellPx;
+          }
+        }
 
         // UI objects (panels/windows) are ALWAYS pinned - use screen coordinates directly
         // No conversion needed - newX/newY are already in screen pixels from e.clientX

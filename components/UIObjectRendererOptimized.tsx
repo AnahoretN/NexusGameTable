@@ -36,7 +36,7 @@ import { PanelResizeHandleMemo } from './PanelResizeHandle';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.3.2';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.3.3';
 
 // Support links
 const SUPPORT_LINKS = [

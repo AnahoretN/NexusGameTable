@@ -22,7 +22,7 @@
 
 **Nexus Game Table** is a free virtual game table for board games with online multiplayer support. The application runs directly in the browser and uses P2P connections — no dedicated server required.
 
-**Current version:** 0.3.2
+**Current version:** 0.3.3
 **Status:** ✅ Production Ready
 
 ---

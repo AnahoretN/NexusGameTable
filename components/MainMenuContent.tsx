@@ -11,7 +11,7 @@ import { findGM } from '../utils/playerUtils';
 import { saveSession, loadSession } from '../utils/sessionStorage';
 import { saveGameState } from '../utils/gameStorage';
 import { ItemType, TableObject, Deck, TokenShape, GridType, PanelType, WindowType, PanelObject, TokenType, Drawing, ContextAction } from '../types';
-import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target } from 'lucide-react';
+import { Dices, User, Crown, ChevronDown, ChevronRight, Plus, LayoutGrid, CircleDot, Square, Component, Box, Lock, Unlock, Trash2, Library, Save, Upload, Link as LinkIcon, CheckCircle, Hand, Eye, EyeOff, Layers, CreditCard, Asterisk, PanelLeft, Settings, Pencil, Pen, Eraser, Ruler, MousePointer2, Brush, FileText, Rows, Wrench, Network, X, Copy, Loader2, Search, Package, Clock, Target, Type } from 'lucide-react';
 import { DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT } from '../constants';
 import { calculatePixelsPerVU } from '../utils/vuSystem';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -19,6 +19,7 @@ import { ObjectSettingsModal } from './ObjectSettingsModal';
 import { HandPanelOptimized as HandPanel } from './HandPanelOptimized';
 import { PlayerNameModal } from './PlayerNameModal';
 import { useToolSettings, useDrawingTool, DrawingTool } from '../contexts/ToolSettingsContext';
+import { ToolSettingsCards } from './ToolSettingsCards';
 import { SvgTokenShape } from './SvgTokenShape';
 import { LayersPanel } from './LayersPanel';
 import { useManualConnection, testWebRTCConnectivity } from '../store/useManualConnection';
@@ -124,7 +125,7 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width: _width 
   const [renamePlayerId, setRenamePlayerId] = useState<string | null>(null);
   const [settingsObject, setSettingsObject] = useState<TableObject | null>(null);
   // Use centralized tool settings context
-  const { settings, setSelectedTool, updateCursorSettings, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings } = useToolSettings();
+  const { settings, setSelectedTool } = useToolSettings();
  useDrawingTool();
 
   const [isShiftPressed, setIsShiftPressed] = useState(false);
@@ -1069,9 +1070,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width: _width 
       matcher: (obj: TableObject) => obj.type === ItemType.PANEL && (obj as any).panelType !== PanelType.MAIN_MENU
     },
     {
-      id: 'drawings', label: translate('Drawings', language as Locale), icon: <Brush size={16}/>,
-      items: [], // Drawings are created with marker tool, not via menu
-      matcher: (obj: TableObject) => obj.type === ItemType.DRAWING
+      id: 'drawings', label: translate('Drawings and Text', language as Locale), icon: <Brush size={16}/>,
+      items: [], // Drawings are created with marker tool, text labels with text tool
+      matcher: (obj: TableObject) => obj.type === ItemType.DRAWING || obj.type === ItemType.TEXT
     },
     {
       id: 'pages', label: translate('Pages', language as Locale), icon: <FileText size={16}/>,
@@ -1158,221 +1159,18 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width: _width 
               {/* Drawing Tools Section */}
               <div>
                 <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase">{translate('Drawing Tools', language as Locale)}</h4>
-                <div className="grid grid-cols-5 gap-1">
+                <div className="grid grid-cols-6 gap-1">
                   <DrawingToolButton tool="none" icon={<MousePointer2 size={15} />} label={translate('Cursor', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
                   <DrawingToolButton tool="marker" icon={<Pen size={15} />} label={translate('Marker', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
                   <DrawingToolButton tool="eraser" icon={<Eraser size={15} />} label={translate('Eraser', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
                   <DrawingToolButton tool="ruler" icon={<Ruler size={15} />} label={translate('Ruler', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
+                  <DrawingToolButton tool="text" icon={<Type size={15} />} label={translate('Text', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
                   <DrawingToolButton tool="zoom" icon={<Search size={15} />} label={translate('Zoom', language as Locale)} selectedTool={settings.selectedTool} setSelectedTool={setSelectedTool} />
                 </div>
               </div>
 
-              {/* Cursor Settings (shown when cursor is selected) */}
-              {settings.selectedTool === 'none' && (
-                <div className="bg-slate-800 rounded-lg space-y-3 p-3">
-                  {/* Show cursor button in top-left panel checkbox */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="show-cursor-button"
-                      checked={settings.cursor.showButton}
-                      onChange={(e) => updateCursorSettings({ showButton: e.target.checked })}
-                      className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer accent-purple-500"
-                    />
-                    <label htmlFor="show-cursor-button" className="text-[10px] text-gray-400 cursor-pointer">
-                      {translate('Show cursor button', language as Locale)}
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Marker Settings (shown when marker is selected) */}
-              {settings.selectedTool === 'marker' && (
-                <div className="bg-slate-800 rounded-lg space-y-3 p-3">
-                  {/* Color picker */}
-                  <div>
-                    <input
-                      type="color"
-                      value={settings.marker.color}
-                      onChange={(e) => updateMarkerSettings({ color: e.target.value })}
-                      className="w-full h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer"
-                    />
-                  </div>
-
-                  {/* Thickness slider */}
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-1">
-                      {translate('Size', language as Locale)}: {settings.marker.thickness}px
-                    </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="100"
-                      value={settings.marker.thickness}
-                      onChange={(e) => updateMarkerSettings({ thickness: Number(e.target.value) })}
-                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                    />
-                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                      <span>1px</span>
-                      <span>50px</span>
-                      <span>100px</span>
-                    </div>
-                  </div>
-
-                  {/* Opacity slider */}
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-1">
-                      {translate('Opacity', language as Locale)}: {settings.marker.opacity}%
-                    </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="100"
-                      value={settings.marker.opacity}
-                      onChange={(e) => updateMarkerSettings({ opacity: Number(e.target.value) })}
-                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                    />
-                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                      <span>1%</span>
-                      <span>50%</span>
-                      <span>100%</span>
-                    </div>
-                  </div>
-
-                  {/* Show marker button in top-left panel checkbox */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="show-marker-button"
-                      checked={settings.marker.showButton}
-                      onChange={(e) => updateMarkerSettings({ showButton: e.target.checked })}
-                      className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer accent-purple-500"
-                    />
-                    <label htmlFor="show-marker-button" className="text-[10px] text-gray-400 cursor-pointer">
-                      {translate('Show marker button', language as Locale)}
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Eraser Settings (shown when eraser is selected) */}
-              {settings.selectedTool === 'eraser' && (
-                <div className="bg-slate-800 rounded-lg space-y-3 p-3">
-                  {/* Thickness slider */}
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-1">
-                      {translate('Size', language as Locale)}: {settings.eraser.thickness}px
-                    </label>
-                    <input
-                      type="range"
-                      min="15"
-                      max="100"
-                      value={settings.eraser.thickness}
-                      onChange={(e) => updateEraserSettings({ thickness: Number(e.target.value) })}
-                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                    />
-                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                      <span>15px</span>
-                      <span>50px</span>
-                      <span>100px</span>
-                    </div>
-                  </div>
-
-                  {/* Show eraser button in top-left panel checkbox */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="show-eraser-button"
-                      checked={settings.eraser.showButton}
-                      onChange={(e) => updateEraserSettings({ showButton: e.target.checked })}
-                      className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer accent-purple-500"
-                    />
-                    <label htmlFor="show-eraser-button" className="text-[10px] text-gray-400 cursor-pointer">
-                      {translate('Show eraser button', language as Locale)}
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Ruler Settings (shown when ruler tool is selected) */}
-              {settings.selectedTool === 'ruler' && (
-                <div className="bg-slate-800 rounded-lg space-y-3 p-3">
-                  {/* Step slider */}
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-1">
-                      {translate('Step', language as Locale)}: {settings.ruler.step} VU
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="500"
-                      step="1"
-                      value={settings.ruler.step}
-                      onChange={(e) => updateRulerSettings({ step: Number(e.target.value) })}
-                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                    />
-                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                      <span>0</span>
-                      <span>250</span>
-                      <span>500</span>
-                    </div>
-                  </div>
-
-                  {/* Show ruler button in top-left panel checkbox */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="show-ruler-button"
-                      checked={settings.ruler.showButton}
-                      onChange={(e) => updateRulerSettings({ showButton: e.target.checked })}
-                      className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer accent-purple-500"
-                    />
-                    <label htmlFor="show-ruler-button" className="text-[10px] text-gray-400 cursor-pointer">
-                      {translate('Show ruler button', language as Locale)}
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Zoom Settings (shown when zoom tool is selected) */}
-              {settings.selectedTool === 'zoom' && (
-                <div className="bg-slate-800 rounded-lg space-y-3 p-3">
-                  {/* Zoom slider */}
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-1">
-                      {translate('Zoom', language as Locale)}: {settings.zoom.level}%
-                    </label>
-                    <input
-                      type="range"
-                      min="50"
-                      max="200"
-                      step="5"
-                      value={settings.zoom.level}
-                      onChange={(e) => updateZoomSettings({ level: Number(e.target.value) })}
-                      className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                    />
-                    <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                      <span>50%</span>
-                      <span>125%</span>
-                      <span>200%</span>
-                    </div>
-                  </div>
-
-                  {/* Show vertical zoom slider checkbox */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="show-vertical-zoom-slider"
-                      checked={settings.zoom.showVerticalSlider}
-                      onChange={(e) => updateZoomSettings({ showVerticalSlider: e.target.checked })}
-                      className="w-4 h-4 bg-slate-700 border border-slate-600 rounded cursor-pointer accent-purple-500"
-                    />
-                    <label htmlFor="show-vertical-zoom-slider" className="text-[10px] text-gray-400 cursor-pointer">
-                      {translate('Show vertical zoom slider', language as Locale)}
-                    </label>
-                  </div>
-                </div>
-              )}
+              {/* Tool settings cards (shared with the Tools panel) */}
+              <ToolSettingsCards />
 
               {/* Token Archetypes Section */}
               <div>
@@ -2561,6 +2359,10 @@ const CategorySection: React.FC<CategorySectionProps> = ({
                   const drawing = obj as Drawing;
                   objColor = drawing.color || (drawing.strokes.length > 0 ? drawing.strokes[0].color : '#ef4444');
                 }
+                // For text labels, use their font color
+                if (obj.type === ItemType.TEXT) {
+                  objColor = (obj as any).fontColor || '#ffffff';
+                }
                 // Get name - handle different object types
                 const getDisplayName = () => {
                   if (obj.type === ItemType.PANEL) return (obj as PanelObject).title;
@@ -2727,7 +2529,7 @@ const DrawingToolButton: React.FC<DrawingToolButtonProps> = ({ tool, icon, label
   return (
     <button
       onClick={handleClick}
-      className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${
+      className={`flex flex-col items-center justify-center h-10 px-2 rounded-lg transition-colors ${
         selectedTool === tool
           ? 'bg-purple-600 text-white'
           : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
@@ -2735,7 +2537,7 @@ const DrawingToolButton: React.FC<DrawingToolButtonProps> = ({ tool, icon, label
       title={label}
     >
       {icon}
-      <span className="text-[10px] mt-1">{label}</span>
+      <span className="text-[10px] mt-0.5">{label}</span>
     </button>
   );
 };

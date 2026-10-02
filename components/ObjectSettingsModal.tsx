@@ -1146,6 +1146,7 @@ setGridDebugInfo(null);
   const isPanel = data.type === ItemType.PANEL;
   const isBattlefieldCell = data.type === ItemType.BATTLEFIELD_CELL;
   const isEffectTemplate = data.type === ItemType.EFFECT_TEMPLATE;
+  const isText = data.type === ItemType.TEXT;
 
   // Pile management functions
   const addPile = () => {
@@ -1564,6 +1565,56 @@ setGridDebugInfo(null);
                       onChange={e => update('name', e.target.value)}
                       className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                     />
+                  </div>
+                )}
+
+                {/* Text Appearance - only for text labels */}
+                {isText && (
+                  <div className="space-y-2 bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                    <label className="block text-xs font-bold text-gray-400">{translate('Text Appearance', language as Locale)}</label>
+
+                    {/* Text color + Border color */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] text-gray-400 mb-1">{translate('Text Color', language as Locale)}</label>
+                        <input
+                          type="color"
+                          value={(data as any).fontColor || '#ffffff'}
+                          onChange={e => update('fontColor', e.target.value)}
+                          className="w-full h-9 rounded cursor-pointer border-0 p-0 bg-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-gray-400 mb-1">{translate('Border Color', language as Locale)}</label>
+                        <input
+                          type="color"
+                          value={(data as any).borderColor || '#000000'}
+                          onChange={e => update('borderColor', e.target.value)}
+                          className="w-full h-9 rounded cursor-pointer border-0 p-0 bg-slate-900"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Border width slider */}
+                    <div>
+                      <label className="block text-[10px] text-gray-400 mb-1">
+                        {translate('Border Width', language as Locale)}: {(data as any).borderWidth ?? 0} VU
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="10"
+                        step="0.5"
+                        value={(data as any).borderWidth ?? 0}
+                        onChange={e => update('borderWidth', Number(e.target.value))}
+                        className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
+                      />
+                      <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
+                        <span>0</span>
+                        <span>5</span>
+                        <span>10</span>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -2243,13 +2294,26 @@ setGridDebugInfo(null);
                     <input
                       type="color"
                       value={(data as Drawing).color || ((data as Drawing).strokes.length > 0 ? (data as Drawing).strokes[0].color : '#ef4444')}
-                      onChange={e => update('color', e.target.value)}
+                      onChange={e => {
+                        // Recolor ALL strokes - the canvas renders per-stroke colors
+                        const d = data as Drawing;
+                        updateMultiple({
+                          color: e.target.value,
+                          strokes: d.strokes.map(s => ({ ...s, color: e.target.value })),
+                        });
+                      }}
                       className="w-12 h-10 bg-slate-900 border border-slate-700 rounded cursor-pointer flex-shrink-0"
                     />
                     <input
                       type="text"
                       value={(data as Drawing).color || ((data as Drawing).strokes.length > 0 ? (data as Drawing).strokes[0].color : '#ef4444')}
-                      onChange={e => update('color', e.target.value)}
+                      onChange={e => {
+                        const d = data as Drawing;
+                        updateMultiple({
+                          color: e.target.value,
+                          strokes: d.strokes.map(s => ({ ...s, color: e.target.value })),
+                        });
+                      }}
                       className="flex-1 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
                       placeholder="#ef4444"
                     />

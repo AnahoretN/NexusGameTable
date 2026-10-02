@@ -8,7 +8,8 @@ import { EffectTemplateRendererMemo } from '../EffectTemplateRenderer';
 import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, ArrowUp, ChevronsUp, ChevronsDown, Eye, EyeOff, Pin, RotateCw } from 'lucide-react';
-import { TableObject, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, ItemType, TokenShape } from '../../types';
+import { TableObject, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, TextObject, ItemType, TokenShape } from '../../types';
+import { TextObjectRendererMemo } from './TextObjectRenderer';
 import { TabletopRenderContext } from './types';
 import { TokenRenderer } from './TokenRenderer';
 import { CardRenderer } from './CardRenderer';
@@ -975,6 +976,35 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     );
   };
 
+  const renderTextObject = (obj: TableObject, globalZIndex: number) => {
+    const objLayer = obj.hyperscaleLayerId || 'none';
+    const style = createPositionedStyle(
+      v2p(obj.x),
+      v2p(obj.y),
+      v2p(obj.width ?? 100),
+      v2p(obj.height ?? 20),
+      globalZIndex,
+      objLayer,
+      {
+        transform: `rotate(${obj.rotation || 0}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
+        ...getLockedInSlotStyle(obj),
+        ...getMovementExtraStyle(obj.id),
+      },
+      obj.id
+    );
+    return (
+      <TextObjectRendererMemo
+        obj={obj as TextObject}
+        v2p={v2p}
+        currentTool={currentTool}
+        dispatch={dispatch}
+        onMouseDown={(e) => onMouseDown(e, obj.id)}
+        onContextMenu={(e) => onContextMenu(e, obj)}
+        style={style}
+      />
+    );
+  };
+
   const renderGameObject = (obj: TableObject) => {
 
     // 🔥 FIX: Don't add z-[100000] class - z-index is already set via globalZIndex prop
@@ -1044,6 +1074,10 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     // Don't render these objects on the table
     if (obj.x < -90000 || obj.y < -90000) {
       return null;
+    }
+
+    if (obj.type === ItemType.TEXT) {
+      return renderTextObject(obj, globalZIndex);
     }
 
     if (obj.type === ItemType.BATTLEFIELD_CELL) {

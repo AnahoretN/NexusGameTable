@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+import { Move } from 'lucide-react';
 import { useGame } from '../store/GameContext';
 import { useActivePlayerId } from '../store/contexts';
 import { useDrawingTool } from '../contexts/ToolSettingsContext';
@@ -120,6 +121,16 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [draggedDrawingId, setDraggedDrawingId] = useState<string | null>(null);
   const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
   const [dragStartDrawingPos, setDragStartDrawingPos] = useState<{ x: number; y: number } | null>(null);
+  // Throttle for drag position dispatches + synchronous drag flag (window listeners)
+  const drawingDragLastDispatchRef = useRef<number>(0);
+  const isDraggingDrawingRef = useRef(false);
+  const drawingDragTrailingTimerRef = useRef<number | null>(null);
+  const drawingDragPendingPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Keep the synchronous drag flag in sync with state
+  useEffect(() => {
+    isDraggingDrawingRef.current = isDraggingDrawing;
+  }, [isDraggingDrawing]);
 
   // Local cache for immediate eraser feedback
   const [localDrawingsCache, setLocalDrawingsCache] = useState<Map<string, Drawing>>(new Map());
@@ -427,7 +438,8 @@ setEraserThickness(newThickness);
       const drawingsToUse = localDrawingsCache.size > 0 ? Array.from(localDrawingsCache.values()) : drawings;
       const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawingsToUse);
 
-      if (clickedDrawing && !clickedDrawing.locked) {
+      // Moving ignores the drawing's lock - only cursor drag-and-drop respects it
+      if (clickedDrawing) {
         // Start dragging the drawing
         setIsDraggingDrawing(true);
         setDraggedDrawingId(clickedDrawing.id);
@@ -446,7 +458,8 @@ setEraserThickness(newThickness);
       const drawingsToUse = localDrawingsCache.size > 0 ? Array.from(localDrawingsCache.values()) : drawings;
       const clickedDrawing = findDrawingAtPosition(pos.x, pos.y, drawingsToUse);
 
-      if (clickedDrawing && !clickedDrawing.locked) {
+      // Moving ignores the drawing's lock - only cursor drag-and-drop respects it
+      if (clickedDrawing) {
         // Start dragging the drawing instead of drawing
         setIsDraggingDrawing(true);
         setDraggedDrawingId(clickedDrawing.id);
@@ -507,18 +520,51 @@ setEraserThickness(newThickness);
 
     // Handle drawing dragging
     if (isDraggingDrawing && draggedDrawingId && dragStartPos && dragStartDrawingPos) {
-      const dx = pos.x - dragStartPos.x;
-      const dy = pos.y - dragStartPos.y;
-
-      dispatch({
-        type: 'UPDATE_OBJECT',
-        payload: {
-          id: draggedDrawingId,
-          x: dragStartDrawingPos.x + dx,
-          y: dragStartDrawingPos.y + dy
-        },
-        _localOnly: true, // Don't send over network during drag
-      });
+      // Throttle position commits to one per 250ms - mousemove fires much faster,
+      // and every commit triggers a full state update + canvas redraw.
+      // A trailing commit is scheduled so the final movement is not lost.
+      const now = performance.now();
+      const sinceLast = now - drawingDragLastDispatchRef.current;
+      const commitDragPos = () => {
+        const dx = pos.x - dragStartPos.x;
+        const dy = pos.y - dragStartPos.y;
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: draggedDrawingId,
+            x: dragStartDrawingPos.x + dx,
+            y: dragStartDrawingPos.y + dy
+          },
+          _localOnly: true, // Don't send over network during drag
+        });
+      };
+      if (sinceLast < 250) {
+        // Trailing commit: schedule the position for when the throttle window ends
+        if (drawingDragTrailingTimerRef.current === null) {
+          drawingDragTrailingTimerRef.current = window.setTimeout(() => {
+            drawingDragTrailingTimerRef.current = null;
+            if (isDraggingDrawingRef.current && drawingDragPendingPosRef.current) {
+              drawingDragLastDispatchRef.current = performance.now();
+              const p = drawingDragPendingPosRef.current;
+              const dx = p.x - dragStartPos.x;
+              const dy = p.y - dragStartPos.y;
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: {
+                  id: draggedDrawingId,
+                  x: dragStartDrawingPos.x + dx,
+                  y: dragStartDrawingPos.y + dy
+                },
+                _localOnly: true,
+              });
+            }
+          }, 250 - sinceLast);
+        }
+        drawingDragPendingPosRef.current = pos;
+        return;
+      }
+      drawingDragLastDispatchRef.current = now;
+      commitDragPos();
       return;
     }
 
@@ -771,6 +817,25 @@ setEraserThickness(newThickness);
   const handleMouseUp = useCallback(() => {
     // Handle drawing drag end
     if (isDraggingDrawing) {
+      isDraggingDrawingRef.current = false; // synchronous guard for the window mouseup listener
+      // Flush the trailing throttled position so the final movement is not lost
+      if (drawingDragTrailingTimerRef.current !== null) {
+        clearTimeout(drawingDragTrailingTimerRef.current);
+        drawingDragTrailingTimerRef.current = null;
+      }
+      if (drawingDragPendingPosRef.current && draggedDrawingId && dragStartPos && dragStartDrawingPos) {
+        const p = drawingDragPendingPosRef.current;
+        dispatch({
+          type: 'UPDATE_OBJECT',
+          payload: {
+            id: draggedDrawingId,
+            x: dragStartDrawingPos.x + (p.x - dragStartPos.x),
+            y: dragStartDrawingPos.y + (p.y - dragStartPos.y),
+          },
+          _localOnly: true,
+        });
+      }
+      drawingDragPendingPosRef.current = null;
       // For guests, send final position via MOVE_OBJECT_COMMIT
       if (!isHost && draggedDrawingId && dragStartDrawingPos) {
         const drawing = state.objects[draggedDrawingId] as Drawing;
@@ -1036,14 +1101,22 @@ setEraserThickness(newThickness);
   const handleMouseLeave = useCallback(() => {
     setIsDrawing(false);
     setCurrentStroke([]);
-    // Also cancel drawing drag
-    if (isDraggingDrawing) {
-      setIsDraggingDrawing(false);
-      setDraggedDrawingId(null);
-      setDragStartPos(null);
-      setDragStartDrawingPos(null);
-    }
+    // NOTE: an active drawing drag is NOT cancelled here - fast drags may
+    // briefly leave the canvas; the drag ends via mouseup (window listener).
   }, [isDraggingDrawing]);
+
+  // While a drawing drag is active, finish it reliably on mouseup anywhere
+  // (the canvas may not receive the event if the cursor is over a panel)
+  useEffect(() => {
+    if (!isDraggingDrawing) return;
+    const onWinUp = () => {
+      if (!isDraggingDrawingRef.current) return;
+      handleMouseUp();
+    };
+    window.addEventListener('mouseup', onWinUp);
+    return () => window.removeEventListener('mouseup', onWinUp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDraggingDrawing, handleMouseUp]);
 
   // Check if there are any drawings to display (uses memoized drawings)
   const hasDrawings = drawings.length > 0;
@@ -1099,21 +1172,73 @@ setEraserThickness(newThickness);
   const finalPointerEvents = isOverPanel || isAltPressed ? 'none' : pointerEvents;
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      className="absolute top-0 left-0"
-      style={{
-        zIndex: 100, // Below panels (1000) and windows (10000), above most game objects
-        cursor: eraserShiftCursor || canvasCursor,
-        pointerEvents: finalPointerEvents,
-      }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        className="absolute top-0 left-0"
+        style={{
+          zIndex: 100, // Below panels (1000) and windows (10000), above most game objects
+          cursor: eraserShiftCursor || canvasCursor,
+          pointerEvents: finalPointerEvents,
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+      />
+      {/* Move handles for marker drawings (marker tool only). Reuse the same
+          drag machinery as Shift+drag: they ignore the drawing's lock. */}
+      {currentTool === 'marker' && (
+        <div
+          className="absolute top-0 left-0 pointer-events-none"
+          style={{ width, height, zIndex: 101 }}
+        >
+          {drawings.map((d) => {
+            if ((d as any).inCursorSlot) return null;
+            const handleX = (d.x + d.width) * k - offsetX;
+            const handleY = d.y * k - offsetY;
+            if (handleX < -30 || handleY < -30 || handleX > width + 30 || handleY > height + 30) return null;
+            return (
+              <div
+                key={d.id}
+                data-drawing-move-handle={d.id}
+                className="absolute cursor-move flex items-center justify-center text-slate-200"
+                style={{
+                  left: handleX,
+                  top: handleY,
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '6px',
+                  background: 'rgba(71, 85, 105, 0.9)',
+                  border: '1px solid rgba(147, 51, 234, 0.4)',
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                  pointerEvents: 'auto',
+                }}
+                title="Move drawing"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  // Pick into the cursor slot via the SAME pipeline the cursor
+                  // drag-and-drop uses: ghost follows, mouseup drops (full
+                  // dropCursorSlot logic: magnetism, clamping, z-index).
+                  window.dispatchEvent(new CustomEvent('handle-pick-to-cursor-slot', {
+                    detail: {
+                      objectId: d.id,
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                    },
+                  }));
+                }}
+              >
+                <Move size={12} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 };
 

@@ -44,7 +44,8 @@ import { ClickTooltip } from './ClickTooltip';
 
 // Import types
 import type { TabletopRenderContext } from './types';
-import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, Counter, DiceObject, EffectTemplate, TokenShape, CardOrientation, BattlefieldCell } from '../../types';
+import { ItemType, TableObject, Card, Token, Board, Deck, CardPile, Counter, DiceObject, EffectTemplate, TokenShape, CardOrientation, BattlefieldCell, Drawing } from '../../types';
+import { findDrawingAtPosition } from '../../utils/drawingUtils';
 
 /**
  * Tabletop Component (Refactored)
@@ -223,6 +224,25 @@ export const Tabletop: React.FC = () => {
   const cursorSlotLastDroppedRef = useRef<number>(0);
 
   // === Event Handlers ===
+  // Stable ref with the latest local grid settings: some memoized renderers hold
+  // old event-handler closures, so grid snap must be read via the ref, not props.
+  const gridSettingsRef = useRef({ enabled: toolSettings.grid.enabled, cellSizeVU: toolSettings.grid.cellSizeVU });
+  gridSettingsRef.current = { enabled: toolSettings.grid.enabled, cellSizeVU: toolSettings.grid.cellSizeVU };
+  const textSettingsRef = useRef({
+    defaultFontSizeVU: toolSettings.text.defaultFontSizeVU,
+    fontColor: toolSettings.text.fontColor,
+    borderColor: toolSettings.text.borderColor,
+    borderWidth: toolSettings.text.borderWidth,
+  });
+  textSettingsRef.current = {
+    defaultFontSizeVU: toolSettings.text.defaultFontSizeVU,
+    fontColor: toolSettings.text.fontColor,
+    borderColor: toolSettings.text.borderColor,
+    borderWidth: toolSettings.text.borderWidth,
+  };
+  // Latest game state for handler closures held by memoized renderers (see hook)
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const eventHandlers = useTabletopEventHandlers({
     state,
     dispatch,
@@ -286,6 +306,11 @@ export const Tabletop: React.FC = () => {
     setTopDeckModalDeck,
     setZoom,
     setScroll,
+    gridEnabled: toolSettings.grid.enabled,
+    gridCellSizeVU: toolSettings.grid.cellSizeVU,
+    gridSettingsRef,
+    textSettingsRef,
+    stateRef,
   });
 
   const {
@@ -1004,9 +1029,20 @@ export const Tabletop: React.FC = () => {
   }, [setCursorSlot, setCursorPosition, setCursorSlotSource]);
 
   return (
-    <div
-      ref={scrollContainerRef}
-      data-tabletop="true"
+    <>
+      {/* Text tool: I-beam cursor over the whole game space incl. game objects
+          (renderers force cursor-default on their elements); UI panels, buttons
+          and the move handle keep their own cursors */}
+      {currentTool === 'text' && (
+        <style>{`
+          [data-tabletop="true"].cursor-text [data-object-id] { cursor: text !important; }
+          [data-tabletop="true"].cursor-text [data-object-id] button { cursor: pointer !important; }
+          [data-tabletop="true"].cursor-text [data-text-move-handle] { cursor: move !important; }
+        `}</style>
+      )}
+      <div
+        ref={scrollContainerRef}
+        data-tabletop="true"
       className={`w-full h-full overflow-auto relative scrollbar-thick ${
         currentTool === 'eraser' && isShiftPressed
           ? 'cursor-eraser-delete'
@@ -1014,7 +1050,9 @@ export const Tabletop: React.FC = () => {
             ? 'cursor-move'
             : cursorSlot.length > 0
               ? 'cursor-grabbing'
-              : 'cursor-default'
+              : currentTool === 'text'
+                ? 'cursor-text'
+                : 'cursor-default'
       }`}
       style={{
         userSelect: 'none',
@@ -1027,6 +1065,38 @@ export const Tabletop: React.FC = () => {
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onContextMenu={(e) => e.preventDefault()}
+      onContextMenuCapture={(e) => {
+        // Marker drawings have no DOM element - hit-test them in the CAPTURE
+        // phase (before object handlers run and stopPropagation) and open the
+        // drawing's context menu if it renders above whatever was clicked.
+        const rect = scrollContainerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const worldX = p2v(e.clientX - rect.left + (viewTransform?.scroll?.x || 0));
+        const worldY = p2v(e.clientY - rect.top + (viewTransform?.scroll?.y || 0));
+        const drawings = (Object.values(state.objects) as TableObject[]).filter(
+          (o): o is Drawing => o.type === ItemType.DRAWING && o.isOnTable && !o.inCursorSlot
+        );
+        const hit = findDrawingAtPosition(worldX, worldY, drawings, 1);
+        if (!hit) return; // no drawing here - regular handlers do their thing
+        let override = true;
+        const onRegularObjectEl = (e.target as HTMLElement)?.closest?.('[data-object-id]');
+        if (onRegularObjectEl) {
+          const objId = onRegularObjectEl.getAttribute('data-object-id');
+          const obj = objId ? state.objects[objId] : null;
+          if (obj && (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW)) {
+            override = false; // UI panels/windows always render above canvas drawings
+          } else if (obj) {
+            const objLayer = hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
+            const objZ = (objLayer?.minZIndex ?? 3001) + (obj.zIndex ?? 0);
+            const drawLayer = hyperscaleLayers.find(l => l.id === 'drawings');
+            const drawZ = (drawLayer?.minZIndex ?? 6001) + (hit.zIndex ?? 0);
+            override = drawZ >= objZ;
+          }
+        }
+        if (override) {
+          handleContextMenu(e, hit);
+        }
+      }}
       onDragOver={(e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
@@ -1186,6 +1256,8 @@ export const Tabletop: React.FC = () => {
         rulerStep={rulerStep}
         language={language}
         pixelsPerVU={pixelsPerVU}
+        gridEnabled={toolSettings.grid.enabled}
+        gridCellSizeVU={toolSettings.grid.cellSizeVU}
       />
 
       {/* Remote Objects Layer */}
@@ -1327,6 +1399,7 @@ export const Tabletop: React.FC = () => {
       {/* Top Left Tool Panel (quick tool buttons + vertical zoom slider) */}
       <TopLeftToolPanel />
     </div>
+    </>
   );
 };
 

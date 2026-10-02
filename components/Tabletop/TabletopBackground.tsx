@@ -42,6 +42,8 @@ interface TabletopBackgroundProps {
   rulerStep: number; // Step size in VU (0 = disabled)
   language: string; // Language for step text formatting
   pixelsPerVU: number; // Viewport scale for DrawingCanvas VU <-> px conversion
+  gridEnabled: boolean; // Local per-player world grid visible + snapping
+  gridCellSizeVU: number; // Grid cell size in VU
 }
 
 /**
@@ -80,7 +82,9 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
   cursorSlotLength,
   rulerStep,
   language,
-  pixelsPerVU
+  pixelsPerVU,
+  gridEnabled,
+  gridCellSizeVU
 }) => {
   return (
     <>
@@ -112,6 +116,30 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
           zIndex: -1
         }}
       />
+
+      {/* Local world grid (per-player): guide lines that objects/panels snap to.
+          CSS gradient instead of thousands of SVG lines; rescales with zoom. */}
+      {gridEnabled && gridCellSizeVU > 0 && (() => {
+        const cellPx = v2p(gridCellSizeVU);
+        if (cellPx <= 0) return null;
+        return (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: worldBounds.width,
+              height: worldBounds.height,
+              backgroundImage:
+                'linear-gradient(to right, rgba(148, 163, 184, 0.35) 1px, transparent 1px),' +
+                ' linear-gradient(to bottom, rgba(148, 163, 184, 0.35) 1px, transparent 1px)',
+              backgroundSize: `${cellPx}px ${cellPx}px`,
+              pointerEvents: 'none',
+              zIndex: -1,
+            }}
+          />
+        );
+      })()}
 
       <div
         style={{
@@ -244,7 +272,9 @@ export const TabletopBackground = memo<TabletopBackgroundProps>(({
     prevProps.cursorSlotLength === nextProps.cursorSlotLength &&
     prevProps.rulerStep === nextProps.rulerStep &&
     prevProps.language === nextProps.language &&
-    prevProps.pixelsPerVU === nextProps.pixelsPerVU
+    prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.gridEnabled === nextProps.gridEnabled &&
+    prevProps.gridCellSizeVU === nextProps.gridCellSizeVU
   );
 });
 
@@ -262,7 +292,9 @@ export const TabletopBackgroundMemo = memo(TabletopBackground, (prevProps, nextP
     prevProps.v2p === nextProps.v2p &&
     prevProps.cursorSlotLength === nextProps.cursorSlotLength &&
     prevProps.rulerStep === nextProps.rulerStep &&
-    prevProps.pixelsPerVU === nextProps.pixelsPerVU
+    prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.gridEnabled === nextProps.gridEnabled &&
+    prevProps.gridCellSizeVU === nextProps.gridCellSizeVU
   );
 });
 

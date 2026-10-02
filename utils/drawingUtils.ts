@@ -30,7 +30,8 @@ export const getStrokesBounds = (strokes: Stroke[]): { minX: number; minY: numbe
 export const findDrawingAtPosition = (
   x: number,
   y: number,
-  drawings: Drawing[]
+  drawings: Drawing[],
+  padding: number = 0
 ): Drawing | null => {
   // Check from top (highest z-index) to bottom
   for (let i = drawings.length - 1; i >= 0; i--) {
@@ -39,11 +40,12 @@ export const findDrawingAtPosition = (
 
     const bounds = getStrokesBounds(drawing.strokes);
 
-    // Check if point is within drawing bounds (in world coords)
-    const worldMinX = bounds.minX + drawing.x;
-    const worldMaxX = bounds.maxX + drawing.x;
-    const worldMinY = bounds.minY + drawing.y;
-    const worldMaxY = bounds.maxY + drawing.y;
+    // Check if point is within drawing bounds (in world coords),
+    // expanded by the padding (extra click tolerance in VU)
+    const worldMinX = bounds.minX + drawing.x - padding;
+    const worldMaxX = bounds.maxX + drawing.x + padding;
+    const worldMinY = bounds.minY + drawing.y - padding;
+    const worldMaxY = bounds.maxY + drawing.y + padding;
 
     if (x >= worldMinX && x <= worldMaxX && y >= worldMinY && y <= worldMaxY) {
       return drawing;

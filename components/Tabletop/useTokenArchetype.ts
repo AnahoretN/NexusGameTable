@@ -16,7 +16,7 @@ import { flushSync } from 'react-dom';
 import { useEffect } from 'react';
 import { useGame } from '../../store/GameContext';
 import { useViewTransform } from '../../store/contexts';
-import { ItemType, TokenType, Token } from '../../types';
+import { ItemType, TokenType, Token, EffectTemplate } from '../../types';
 import { generateUUID } from '../../utils/uuid';
 import { addToCursorSlot, removeFromCursorSlot } from '../../utils/cursorSlotTracker';
 
@@ -199,6 +199,85 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
 
     window.addEventListener('add-token-to-cursor-slot', handleAddTokenToSlot, { passive: false } as any);
     return () => window.removeEventListener('add-token-to-cursor-slot', handleAddTokenToSlot);
+  }, [cursorSlotRef, dispatch, state.objects, setCursorSlot, setCursorPosition, cursorPositionRef, setCursorSlotSource, isAddingTokenRef]);
+
+  // Handle add-effect-to-cursor-slot events (tool panel flyout)
+  // This adds a NEW copy of an effect template to the cursor slot on click
+  useEffect(() => {
+    const handleAddEffectToSlot = (e: Event) => {
+      const customEvent = e as CustomEvent<{ templateId: string; clientX?: number; clientY?: number }>;
+      const { templateId, clientX, clientY } = customEvent.detail;
+      const template = state.objects[templateId] as EffectTemplate;
+
+      // Validate BEFORE preventing default or stopping propagation
+      if (!template || template.type !== ItemType.EFFECT_TEMPLATE) {
+        return; // Don't handle this event - let it propagate
+      }
+      if (cursorSlotRef.current.length >= 100) {
+        return; // Don't handle this event - let it propagate
+      }
+
+      // Set flag to prevent slot from being dropped during this operation
+      isAddingTokenRef.current = true;
+      e.preventDefault();
+      e.stopPropagation();
+
+      // ALWAYS create a NEW copy of the template (fresh UUID, like token archetypes).
+      // Transient/derived fields (isEditingPivot, hitboxPolygon) are not copied.
+      const newEffectId = generateUUID();
+      const newEffect: EffectTemplate = {
+        id: newEffectId,
+        type: ItemType.EFFECT_TEMPLATE,
+        name: template.name,
+        x: 0,
+        y: 0,
+        width: template.width ?? 100,
+        height: template.height ?? 100,
+        rotation: template.rotation ?? 0,
+        content: template.content,
+        pivot: template.pivot,
+        rotationMarkerDistance: template.rotationMarkerDistance,
+        opacity: template.opacity,
+        locked: false,
+        isOnTable: false,
+        inCursorSlot: true,
+        zIndex: template.zIndex ?? 0,
+        hyperscaleLayerId: 'boards',
+      };
+
+      // Add to global tracker before creating object
+      addToCursorSlot(newEffect.id, 0, 0);
+
+      // Add effect copy to objects list
+      dispatch({ type: 'ADD_OBJECT', payload: newEffect });
+
+      // Add to cursor slot (ref is source of truth, then state for re-render)
+      const effectClone: EffectTemplate = { ...newEffect };
+      (effectClone as any).cursorSlotIndex = cursorSlotRef.current.length;
+      (effectClone as any).originalZIndex = newEffect.zIndex ?? 0;
+      (effectClone as any).source = 'shift';
+
+      const newCursorSlot = [...cursorSlotRef.current, effectClone];
+      cursorSlotRef.current = newCursorSlot;
+
+      flushSync(() => {
+        setCursorSlot(newCursorSlot);
+        if (clientX !== undefined && clientY !== undefined) {
+          const pos = { x: clientX, y: clientY };
+          setCursorPosition(pos);
+          cursorPositionRef.current = pos;
+        }
+        setCursorSlotSource('shift');
+      });
+
+      // Keep isAddingTokenRef true briefly to prevent immediate drop
+      setTimeout(() => {
+        isAddingTokenRef.current = false;
+      }, 100);
+    };
+
+    window.addEventListener('add-effect-to-cursor-slot', handleAddEffectToSlot, { passive: false } as any);
+    return () => window.removeEventListener('add-effect-to-cursor-slot', handleAddEffectToSlot);
   }, [cursorSlotRef, dispatch, state.objects, setCursorSlot, setCursorPosition, cursorPositionRef, setCursorSlotSource, isAddingTokenRef]);
 
   // Handle drop-cursor-slot-at-position events from TokensPanel

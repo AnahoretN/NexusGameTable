@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ItemType, Card as CardType, Token as TokenType, CardOrientation, CardShape, Deck as DeckType, Randomizer, Counter, DiceObject, TokenShape, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing, EffectTemplate, TableObject } from '../types';
+import { ItemType, Card as CardType, Token as TokenType, CardOrientation, CardShape, Deck as DeckType, Randomizer, Counter, DiceObject, TokenShape, Board as BoardType, BattlefieldCell, NexusBoard, NexusCellObject, Drawing, EffectTemplate, TextObject, TableObject } from '../types';
 import { Card } from './Card';
 import { SvgTokenShape, CELL_BORDER_SCALE } from './SvgTokenShape';
 import { SvgDeckShape, DeckLabel, shouldUseSvgForDeck } from './SvgDeckShape';
@@ -58,7 +58,7 @@ async function preloadEffectImage(src: string): Promise<void> {
 }
 
 interface CursorSlotItemProps {
-  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing | EffectTemplate;
+  item: CardType | TokenType | DeckType | Randomizer | Counter | DiceObject | BoardType | BattlefieldCell | NexusBoard | NexusCellObject | Drawing | EffectTemplate | TextObject;
   width: number;
   height: number;
   offsetX: number;
@@ -803,6 +803,62 @@ const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTem
 };
 
 /**
+ * Renders a text object in the cursor slot (text follows the cursor while dragged)
+ */
+const CursorSlotText: React.FC<CursorSlotItemProps & { item: TextObject }> = ({ item, width, height, offsetX, offsetY, zIndex, pixelsPerVU }) => {
+  const content = item.content || '';
+  return (
+    <div
+      data-object-id={item.id}
+      data-object-type={item.type}
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        transform: `translate(${offsetX}px, ${offsetY}px)`,
+        minWidth: `${width}px`,
+        minHeight: `${height}px`,
+        width: 'max-content',
+        maxWidth: `${600 * pixelsPerVU}px`,
+        zIndex,
+        pointerEvents: 'none',
+        willChange: 'transform',
+        overflow: 'visible',
+      }}
+    >
+      {content ? (
+        <div
+          style={{
+            fontSize: `${item.fontSize * pixelsPerVU}px`,
+            lineHeight: 1.2,
+            color: item.fontColor || '#ffffff',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            textShadow: '0 1px 2px rgba(0, 0, 0, 0.7)',
+            userSelect: 'none',
+            ...((item.borderWidth ?? 0) > 0
+              ? { WebkitTextStroke: `${(item.borderWidth ?? 0) * pixelsPerVU}px ${item.borderColor || '#000000'}` }
+              : {}),
+          }}
+        >
+          {content}
+        </div>
+      ) : (
+        // Empty text: dashed placeholder box so the drag target stays visible
+        <div
+          style={{
+            width: `${width}px`,
+            height: `${height}px`,
+            border: '1px dashed rgba(148, 163, 184, 0.6)',
+            borderRadius: '2px',
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+/**
  * Main renderer for cursor slot items
  * Dispatches to the appropriate component based on item type
  */
@@ -845,6 +901,9 @@ export const renderCursorSlotItem = (props: CursorSlotItemProps, key: string) =>
 
     case ItemType.EFFECT_TEMPLATE:
       return <CursorSlotEffectTemplate key={key} {...props} item={item as EffectTemplate} />;
+
+    case ItemType.TEXT:
+      return <CursorSlotText key={key} {...props} item={item as unknown as TextObject} />;
 
     default:
       logger.warn('[renderCursorSlotItem] Unknown item type:', (item as any).type);

@@ -1,8 +1,11 @@
-import React from 'react';
-import { MousePointer2, Pen, Eraser, Ruler } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { MousePointer2, Pen, Eraser, Ruler, Type, Grid3x3, Hexagon, Target } from 'lucide-react';
 import { useToolSettings, DrawingTool } from '../../contexts/ToolSettingsContext';
 import { useLanguage } from '../../store/contexts/UIContext';
+import { useGame } from '../../store/GameContext';
 import { t, Locale } from '../../utils/translations';
+import { ItemType, TokenShape } from '../../types';
+import { ToolPanelFlyout, ToolPanelFlyoutItem } from './ToolPanelFlyout';
 
 /**
  * Shared visual style for the panel sections (quick tool buttons / zoom slider).
@@ -38,34 +41,127 @@ interface QuickToolButtonConfig {
  * TopLeftToolPanel Component
  *
  * Toggleable panel in the top-left corner of the game board. Contains
- * quick-select buttons for the drawing tools (cursor, marker, eraser, ruler)
- * and the vertical zoom slider. Each control can be shown/hidden from the
- * Tools tab of the main menu.
+ * quick-select buttons for the drawing tools (cursor, marker, eraser, ruler,
+ * text), a grid toggle, token/effect flyout launchers and the vertical zoom
+ * slider. Each control can be shown/hidden from the Tools tab of the main menu.
  *
  * @component
  * @returns {JSX.Element | null} Rendered panel or null if fully disabled
  */
 export const TopLeftToolPanel: React.FC = () => {
-  const { settings, setSelectedTool } = useToolSettings();
+  const { settings, setSelectedTool, updateGridSettings } = useToolSettings();
   const language = useLanguage();
+  const { state } = useGame();
+
+  // Flyout state ('tokens' | 'effects' | null) + hover close timer
+  const [openFlyout, setOpenFlyout] = useState<'tokens' | 'effects' | null>(null);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
+  const scheduleFlyoutClose = () => {
+    clearCloseTimer();
+    closeTimerRef.current = setTimeout(() => {
+      setOpenFlyout(null);
+      setAnchorRect(null);
+    }, 200);
+  };
+
+  const openFlyoutFor = (kind: 'tokens' | 'effects', rect: DOMRect) => {
+    clearCloseTimer();
+    setAnchorRect(rect);
+    setOpenFlyout(kind);
+  };
 
   const quickTools: QuickToolButtonConfig[] = [
     { id: 'none', icon: <MousePointer2 size={18} />, labelKey: 'Cursor', visible: settings.cursor.showButton },
     { id: 'marker', icon: <Pen size={18} />, labelKey: 'Marker', visible: settings.marker.showButton },
     { id: 'eraser', icon: <Eraser size={18} />, labelKey: 'Eraser', visible: settings.eraser.showButton },
     { id: 'ruler', icon: <Ruler size={18} />, labelKey: 'Ruler', visible: settings.ruler.showButton },
+    { id: 'text', icon: <Type size={18} />, labelKey: 'Text', visible: settings.text.showButton },
   ];
+
+  // Session token types / effect templates for the flyouts
+  const tokenTypes = Object.values(state.objects).filter(
+    (obj): obj is any => obj.type === ItemType.TOKEN_TYPE
+  );
+  const effectTemplates = Object.values(state.objects).filter(
+    (obj): obj is any =>
+      obj.type === ItemType.EFFECT_TEMPLATE &&
+      (obj as any).inCursorSlot !== true &&
+      obj.isOnTable !== false
+  );
+
+  const tokensFlyoutItems: ToolPanelFlyoutItem[] = tokenTypes.map((arch) => ({
+    id: arch.id,
+    name: arch.name,
+    kind: 'token' as const,
+    shape: arch.shape || TokenShape.CIRCLE,
+    color: arch.color || '#3498db',
+    content: arch.content || '',
+    borderWidth: arch.borderWidth,
+    borderColor: arch.borderColor,
+    opacity: arch.opacity,
+    width: arch.width,
+    height: arch.height,
+  }));
+  const effectsFlyoutItems: ToolPanelFlyoutItem[] = effectTemplates.map((tpl) => ({
+    id: tpl.id,
+    name: tpl.name,
+    kind: 'effect' as const,
+    content: tpl.content || '',
+  }));
+
+  const showTokensLauncher = tokensFlyoutItems.length > 0;
+  const showEffectsLauncher = effectsFlyoutItems.length > 0;
+
+  const activateFlyoutItem = (item: ToolPanelFlyoutItem, clientX: number, clientY: number) => {
+    clearCloseTimer();
+    // Keep the flyout open so several tokens/effects can be gathered by clicking
+    // repeatedly (same UX as the persistent token panels). It closes on mouse leave.
+    if (item.kind === 'token') {
+      // Picked into the cursor slot; follows the cursor, next click drops it
+      window.dispatchEvent(new CustomEvent('add-token-to-cursor-slot', {
+        detail: { archetypeId: item.id, clientX, clientY },
+      }));
+    } else {
+      window.dispatchEvent(new CustomEvent('add-effect-to-cursor-slot', {
+        detail: { templateId: item.id, clientX, clientY },
+      }));
+    }
+  };
 
   const visibleQuickTools = quickTools.filter((tool) => tool.visible);
   const showZoomSlider = settings.zoom.showVerticalSlider;
+  const showGridToggle = settings.grid.showButton;
 
   // Hide the whole panel when every control is disabled
-  if (visibleQuickTools.length === 0 && !showZoomSlider) {
+  if (
+    visibleQuickTools.length === 0 &&
+    !showZoomSlider &&
+    !showGridToggle &&
+    !showTokensLauncher &&
+    !showEffectsLauncher
+  ) {
     return null;
   }
 
+  const toolButtonClass = (isActive: boolean) =>
+    `flex items-center justify-center w-8 h-8 rounded-md transition-colors ${
+      isActive
+        ? 'bg-purple-600/80 border border-purple-400/90 text-white'
+        : 'bg-transparent border border-transparent text-slate-200 hover:bg-slate-600/60 hover:text-white'
+    }`;
+
   return (
     <div
+      data-floating-ui="true"
       className="fixed top-4 left-4 z-[1000] pointer-events-none flex flex-col gap-2"
       style={{ width: '40px' }}
     >
@@ -82,11 +178,7 @@ export const TopLeftToolPanel: React.FC = () => {
               <button
                 key={tool.id}
                 onClick={() => setSelectedTool(tool.id)}
-                className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors ${
-                  isActive
-                    ? 'bg-purple-600/80 border border-purple-400/90 text-white'
-                    : 'bg-transparent border border-transparent text-slate-200 hover:bg-slate-600/60 hover:text-white'
-                }`}
+                className={toolButtonClass(isActive)}
                 title={t(tool.labelKey, language as Locale)}
               >
                 {tool.icon}
@@ -96,8 +188,69 @@ export const TopLeftToolPanel: React.FC = () => {
         </div>
       )}
 
+      {/* Grid toggle (local per-player setting, not a blocking tool) */}
+      {showGridToggle && (
+        <div
+          className="relative w-full pointer-events-auto flex flex-col items-center gap-1 p-1"
+          style={PANEL_SECTION_STYLE}
+          {...handleSectionHover}
+        >
+          <button
+            onClick={() => updateGridSettings({ enabled: !settings.grid.enabled })}
+            className={toolButtonClass(settings.grid.enabled)}
+            title={t('Grid', language as Locale)}
+          >
+            <Grid3x3 size={18} />
+          </button>
+        </div>
+      )}
+
+      {/* Tokens / Effects flyout launchers */}
+      {(showTokensLauncher || showEffectsLauncher) && (
+        <div
+          className="relative w-full pointer-events-auto flex flex-col items-center gap-1 p-1"
+          style={PANEL_SECTION_STYLE}
+          {...handleSectionHover}
+        >
+          {showTokensLauncher && (
+            <button
+              className={toolButtonClass(openFlyout === 'tokens')}
+              title={t('Tokens', language as Locale)}
+              onMouseEnter={(e) => openFlyoutFor('tokens', (e.currentTarget as HTMLElement).getBoundingClientRect())}
+              onMouseLeave={scheduleFlyoutClose}
+              onClick={(e) => openFlyoutFor('tokens', (e.currentTarget as HTMLElement).getBoundingClientRect())}
+            >
+              <Hexagon size={18} />
+            </button>
+          )}
+          {showEffectsLauncher && (
+            <button
+              className={toolButtonClass(openFlyout === 'effects')}
+              title={t('Effects', language as Locale)}
+              onMouseEnter={(e) => openFlyoutFor('effects', (e.currentTarget as HTMLElement).getBoundingClientRect())}
+              onMouseLeave={scheduleFlyoutClose}
+              onClick={(e) => openFlyoutFor('effects', (e.currentTarget as HTMLElement).getBoundingClientRect())}
+            >
+              <Target size={18} />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Vertical zoom slider */}
       {showZoomSlider && <ZoomSliderSection />}
+
+      {/* Flyout portal (tokens / effects) */}
+      {openFlyout && anchorRect && (
+        <ToolPanelFlyout
+          anchorRect={anchorRect}
+          items={openFlyout === 'tokens' ? tokensFlyoutItems : effectsFlyoutItems}
+          title={openFlyout === 'tokens' ? t('Tokens', language as Locale) : t('Effects', language as Locale)}
+          onItemActivate={activateFlyoutItem}
+          onMouseEnter={clearCloseTimer}
+          onMouseLeave={scheduleFlyoutClose}
+        />
+      )}
     </div>
   );
 };
@@ -216,7 +369,7 @@ const ZoomSliderSection: React.FC = () => {
             const thumbCenterY = moveEvent.clientY - mouseOffset;
             const relativeY = thumbCenterY - containerRect.top;
 
-            // Convert thumb center position to zoom level
+            // Convert thumb center to zoom level
             let newLevel = positionToZoom(relativeY);
 
             // Apply magnetic snapping to tick marks

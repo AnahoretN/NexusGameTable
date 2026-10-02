@@ -2,8 +2,9 @@ import { t as translate, Locale } from '../utils/translations';
 import React, { useRef, useCallback } from 'react';
 import { useGame } from '../store/GameContext';
 import { AppLanguage } from '../types';
-import { Pen, Eraser, Ruler, ZoomIn, ChevronDown, ChevronUp, MousePointer2 } from 'lucide-react';
+import { Pen, Eraser, Ruler, ZoomIn, ChevronDown, ChevronUp, MousePointer2, Type } from 'lucide-react';
 import { useToolSettings, DrawingTool } from '../contexts/ToolSettingsContext';
+import { ToolSettingsCards } from './ToolSettingsCards';
 
 // Helper function to get translation for tool keys
 function getToolTranslation(language: AppLanguage, key: string): string {
@@ -16,6 +17,8 @@ function getToolTranslation(language: AppLanguage, key: string): string {
     toolEraserDesc: 'Erase drawings',
     toolRuler: 'Ruler',
     toolRulerDesc: 'Measure distances',
+    toolText: 'Text',
+    toolTextDesc: 'Create and edit text labels',
     toolZoom: 'Zoom',
     toolZoomDesc: 'Zoom in/out',
     rulerStep: 'Step',
@@ -37,6 +40,7 @@ const DRAWING_TOOLS: DrawingToolConfig[] = [
   { id: 'marker', labelKey: 'toolMarker', descKey: 'toolMarkerDesc', icon: <Pen size={20} /> },
   { id: 'eraser', labelKey: 'toolEraser', descKey: 'toolEraserDesc', icon: <Eraser size={20} /> },
   { id: 'ruler', labelKey: 'toolRuler', descKey: 'toolRulerDesc', icon: <Ruler size={20} /> },
+  { id: 'text', labelKey: 'toolText', descKey: 'toolTextDesc', icon: <Type size={20} /> },
   { id: 'zoom', labelKey: 'toolZoom', descKey: 'toolZoomDesc', icon: <ZoomIn size={20} /> },
 ];
 
@@ -59,7 +63,7 @@ export const MainToolsPanel: React.FC<MainToolsPanelProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Use shared tool settings context
-  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings } = useToolSettings();
+  const { settings, setSelectedTool } = useToolSettings();
 
   // Handle tool selection
   const handleToolSelect = useCallback((tool: DrawingTool) => {
@@ -111,12 +115,12 @@ export const MainToolsPanel: React.FC<MainToolsPanelProps> = ({
         {/* Drawing Tools Section */}
         <div className="border-b border-slate-700">
           <div className="p-3">
-            <div className="grid grid-cols-5 gap-1 mb-3">
+            <div className="grid grid-cols-6 gap-1 mb-3">
               {DRAWING_TOOLS.map((tool) => (
                 <button
                   key={tool.id}
                   onClick={() => handleToolSelect(tool.id)}
-                  className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${
+                  className={`flex flex-col items-center justify-center h-10 px-2 rounded-lg transition-colors ${
                     settings.selectedTool === tool.id
                       ? 'bg-purple-600 text-white'
                       : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
@@ -124,142 +128,13 @@ export const MainToolsPanel: React.FC<MainToolsPanelProps> = ({
                   title={getToolTranslation(language, tool.descKey)}
                 >
                   {tool.icon}
-                  <span className="text-[10px] mt-1">{getToolTranslation(language, tool.labelKey)}</span>
+                  <span className="text-[10px] mt-0.5">{getToolTranslation(language, tool.labelKey)}</span>
                 </button>
               ))}
             </div>
 
-            {/* Marker Settings (shown when marker is selected) */}
-            {settings.selectedTool === 'marker' && (
-              <div className="space-y-3 mt-3 p-3 bg-slate-900 rounded-lg">
-                <div>
-                  <input
-                    type="color"
-                    value={settings.marker.color}
-                    onChange={(e) => updateMarkerSettings({ color: e.target.value })}
-                    className="w-full h-10 bg-slate-800 border border-slate-700 rounded cursor-pointer"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-1">{translate('Size', language as Locale)}: {settings.marker.thickness}px</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={settings.marker.thickness}
-                    onChange={(e) => updateMarkerSettings({ thickness: Number(e.target.value) })}
-                    className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                  />
-                  <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                    <span>1px</span>
-                    <span>50px</span>
-                    <span>100px</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-1">{translate('Opacity', language as Locale)}: {settings.marker.opacity}%</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={settings.marker.opacity}
-                    onChange={(e) => updateMarkerSettings({ opacity: Number(e.target.value) })}
-                    className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                  />
-                  <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                    <span>1%</span>
-                    <span>50%</span>
-                    <span>100%</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Eraser Settings (shown when eraser is selected) */}
-            {settings.selectedTool === 'eraser' && (
-              <div className="space-y-3 p-3 bg-slate-900 rounded-lg">
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-1">{translate('Size', language as Locale)}: {settings.eraser.thickness}px</label>
-                  <input
-                    type="range"
-                    min="15"
-                    max="100"
-                    value={settings.eraser.thickness}
-                    onChange={(e) => updateEraserSettings({ thickness: Number(e.target.value) })}
-                    className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                  />
-                  <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                    <span>15px</span>
-                    <span>50px</span>
-                    <span>100px</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Ruler Settings (shown when ruler is selected) */}
-            {settings.selectedTool === 'ruler' && (
-              <div className="space-y-3 p-3 bg-slate-900 rounded-lg">
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-1">{translate('Step', language as Locale)}: {settings.ruler.step} VU</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="500"
-                    step="1"
-                    value={settings.ruler.step}
-                    onChange={(e) => updateRulerSettings({ step: Number(e.target.value) })}
-                    className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                  />
-                  <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                    <span>0</span>
-                    <span>250</span>
-                    <span>500</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Zoom Settings (shown when zoom is selected) */}
-            {settings.selectedTool === 'zoom' && (
-              <div className="space-y-2 p-3 bg-slate-900 rounded-lg">
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-1">{translate('Zoom Level', language as Locale)}: {settings.zoom.level}%</label>
-                  <input
-                    type="range"
-                    min="50"
-                    max="200"
-                    step="25"
-                    value={settings.zoom.level}
-                    onChange={(e) => updateZoomSettings({ level: Number(e.target.value) })}
-                    className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                  />
-                  <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                    <span>50%</span>
-                    <span>125%</span>
-                    <span>200%</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-1">{translate('Quick Zoom', language as Locale)}</label>
-                  <div className="grid grid-cols-4 gap-1">
-                    {[50, 100, 150, 200].map((level) => (
-                      <button
-                        key={level}
-                        onClick={() => updateZoomSettings({ level })}
-                        className={`text-xs py-1 rounded transition-colors ${
-                          settings.zoom.level === level
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
-                        }`}
-                      >
-                        {level}%
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+                        {/* Shared tool settings cards (same as main menu Tools tab) */}
+            <ToolSettingsCards />
           </div>
         </div>
       </div>
@@ -279,7 +154,7 @@ export const PanelToolsPanel: React.FC<PanelToolsPanelProps> = ({
   isCollapsed = false,
   language = 'en'
 }) => {
-  const { settings, setSelectedTool, updateMarkerSettings, updateEraserSettings, updateRulerSettings, updateZoomSettings } = useToolSettings();
+  const { settings, setSelectedTool } = useToolSettings();
 
   // Handle tool selection
   const handleToolSelect = useCallback((tool: DrawingTool) => {
@@ -309,12 +184,12 @@ export const PanelToolsPanel: React.FC<PanelToolsPanelProps> = ({
       >
         {/* Drawing Tools Section */}
         <div className="p-3">
-          <div className="grid grid-cols-5 gap-1 mb-3">
+          <div className="grid grid-cols-6 gap-1 mb-3">
             {DRAWING_TOOLS.map((tool) => (
               <button
                 key={tool.id}
                 onClick={() => handleToolSelect(tool.id)}
-                className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${
+                className={`flex flex-col items-center justify-center h-10 px-2 rounded-lg transition-colors ${
                   settings.selectedTool === tool.id
                     ? 'bg-purple-600 text-white'
                     : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
@@ -322,142 +197,13 @@ export const PanelToolsPanel: React.FC<PanelToolsPanelProps> = ({
                 title={getToolTranslation(language, tool.descKey)}
               >
                 {tool.icon}
-                <span className="text-[10px] mt-1">{getToolTranslation(language, tool.labelKey)}</span>
+                <span className="text-[10px] mt-0.5">{getToolTranslation(language, tool.labelKey)}</span>
               </button>
             ))}
           </div>
 
-          {/* Marker Settings (shown when marker is selected) */}
-          {settings.selectedTool === 'marker' && (
-            <div className="space-y-3 mt-3 p-3 bg-slate-900 rounded-lg">
-              <div>
-                <input
-                  type="color"
-                  value={settings.marker.color}
-                  onChange={(e) => updateMarkerSettings({ color: e.target.value })}
-                  className="w-full h-10 bg-slate-800 border border-slate-700 rounded cursor-pointer"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{translate('Size', language as Locale)}: {settings.marker.thickness}px</label>
-                <input
-                  type="range"
-                  min="1"
-                  max="100"
-                  value={settings.marker.thickness}
-                  onChange={(e) => updateMarkerSettings({ thickness: Number(e.target.value) })}
-                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                />
-                <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                  <span>1px</span>
-                  <span>50px</span>
-                  <span>100px</span>
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{translate('Opacity', language as Locale)}: {settings.marker.opacity}%</label>
-                <input
-                  type="range"
-                  min="1"
-                  max="100"
-                  value={settings.marker.opacity}
-                  onChange={(e) => updateMarkerSettings({ opacity: Number(e.target.value) })}
-                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                />
-                <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                  <span>1%</span>
-                  <span>50%</span>
-                  <span>100%</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Eraser Settings (shown when eraser is selected) */}
-          {settings.selectedTool === 'eraser' && (
-            <div className="space-y-3 p-3 bg-slate-900 rounded-lg">
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{translate('Size', language as Locale)}: {settings.eraser.thickness}px</label>
-                <input
-                  type="range"
-                  min="15"
-                  max="100"
-                  value={settings.eraser.thickness}
-                  onChange={(e) => updateEraserSettings({ thickness: Number(e.target.value) })}
-                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                />
-                <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                  <span>15px</span>
-                  <span>50px</span>
-                  <span>100px</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Ruler Settings (shown when ruler is selected) */}
-          {settings.selectedTool === 'ruler' && (
-            <div className="space-y-3 p-3 bg-slate-900 rounded-lg">
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{translate('Step', language as Locale)}: {settings.ruler.step} VU</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="500"
-                  step="1"
-                  value={settings.ruler.step}
-                  onChange={(e) => updateRulerSettings({ step: Number(e.target.value) })}
-                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                />
-                <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                  <span>0</span>
-                  <span>250</span>
-                  <span>500</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Zoom Settings (shown when zoom is selected) */}
-          {settings.selectedTool === 'zoom' && (
-            <div className="space-y-2 p-3 bg-slate-900 rounded-lg">
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{translate('Zoom Level', language as Locale)}: {settings.zoom.level}%</label>
-                <input
-                  type="range"
-                  min="50"
-                  max="200"
-                  step="5"
-                  value={settings.zoom.level}
-                  onChange={(e) => updateZoomSettings({ level: Number(e.target.value) })}
-                  className="w-full bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500 slider-input"
-                />
-                <div className="flex justify-between text-[9px] text-gray-600 mt-0.5">
-                  <span>50%</span>
-                  <span>125%</span>
-                  <span>200%</span>
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-1">{translate('Quick Zoom', language as Locale)}</label>
-                <div className="grid grid-cols-4 gap-1">
-                  {[50, 100, 150, 200].map((level) => (
-                    <button
-                      key={level}
-                      onClick={() => updateZoomSettings({ level })}
-                      className={`text-xs py-1 rounded transition-colors ${
-                        settings.zoom.level === level
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-slate-700 text-gray-400 hover:text-white hover:bg-slate-600'
-                      }`}
-                    >
-                      {level}%
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+                      {/* Shared tool settings cards (same as main menu Tools tab) */}
+            <ToolSettingsCards />
         </div>
       </div>
     </div>

@@ -728,6 +728,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 if (token.fontColor === undefined) token.fontColor = undefined;
             }
 
+            // === TEXT label migrations ===
+            if (obj.type === ItemType.TEXT) {
+                const textObj = cloned as any;
+                // Text labels are shared world objects - move them off the
+                // individualObjects 'interface' layer (x/y would be per-player there)
+                if (!textObj.hyperscaleLayerId || textObj.hyperscaleLayerId === 'interface') {
+                    textObj.hyperscaleLayerId = 'tokens';
+                }
+            }
+
             // === TOKEN_TYPE (archetype) specific migrations ===
             if (obj.type === ItemType.TOKEN_TYPE) {
                 const tokenType = cloned as TokenType;
@@ -1267,7 +1277,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // 🔥 SIMPLIFIED: For individualObjects layers, local properties are NOT synced
       // Local properties: position (x, y, rotation, zIndex), visibility, size, minimized state
       // Other properties (characterData, content, etc.) are synced normally
-      if (isIndividualObjectsLayer && !action._localOnly) {
+      // EXCEPTION: text labels and marker drawings are shared world objects - their
+      // position must sync even if they ended up on an individualObjects layer
+      // (e.g. older text labels created on 'interface').
+      if (isIndividualObjectsLayer && !action._localOnly &&
+          obj.type !== ItemType.TEXT && obj.type !== ItemType.DRAWING) {
         const updates = wrapped || {};
         const mergedUpdates = Object.keys(updates).length > 0 ? updates : flatUpdates;
 
@@ -5515,7 +5529,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         height,
         content: '',
         name: name || `Drawing ${Object.keys(state.objects).length + 1}`,
-        locked: false,
+        locked: true, // Locked by default - cursor drag bypasses the lock for drawings
         isOnTable: true,
         strokes,
         bounds: { x: 0, y: 0, width, height },
