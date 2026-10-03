@@ -15,8 +15,7 @@ import { getPlayerId } from './gameConstants';
 import { useSessionUx } from './session/sessionUx';
 import {
   createProtocolHandler,
-  buildPacksNeeded,
-  buildInitialSyncState
+  sendAcceptPush
 } from './session/protocol';
 
 // ============================================================================
@@ -239,35 +238,32 @@ export function useIrohConnection(
         });
 
         conn.on('open', () => {
+          logger.log('[P2P][Iroh] Guest connected', conn.peer);
           updateP2PLoadingStep('p2p', 'success', 'P2P connection established');
 
           // Same accept sequence as the PeerJS host: PACKS_NEEDED first,
           // then the filtered initial state (guest buffers until packs resolve)
-          setTimeout(() => {
-            if (conn?.open) {
-              conn.send(buildPacksNeeded(stateRef.current));
-              conn.send(buildInitialSyncState(stateRef.current));
-            }
-          }, 50);
+          sendAcceptPush(conn, () => stateRef.current);
         });
 
         conn.on('close', () => {
+          logger.warn('[P2P][Iroh] Guest disconnected');
           connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
         });
 
         conn.on('error', (err: any) => {
-          logger.error('[Iroh] Connection error:', err);
+          logger.error('[P2P][Iroh] Connection error:', err);
         });
       });
 
       peer.on('error', (err: any) => {
-        logger.error('[Iroh] Peer error:', err);
+        logger.error('[P2P][Iroh] Peer error:', err);
         setConnectionStatus('disconnected');
         updateP2PLoadingStep('connect', 'error', 'Connection failed');
       });
 
     } catch (error) {
-      logger.error('[Iroh] Failed to initialize:', error);
+      logger.error('[P2P][Iroh] Failed to initialize:', error);
       setConnectionStatus('disconnected');
       updateP2PLoadingStep('connect', 'error', 'Initialization failed');
     }
@@ -319,6 +315,7 @@ export function useIrohConnection(
 
         conn.on('open', () => {
           clearTimeout(connectionTimeout);
+          logger.log('[P2P][Iroh] Data channel open with host');
           setConnectionStatus('connected');
           updateP2PLoadingStep('p2p', 'success', 'Connected to host');
 
@@ -331,10 +328,12 @@ export function useIrohConnection(
           };
 
           conn.send({ type: 'HELO', payload: myPlayer });
+          logger.log('[P2P][Iroh] HELO sent');
           localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
           localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
 
-          updateP2PLoadingStep('handshake', 'success', 'Handshake complete');
+          // Handshake completes when the host's PACKS_NEEDED arrives
+          updateP2PLoadingStep('handshake', 'loading', 'Waiting for host response...');
         });
 
         conn.on('data', (data: any) => {
@@ -343,12 +342,13 @@ export function useIrohConnection(
 
         conn.on('close', () => {
           clearTimeout(connectionTimeout);
+          logger.warn('[P2P][Iroh] Host connection closed');
           setConnectionStatus('disconnected');
         });
 
         conn.on('error', (err: any) => {
           clearTimeout(connectionTimeout);
-          logger.error('[Iroh] Connection error:', err);
+          logger.error('[P2P][Iroh] Connection error:', err);
           setConnectionStatus('disconnected');
           updateP2PLoadingStep('p2p', 'error', 'Connection failed: ' + err.message);
         });
@@ -356,13 +356,13 @@ export function useIrohConnection(
 
       peer.on('error', (err: any) => {
         clearTimeout(connectionTimeout);
-        logger.error('[Iroh] Peer error:', err);
+        logger.error('[P2P][Iroh] Peer error:', err);
         setConnectionStatus('disconnected');
         updateP2PLoadingStep('connect', 'error', 'Failed to create node: ' + err.message);
       });
 
     } catch (error) {
-      logger.error('[Iroh] Failed to connect:', error);
+      logger.error('[P2P][Iroh] Failed to connect:', error);
       setConnectionStatus('disconnected');
       updateP2PLoadingStep('connect', 'error', 'Connection failed');
     }

@@ -50,7 +50,7 @@ export class IrohConnectionManager {
     this.nodeId = this.generateNodeId();
 
     if (this.config.enableLogging) {
-      logger.log('[Iroh] Initialized with config:', {
+      logger.log('[P2P][Iroh] Initialized with config:', {
         nodeId: this.nodeId.publicKey.slice(0, 16) + '...',
       });
     }
@@ -90,7 +90,7 @@ export class IrohConnectionManager {
   setPeerJsId(id: string): void {
     this.peerJsId = id;
     if (this.config.enableLogging) {
-      logger.log('[Iroh] PeerJS ID set:', id);
+      logger.log('[P2P][Iroh] PeerJS ID set:', id);
     }
   }
 
@@ -157,7 +157,7 @@ export class IrohConnectionManager {
 
       return ticket;
     } catch (e) {
-      logger.error('[Iroh] Failed to parse ticket:', e);
+      logger.error('[P2P][Iroh] Failed to parse ticket:', e);
       return null;
     }
   }

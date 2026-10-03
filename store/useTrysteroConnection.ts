@@ -87,30 +87,30 @@ const trysteroDbg: { sent: number; received: number; log: string[]; room?: unkno
     : null;
 
 /**
- * Resolves once at least one peer has joined the room (or after timeoutMs).
- * Uses onPeerJoin plus a getPeers() poll, so a peer that joined before the
- * listener was registered is still detected.
+ * Resolves once at least one peer has joined the room — or with `false` after
+ * timeoutMs. Uses onPeerJoin plus a getPeers() poll, so a peer that joined
+ * before the listener was registered is still detected.
  */
-function waitForPeer(room: TrysteroRoom, timeoutMs: number): Promise<void> {
+function waitForPeer(room: TrysteroRoom, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     let done = false;
-    const finish = () => {
+    const finish = (found: boolean) => {
       if (done) return;
       done = true;
       clearTimeout(timeout);
       clearInterval(poll);
-      resolve();
+      resolve(found);
     };
-    const timeout = setTimeout(finish, timeoutMs);
+    const timeout = setTimeout(() => finish(false), timeoutMs);
     const poll = setInterval(() => {
       try {
         const peers = room.getPeers();
-        if (peers && Object.keys(peers as any).length > 0) finish();
+        if (peers && Object.keys(peers as any).length > 0) finish(true);
       } catch {
         // ignore — room may be closing
       }
     }, 300);
-    room.onPeerJoin(() => finish());
+    room.onPeerJoin(() => finish(true));
   });
 }
 
@@ -130,7 +130,7 @@ const liveConnections: any[] = [];
 // into one list while GameContext reads the other, `connections: 0`).
 const INSTANCE_ID = Math.random().toString(36).slice(2, 8);
 (liveConnections as any).__instanceId = INSTANCE_ID;
-if (typeof window !== 'undefined') {
+if (import.meta.env.DEV && typeof window !== 'undefined') {
   const w = window as any;
   w.__trysteroInstances = w.__trysteroInstances || {};
   w.__trysteroInstances[INSTANCE_ID] = liveConnections;
@@ -169,9 +169,6 @@ function reconcileConnections(
       // `open: true` is required — the host broadcast loop in GameContext
       // skips connections without it.
       list.push({ peerId, send, open: true });
-      if (trysteroDbg) {
-        console.log('[Trystero] reconcile +' + peerId.slice(0, 6) + ' list=' + list.length + ' inst=' + INSTANCE_ID);
-      }
     }
   });
 }
@@ -204,6 +201,7 @@ export function useTrysteroConnection(
     suggestedPlayerName,
     setSuggestedPlayerName,
     updateStep: updateP2PLoadingStep,
+    armHandshakeWatchdog,
     reset: resetP2PLoading,
     packBuffer: {
       loadedPacksRef,
@@ -300,9 +298,6 @@ export function useTrysteroConnection(
     if (peerId && !list.some(c => c.peerId === peerId)) {
       // `open: true` is required — the broadcast loop skips connections without it
       list.push({ peerId, send: sendRef.current, open: true });
-      if (trysteroDbg) {
-        console.log('[Trystero] inbound +' + peerId.slice(0, 6) + ' list=' + list.length + ' inst=' + INSTANCE_ID);
-      }
     }
     // Also reconcile against the room's peer set (covers peers that connected
     // but have not sent anything yet)
@@ -323,10 +318,10 @@ export function useTrysteroConnection(
   // ============================================================================
 
   const initializeHost = useCallback(() => {
-    console.log('[Trystero] Initializing host...');
+    logger.log('[P2P][Trystero] init host');
 
     if (roomRef.current) {
-      console.log('[Trystero] Already initialized');
+      logger.warn('[P2P][Trystero] init host skipped — already initialized');
       return;
     }
 
@@ -343,9 +338,13 @@ export function useTrysteroConnection(
       relayUrls: TORRENT_TRACKERS,
     };
 
-    console.log('[Trystero] Creating room:', newRoomId);
+    logger.log('[P2P][Trystero] room created:', newRoomId, `(${TORRENT_TRACKERS.length} trackers)`);
 
-    const room = joinRoom(config, newRoomId) as unknown as TrysteroRoom;
+    const room = joinRoom(config, newRoomId, {
+      onJoinError: (details) => {
+        logger.error('[P2P][Trystero] Room join error:', details);
+      },
+    }) as unknown as TrysteroRoom;
     roomRef.current = room;
     if (trysteroDbg) trysteroDbg.room = room;
 
@@ -355,7 +354,6 @@ export function useTrysteroConnection(
       if (trysteroDbg) {
         trysteroDbg.sent++;
         trysteroDbg.log.push(`SEND ${data?.type} -> ${targetPeers || 'all'} #${trysteroDbg.sent}`);
-        console.log('[Trystero] SEND', data?.type, '->', targetPeers || 'all', '#' + trysteroDbg.sent, `${JSON.stringify(data)?.length || 0}b`);
       }
       return send(data, targetPeers);
     };
@@ -385,12 +383,12 @@ export function useTrysteroConnection(
 
     // Handle peer join
     room.onPeerJoin((peerId: string) => {
-      console.log('[Trystero] Peer joined:', peerId);
+      logger.log('[P2P][Trystero] PEER JOIN', peerId.slice(0, 8));
 
       // Connection lock (parity with the PeerJS host accept path): reject the
       // peer without adding it to the broadcast list.
       if (stateRef.current?.connectionsLocked) {
-        console.log('[Trystero] Connections locked — rejecting peer', peerId);
+        logger.warn('[P2P][Trystero] Connections locked — rejecting peer', peerId.slice(0, 8));
         rejectedPeersRef.current.add(peerId);
         sendRef.current?.({ type: 'CONNECTION_LOCKED' }, peerId);
         return;
@@ -404,7 +402,7 @@ export function useTrysteroConnection(
       // host accept sequence (PACKS_NEEDED + filtered initial state).
       setTimeout(() => {
         if (roomRef.current === room && sendRef.current) {
-          console.log('[Trystero] Sending backup packs+state to', peerId);
+          logger.log('[P2P][Trystero] backup packs+state →', peerId.slice(0, 8));
           sendRef.current(buildPacksNeeded(stateRef.current), peerId);
           sendRef.current(buildInitialSyncState(stateRef.current), peerId);
           // The guest just received everything — rebase the deletion-diff
@@ -417,7 +415,7 @@ export function useTrysteroConnection(
 
     // Handle peer leave
     room.onPeerLeave((peerId: string) => {
-      console.log('[Trystero] Peer left:', peerId);
+      logger.info('[P2P][Trystero] PEER LEAVE', peerId.slice(0, 8));
       const idx = connectionsRef.current.findIndex(c => c.peerId === peerId);
       if (idx !== -1) connectionsRef.current.splice(idx, 1);
     });
@@ -431,7 +429,7 @@ export function useTrysteroConnection(
   // ============================================================================
 
   const connectToHost = useCallback(async (roomIdToJoin: string, playerName: string) => {
-    console.log('[Trystero] Connecting to room:', roomIdToJoin);
+    logger.log('[P2P][Trystero] init guest — joining room:', roomIdToJoin);
 
     resetP2PLoading();
     updateP2PLoadingStep('connect', 'loading', 'Joining room...');
@@ -443,7 +441,13 @@ export function useTrysteroConnection(
     };
 
     try {
-      const room = joinRoom(config, roomIdToJoin) as unknown as TrysteroRoom;
+      const room = joinRoom(config, roomIdToJoin, {
+        onJoinError: (details) => {
+          logger.error('[P2P][Trystero] Room join error:', details);
+          setConnectionStatus('disconnected');
+          updateP2PLoadingStep('connect', 'error', 'Failed to join room (tracker error)');
+        },
+      }) as unknown as TrysteroRoom;
       roomRef.current = room;
       setRoomId(roomIdToJoin);
       if (trysteroDbg) trysteroDbg.room = room;
@@ -488,7 +492,15 @@ export function useTrysteroConnection(
       // a while — a HELO sent into an empty room is simply lost, leaving the
       // guest with no game state.
       updateP2PLoadingStep('connect', 'loading', 'Waiting for peers via trackers...');
-      await waitForPeer(room, 15000);
+      const found = await waitForPeer(room, 20000);
+      if (!found) {
+        logger.error('[P2P][Trystero] No peers discovered within 20s — aborting join');
+        setConnectionStatus('disconnected');
+        updateP2PLoadingStep('connect', 'error',
+          'Could not find the host via trackers. Make sure the host window is open, then press "Retry connection".');
+        return;
+      }
+      logger.log('[P2P][Trystero] peer discovered — joined room');
 
       updateP2PLoadingStep('connect', 'success', 'Joined room');
       updateP2PLoadingStep('p2p', 'loading', 'Establishing P2P connection...');
@@ -511,6 +523,7 @@ export function useTrysteroConnection(
       };
 
       send({ type: 'HELO', payload: myPlayer });
+      logger.log('[P2P][Trystero] HELO sent');
       localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
       localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
 
@@ -518,6 +531,16 @@ export function useTrysteroConnection(
       // be lost while the peer connection is still settling on either side.
       receivedSyncRef.current = false;
       connectionLockedRef.current = false;
+      // Handshake watchdog: if the host's PACKS_NEEDED never arrives (lost
+      // backup push, dead host tab), fail loudly instead of hanging forever.
+      // connectionLockedRef also stops the retry interval below.
+      armHandshakeWatchdog(() => {
+        logger.error('[P2P][Trystero] Handshake timeout — no PACKS_NEEDED from host in 30s');
+        connectionLockedRef.current = true;
+        setConnectionStatus('disconnected');
+        updateP2PLoadingStep('handshake', 'error',
+          'Host is not responding. The host may have closed the game — press "Retry connection".');
+      });
       let heloRetries = 0;
       const heloTimer = setInterval(() => {
         if (
@@ -530,7 +553,7 @@ export function useTrysteroConnection(
           return;
         }
         heloRetries++;
-        logger.warn('[Trystero] No state received yet, re-sending HELO (attempt ' + heloRetries + ')');
+        logger.warn('[P2P][Trystero] no state yet — re-sending HELO (attempt ' + heloRetries + ')');
         send({ type: 'HELO', payload: myPlayer });
       }, 1500);
 
@@ -541,11 +564,11 @@ export function useTrysteroConnection(
       updateP2PLoadingStep('handshake', 'loading', 'Waiting for host response...');
 
     } catch (error) {
-      console.error('[Trystero] Failed to connect:', error);
+      logger.error('[P2P][Trystero] Failed to connect:', error);
       setConnectionStatus('disconnected');
       updateP2PLoadingStep('connect', 'error', 'Failed to connect');
     }
-  }, [updateP2PLoadingStep, resetP2PLoading, handleNetworkData, localDispatch]);
+  }, [updateP2PLoadingStep, resetP2PLoading, handleNetworkData, localDispatch, armHandshakeWatchdog]);
 
   // ============================================================================
   // SET PLAYER NAME

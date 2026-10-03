@@ -5,8 +5,9 @@
  * Extracted verbatim from usePeerConnection (the canonical implementation).
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Action } from '../gameActions';
+import { logger } from '../../utils/logger';
 
 // ============================================================================
 // TYPES
@@ -52,6 +53,31 @@ export function useSessionUx(localDispatch: React.Dispatch<Action>) {
   const hasReceivedPacksNeededRef = useRef(false);
   const expectedPacksCountRef = useRef(0);
   const receivedEmptyPacksRef = useRef(false);
+
+  // Handshake watchdog: the guest hangs forever on 'Waiting for host response...'
+  // if the host's PACKS_NEEDED is lost (the Trystero host pushes it exactly once).
+  const handshakeWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelHandshakeWatchdog = useCallback(() => {
+    if (handshakeWatchdogRef.current) {
+      clearTimeout(handshakeWatchdogRef.current);
+      handshakeWatchdogRef.current = null;
+    }
+  }, []);
+
+  const armHandshakeWatchdog = useCallback((onTimeout: () => void, timeoutMs = 30000) => {
+    cancelHandshakeWatchdog();
+    handshakeWatchdogRef.current = setTimeout(() => {
+      handshakeWatchdogRef.current = null;
+      if (!hasReceivedPacksNeededRef.current) {
+        logger.error('[P2P][Session] Handshake watchdog fired — no PACKS_NEEDED from host');
+        onTimeout();
+      }
+    }, timeoutMs);
+  }, [cancelHandshakeWatchdog]);
+
+  // Cleanup on unmount so a pending watchdog can't fire into a dead component
+  useEffect(() => () => cancelHandshakeWatchdog(), [cancelHandshakeWatchdog]);
 
   const updateStep = useCallback((stepId: string, status: P2PLoadingStep['status'], message?: string, progress?: number) => {
     setP2pLoadingSteps(prev => {
@@ -104,13 +130,14 @@ export function useSessionUx(localDispatch: React.Dispatch<Action>) {
   const reset = useCallback(() => {
     setP2pLoadingSteps(CANONICAL_STEPS.map(s => ({ ...s })));
     setP2pLoadingProgress(0);
+    cancelHandshakeWatchdog();
     loadedPacksRef.current.clear();
     bufferedStateRef.current = null;
     hasReceivedPacksNeededRef.current = false;
     expectedPacksCountRef.current = 0;
     receivedEmptyPacksRef.current = false;
     setRequiredPacks([]);
-  }, []);
+  }, [cancelHandshakeWatchdog]);
 
   return {
     p2pLoadingSteps,
@@ -120,6 +147,8 @@ export function useSessionUx(localDispatch: React.Dispatch<Action>) {
     setRequiredPacks,
     setSuggestedPlayerName,
     updateStep,
+    armHandshakeWatchdog,
+    cancelHandshakeWatchdog,
     reset,
     packBuffer: {
       loadedPacksRef,

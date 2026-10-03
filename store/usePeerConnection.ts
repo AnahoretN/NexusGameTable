@@ -19,8 +19,7 @@ import {
 import { useSessionUx } from './session/sessionUx';
 import {
   createProtocolHandler,
-  buildPacksNeeded,
-  buildInitialSyncState,
+  sendAcceptPush,
   notifyGuestDisconnected
 } from './session/protocol';
 
@@ -360,7 +359,7 @@ export function usePeerConnection(
       try {
         peer.disconnect();
       } catch (e) {
-        logger.error('[P2P Signalling] Error disconnecting from signalling:', e);
+        logger.error('[P2P][PeerJS] Error disconnecting from signalling:', e);
       }
     }
 
@@ -371,7 +370,7 @@ export function usePeerConnection(
         room.leave();
         roomRef.current = null;
       } catch (e) {
-        logger.error('[Trystero] Error leaving room:', e);
+        logger.error('[P2P][PeerJS] Error leaving legacy room:', e);
       }
     }
   }, []);
@@ -430,7 +429,7 @@ export function usePeerConnection(
       };
 
       const onError = (err: any) => {
-        logger.error('[P2P Signalling] Failed to reconnect to signalling:', err);
+        logger.error('[P2P][PeerJS] Failed to reconnect to signalling:', err);
         peer.off('open', onOpen);
         peer.off('error', onError);
         reject(err);
@@ -605,12 +604,15 @@ export function usePeerConnection(
         }
         connectionCompleted = true;
 
+        logger.log('[P2P][PeerJS] Data channel open with host');
         setConnectionStatus('connected');
         syncSingleton(); // Sync to singleton after connection is open
 
         // 🔥 NEW: Update progress - P2P connection established
         updateP2PLoadingStep('p2p', 'success', 'P2P connection established');
-        updateP2PLoadingStep('handshake', 'loading', 'Waiting for host info...');
+        // Handshake is NOT complete yet — success is set by the host's
+        // PACKS_NEEDED in the shared protocol (parity with Trystero).
+        updateP2PLoadingStep('handshake', 'loading', 'Waiting for host response...');
 
         // 🔥 FIX: Send HELO if player name was set before connection opened
         // This handles the case where setPlayerName was called but connection wasn't ready yet
@@ -630,17 +632,17 @@ export function usePeerConnection(
 
           // Send HELO to host
           conn.send({ type: 'HELO', payload: myPlayer });
+          logger.log('[P2P][PeerJS] HELO sent');
 
           // Clear pending name
           pendingPlayerNameRef.current = null;
-
-          // Update progress
-          updateP2PLoadingStep('handshake', 'success', 'Handshake complete!');
         }
       });
 
       conn.on('data', (data: any) => {
         if (data.type === 'CONNECTION_LOCKED') {
+          logger.warn('[P2P][PeerJS] Host has locked new connections');
+          updateP2PLoadingStep('handshake', 'error', 'The host has locked new connections');
           alert("The host has locked new connections. Please contact the host to join.");
           setConnectionStatus('disconnected');
           setWaitingForPlayerName(null);
@@ -655,6 +657,7 @@ export function usePeerConnection(
         }
         connectionCompleted = true;
 
+        logger.warn('[P2P][PeerJS] Host connection closed');
         isIntentionalDisconnectRef.current = true;
         if (peer && !peer.destroyed) {
           peer.destroy();
@@ -670,7 +673,7 @@ export function usePeerConnection(
         }
         connectionCompleted = true;
 
-        logger.error("Connection error to host:", err);
+        logger.error('[P2P][PeerJS] Connection error to host:', err);
         isIntentionalDisconnectRef.current = true;
         if (peer && !peer.destroyed) {
           peer.destroy();
@@ -753,10 +756,10 @@ export function usePeerConnection(
       localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
 
       hostConn.send({ type: 'HELO', payload: myPlayer });
+      logger.log('[P2P][PeerJS] HELO sent');
       pendingPlayerNameRef.current = null; // Clear after sending
 
-      // 🔥 NEW: Update progress - handshake complete
-      updateP2PLoadingStep('handshake', 'success', 'Handshake complete!');
+      // Handshake completes when the host's PACKS_NEEDED arrives (shared protocol)
     } else {
       // Fallback: not connected yet, connect first (HELO will be sent in conn.on('open'))
       connectToHost(hostId, finalName);
@@ -789,7 +792,7 @@ export function usePeerConnection(
         syncSingleton(); // Sync to singleton
         return;
       } catch (e) {
-        logger.error('[P2P Host] Failed to reconnect to signalling:', e);
+        logger.error('[P2P][PeerJS] Host failed to reconnect to signalling:', e);
         // Fall through to create new peer
       }
     }
@@ -830,7 +833,8 @@ export function usePeerConnection(
           pc.addEventListener('iceconnectionstatechange', () => {
             const state = pc.iceConnectionState;
             if (state === 'failed' || state === 'disconnected') {
-              logger.error(`[P2P Host] ICE connection ${state} - guest connection failed`);
+              // 'disconnected' can be transient (network switch) — warn, not error
+              logger.warn(`[P2P][PeerJS] ICE connection ${state} — guest connection degraded`);
             }
           });
         }
@@ -841,6 +845,8 @@ export function usePeerConnection(
       setTimeout(() => checkHostIceState(), 3000);
 
       conn.on('open', () => {
+        logger.log('[P2P][PeerJS] Guest connected', guestPeerId);
+
         // Check if connections are locked
         if (stateRef.current?.connectionsLocked) {
           conn.send({ type: 'CONNECTION_LOCKED' });
@@ -857,29 +863,22 @@ export function usePeerConnection(
           handleNetworkData(data, conn);
         });
 
-        // IMPORTANT: Wait for data channel to be fully ready before sending data
-        // This fixes the issue where guest doesn't receive messages
-        setTimeout(() => {
-          if (!conn.open) {
-            return;
-          }
+        // PACKS_NEEDED + initial SYNC_STATE, retried while the channel settles
+        // (a single fire-and-forget send used to be silently skipped)
+        sendAcceptPush(conn, () => stateRef.current);
 
-          // PACKS_NEEDED first, then the filtered initial SYNC_STATE
-          conn.send(buildPacksNeeded(stateRef.current));
-          conn.send(buildInitialSyncState(stateRef.current));
-
-          // Store reference to connection for sending player panel settings later
-          (conn as any).pendingPlayerId = null; // Will be set when HELO is received
-        }, 50); // 50ms delay to ensure data channel is fully ready
+        // Store reference to connection for sending player panel settings later
+        (conn as any).pendingPlayerId = null; // Will be set when HELO is received
 
         // Handle Disconnection
         conn.on('close', () => {
+          logger.info('[P2P][PeerJS] Guest disconnected', guestPeerId);
           notifyGuestDisconnected(localDispatch, connectionsRef, conn);
           syncSingleton(); // Sync to singleton after connection removed
         });
 
         conn.on('error', (err) => {
-          logger.error(`[P2P Host] Connection error with guest ${guestPeerId}:`, err);
+          logger.error(`[P2P][PeerJS] Connection error with guest ${guestPeerId}:`, err);
           notifyGuestDisconnected(localDispatch, connectionsRef, conn);
           syncSingleton(); // Sync to singleton after connection removed
         });
@@ -890,7 +889,7 @@ export function usePeerConnection(
           if (args[0] === 'iceStateChange') {
             const state = args[1] as string;
             if (state === 'failed' || state === 'disconnected') {
-              logger.warn(`[P2P Host] ICE connection ${state} for guest ${guestPeerId} - may indicate NAT/Firewall issues`);
+              logger.warn(`[P2P][PeerJS] ICE connection ${state} for guest ${guestPeerId} — may indicate NAT/firewall issues`);
             }
           }
           return originalEmit.apply(this, args as any);
@@ -899,7 +898,7 @@ export function usePeerConnection(
         // Connection timeout
         setTimeout(() => {
           if (!conn.open) {
-            logger.warn(`[P2P Host] Connection timeout for guest ${guestPeerId}`);
+            logger.warn(`[P2P][PeerJS] Connection timeout for guest ${guestPeerId}`);
           }
         }, 30000);
       });
@@ -943,7 +942,7 @@ export function usePeerConnection(
           try {
             peer.reconnect();
           } catch (e) {
-            logger.error('[P2P Host] Reconnect failed:', e);
+            logger.error('[P2P][PeerJS] Host reconnect failed:', e);
             // Continue trying
             scheduleHostReconnect();
           }
@@ -958,7 +957,7 @@ export function usePeerConnection(
     });
 
     peer.on('error', (err) => {
-      logger.error('Peer error:', err);
+      logger.error('[P2P][PeerJS] Peer error:', err);
 
       // 🔥 FIX: Handle all network-related errors, not just 'network' type
       // PeerJS emits various error types for connection issues:
@@ -1053,7 +1052,7 @@ export function usePeerConnection(
         // If we get here, parsing failed
         alert('Invalid invite link. Please check the link and try again.');
       } catch (e) {
-        logger.error('[usePeerConnection] Error parsing ticket:', e);
+        logger.error('[P2P][PeerJS] Error parsing ticket:', e);
         alert('Invalid invite link. Please check the link and try again.');
       }
       return;

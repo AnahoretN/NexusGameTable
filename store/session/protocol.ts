@@ -84,6 +84,33 @@ export function buildInitialSyncState(state: any): { type: 'SYNC_STATE'; payload
   return { type: 'SYNC_STATE', payload: stateToSend };
 }
 
+/**
+ * Accept push (host → guest right after the data channel opens): PACKS_NEEDED +
+ * initial SYNC_STATE. Retried while the channel is still closing/opening — a
+ * single fire-and-forget send used to be silently skipped by
+ * `if (!conn.open) return` and left the guest deadlocked on the handshake step.
+ */
+export function sendAcceptPush(
+  conn: SenderConn,
+  getState: () => any,
+  attempts = 6
+): void {
+  const trySend = (left: number) => {
+    if (!conn.open) {
+      if (left > 0) {
+        setTimeout(() => trySend(left - 1), 250);
+      } else {
+        logger.error('[P2P][Session] Accept push aborted — connection never opened');
+      }
+      return;
+    }
+    logger.log('[P2P][Session] Accept push sent');
+    conn.send(buildPacksNeeded(getState()));
+    conn.send(buildInitialSyncState(getState()));
+  };
+  setTimeout(() => trySend(attempts), 50);
+}
+
 /** Host-side cleanup when a guest connection drops. */
 export function notifyGuestDisconnected(
   localDispatch: React.Dispatch<Action>,
@@ -106,6 +133,7 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
     setSuggestedPlayerName,
     setRequiredPacks,
     updateStep,
+    cancelHandshakeWatchdog,
     packBuffer,
   } = ux;
   const {
@@ -117,14 +145,13 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
     flushBufferedSyncState,
   } = packBuffer;
 
-  return (data: any, senderConn: SenderConn) => {
-    // 🔧 DEV diagnostic: mark which layer processed each network message
-    logger.log('[Session] Received data:', data?.type);
+  const handle = (data: any, senderConn: SenderConn) => {
+    logger.log('[P2P][Session] RECV', data?.type);
 
-    // Host has locked new connections (guest side). PeerJS guests get the same
-    // treatment from their transport's data handler.
+    // Host has locked new connections (guest side). Each transport surfaces this
+    // itself (step error / alert) — no alert here, it fired twice before.
     if (data.type === 'CONNECTION_LOCKED') {
-      alert('The host has locked new connections. Please contact the host to join.');
+      logger.warn('[P2P][Session] Host has locked new connections');
       return;
     }
 
@@ -133,6 +160,17 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
     if (data.type === 'PACKS_NEEDED') {
       // Guest received pack list from host
       const { packs, nextPlayerNumber } = data.payload;
+
+      // Repeat delivery (HELO reply + onPeerJoin backup push). The pack list is
+      // deterministic from host state, so just confirm the handshake and stop —
+      // do NOT regress the 'packs' step or re-trigger pack loading.
+      if (hasReceivedPacksNeededRef.current) {
+        logger.log('[P2P][Session] PACKS_NEEDED received (repeat) — handshake already confirmed');
+        updateStep('handshake', 'success', 'Connected to host!');
+        cancelHandshakeWatchdog();
+        return;
+      }
+      logger.log('[P2P][Session] PACKS_NEEDED received —', packs.length, 'pack(s)');
 
       // Set suggested player name (Player X where X is the next player number)
       if (nextPlayerNumber !== undefined) {
@@ -161,6 +199,7 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
 
       // Mark that we received PACKS_NEEDED (for SYNC_STATE buffering)
       hasReceivedPacksNeededRef.current = true;
+      cancelHandshakeWatchdog();
     } else if (data.type === 'PACK_LOADED') {
       // Host received notification that guest loaded a pack
       const { packName, hashes } = data.payload;
@@ -318,7 +357,19 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
         return;
       }
 
-      localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
+      // Self-healing handshake: the Trystero host pushes PACKS_NEEDED exactly
+      // once (1.5s after onPeerJoin) and the guest may not be listening yet —
+      // answering EVERY HELO (first try or retry) makes the handshake recover
+      // on its own. The guest's repeat-guard makes duplicates harmless.
+      logger.log('[P2P][Session] HELO received — replying PACKS_NEEDED');
+      senderConn.send(buildPacksNeeded(stateRef.current));
+
+      // Retry HELOs from an already-known player: skip the duplicate ADD_PLAYER
+      // (avoids re-render churn) but still re-send the full state below.
+      const knownPlayer = stateRef.current?.players?.some((p: Player) => p.id === newPlayer.id);
+      if (!knownPlayer) {
+        localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
+      }
 
       // Wait for state to update before sending SYNC_STATE
       // localDispatch is async, so we need to wait for the next tick to get updated state
@@ -433,6 +484,19 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
             }
           });
         }
+      }
+    }
+  };
+
+  // A throw inside a message handler used to kill the join silently — the guest
+  // just hung on the current loading step. Surface it instead.
+  return (data: any, senderConn: SenderConn) => {
+    try {
+      handle(data, senderConn);
+    } catch (e) {
+      logger.error('[P2P][Session] Handler error for', data?.type, e);
+      if (!isHost && (data?.type === 'PACKS_NEEDED' || data?.type === 'SYNC_STATE')) {
+        updateStep('state', 'error', 'Synchronization error — see console (F12)');
       }
     }
   };

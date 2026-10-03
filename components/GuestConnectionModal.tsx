@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Wifi, User, Package, Upload, Check, AlertCircle, Play, Loader2 } from 'lucide-react';
+import { Wifi, User, Package, Upload, Check, AlertCircle, Play, Loader2, RotateCcw } from 'lucide-react';
 import { loadPackFromFile } from '../utils/assets/sources/packLoader';
 import { P2PLoadingStep } from '../store/usePeerConnection';
 import { Action } from '../store/gameActions';
@@ -507,6 +507,19 @@ export const GuestConnectionModal: React.FC<GuestConnectionModalProps> = ({
               <span>• Wait for connection to complete</span>
             )}
           </div>
+
+          {/* Retry — a failed step (handshake timeout, host not found) means this
+              join attempt is dead. A reload re-runs the whole join from the
+              invite URL (?roomId=/ticket=), which resets every transport hook. */}
+          {connectionSteps.some(step => step.status === 'error') && (
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all bg-gradient-to-r from-purple-600 to-blue-500 hover:from-purple-500 hover:to-blue-400 text-white shadow-lg shadow-purple-500/25"
+            >
+              <RotateCcw size={20} />
+              <span>Retry connection</span>
+            </button>
+          )}
         </div>
 
         {/* CSS animations */}
