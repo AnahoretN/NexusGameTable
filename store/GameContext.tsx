@@ -297,12 +297,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
             // Check if this is a partial sync (differential update)
             const isPartialSync = action.payload._isPartial === true;
-            if (import.meta.env.DEV) {
-              console.log('[SYNC_STATE] apply ' + (isPartialSync ? 'PARTIAL' : 'FULL'),
-                'incoming=' + Object.keys(action.payload.objects || {}).length,
-                'current=' + Object.keys(state.objects).length,
-                'isGuest=' + !state.players?.some((p: any) => p.isGM));
-            }
 
             if (isPartialSync) {
               // For partial sync, MERGE incoming objects with existing ones
@@ -2091,7 +2085,6 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         const currentPlayerId = state.activePlayerId;
         const roundedX = Math.round(action.payload.x);
         const roundedY = Math.round(action.payload.y);
-        if (import.meta.env.DEV) console.log('[MM-reducer] MOVE_OBJECT apply x=' + roundedX + ' y=' + roundedY);
 
         // Update individual panel settings for host
         // 🔧 Pinned panels: keep pinnedScreenPosition in sync with the move —
@@ -7011,13 +7004,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Expose dispatch for dice roll animations
   (window as any).__diceRollDispatch = localDispatch;
-  // Expose game state for debugging
-  (window as any).__gameState = state;
+  // Expose game state for debugging (DEV only — pinning the whole state in
+  // production keeps every object alive and leaks memory)
+  if (import.meta.env.DEV) {
+    (window as any).__gameState = state;
+  }
 
   useEffect(() => {
       stateRef.current = state;
       // Also update debug reference
-      if (typeof window !== 'undefined') {
+      if (import.meta.env.DEV && typeof window !== 'undefined') {
         (window as any).__gameState = state;
       }
   }, [state]);
@@ -7253,7 +7249,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             const { state: loadedState, localFiles } = await loadGameStateWithLocalFiles(false);
 
-            console.log('[INIT] Loaded state:', {
+            logger.debug('[INIT] loaded state:', {
               hasState: !!loadedState,
               objectsCount: loadedState?.objects ? Object.keys(loadedState.objects).length : 0,
               localFilesCount: localFiles.length,
@@ -7279,17 +7275,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 obj => obj.type === ItemType.DECK && obj.name === 'Standard Deck'
               );
 
-              console.log('[INIT] Checking for demo objects in saved state:', {
-                hasDemoBoard,
-                hasDemoDeck
-              });
+              logger.debug('[INIT] demo objects in saved state:', { hasDemoBoard, hasDemoDeck });
 
               // Load the state into game
               loadSavedStateIntoGame(loadedState);
 
               // 🔥 FIX: If demo objects are missing, create them even if saved state was loaded
               if (isHost && (!hasDemoBoard || !hasDemoDeck)) {
-                console.log('[INIT] Demo objects missing from saved state, creating them');
+                logger.debug('[INIT] demo objects missing, creating them');
                 // Create demo objects below (fall through to demo object creation)
               } else {
                 return; // Demo objects exist or we're a guest, no need to create them
@@ -7299,7 +7292,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // No saved state or empty saved state, or demo objects missing - create default game board (only for host)
             // 🔥 FIX: Create default objects if we're host AND (no saved state OR demo objects missing)
             if (isHost) {
-              console.log('[INIT] Creating default demo objects');
+              logger.debug('[INIT] creating default demo objects');
               // Create game board on 'boards' layer - ALL VALUES IN VU
               const boardId = 'demo-board';
               const board: Board = {
@@ -7370,7 +7363,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             // Create main menu (for everyone)
-            console.log('[INIT] Creating main menu');
+            logger.debug('[INIT] creating main menu');
             createMainMenu(localDispatch);
           } finally {
             // 🔥 FIX: Always clear loading flag, even on error
@@ -7702,7 +7695,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (action.type === 'MOVE_OBJECT' && action.payload?.id) {
               const obj = state.objects[action.payload.id];
               if (obj && (isObjectIndividual(obj, state.hyperscaleLayers) || isMainMenuPanelObj(obj))) {
-                  if (import.meta.env.DEV) console.log('[MM-wrapper] MOVE_OBJECT local ->', action.payload.x, action.payload.y);
                   localDispatch(action);
                   // 🔧 Main menu: inform the host about the new position (stored
                   // per player for the save file, never applied by the host).
@@ -8023,10 +8015,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Broadcast state to each connection (state now contains sha256 hashes, not base64)
       connRef.current.forEach(conn => {
-        // 🔧 DEV diagnostic
-        if (import.meta.env.DEV) {
-          console.log('[Broadcast] conn peer=' + (conn.peer || conn.peerId), 'open=' + conn.open);
-        }
         if (conn.open) {
           let stateToSend: any = stateForBroadcast;
           let isPartialSync = false;
@@ -8055,13 +8043,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return keys.length === Object.keys(existingObj).length &&
                   keys.every(key => allowedKeys.has(key));
               });
-
-              // 🔧 DEV diagnostic: silent POSITION_UPDATE rerouting
-              if (import.meta.env.DEV) {
-                console.log('[Broadcast] partial changeCount=' + changeCount,
-                  'isOnlyPositionUpdates=' + isOnlyPositionUpdates,
-                  'objects=' + changedObjects.map(([id]) => id.slice(0, 8)).join(','));
-              }
 
               if (isOnlyPositionUpdates && changedObjects.length <= 2) {
                 // Filter out position updates for objects on individual objects layers
@@ -8108,18 +8089,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // 🔥 OPTIMIZED: Measure sync time and track statistics
           try {
-            if (import.meta.env.DEV) {
-              console.log('[Broadcast] sending isPartial=' + isPartialSync, 'changes=' + changeCount, 'conn=' + (conn.peer || conn.peerId));
-            }
             measureSyncTime(
               () => {
                 const stateJson = JSON.stringify(stateToSend);
                 // Send state with sha256 hashes (assets are loaded from packs by guest)
                 conn.send({ type: 'SYNC_STATE', payload: stateToSend });
-                // 🔧 DEV diagnostic
-                if (import.meta.env.DEV) {
-                  console.log('[Broadcast] SENT SYNC_STATE', { size: stateJson.length, isPartial: isPartialSync, changes: changeCount });
-                }
                 return { stateSize: stateJson.length, isPartial: isPartialSync };
               },
               (result, syncTime) => {
@@ -8128,9 +8102,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             );
           } catch (e: any) {
-            // 🔧 DEV diagnostic: silent broadcast deaths (e.g. JSON.stringify on
-            // circular structures) previously stopped here without any trace
-            console.error('[Broadcast] FAILED to send:', e?.message, e?.stack?.split('\n')[1]);
+            // Silent broadcast deaths (e.g. JSON.stringify on circular structures)
+            // previously stopped here without any trace
+            logger.error('[Broadcast] FAILED to send:', e?.message, e?.stack?.split('\n')[1]);
           }
         }
       });

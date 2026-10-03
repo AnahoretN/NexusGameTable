@@ -2359,8 +2359,6 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     if (doubleClickAction && doubleClickAction !== 'none') {
       e.stopPropagation();
 
-      console.log('[handleDoubleClick] obj.id:', obj.id, 'action:', doubleClickAction, 'obj.locked:', obj.locked);
-
       // 🔥 FIX: Make pin action toggle on double-click
       // 'lock' action already toggles (handleLock uses !obj.locked)
       // But pin needs special handling

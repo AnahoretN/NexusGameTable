@@ -474,7 +474,6 @@ export const DicePanel: React.FC<DicePanelProps> = ({
                 key={preset.id}
                 className="flex flex-col items-center gap-1 flex-shrink-0"
                 onContextMenu={(e) => {
-                  console.log('Context menu triggered on dice container', preset.name);
                   e.preventDefault();
                   e.stopPropagation();
                   setContextMenu({ x: e.clientX, y: e.clientY, preset });

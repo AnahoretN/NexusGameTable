@@ -236,10 +236,7 @@ class DifferentialSyncManager {
     }
     const removedCount = this.pendingChanges.length - validChanges.length;
     if (removedCount > 0) {
-      console.log('[DifferentialSyncManager] 🧹 Filtered out invalid changes:', {
-        removedCount,
-        remainingCount: validChanges.length
-      });
+      logger.debug('[DifferentialSyncManager] filtered out invalid changes:', removedCount, 'remaining:', validChanges.length);
     }
     this.pendingChanges = validChanges;
   }
@@ -402,13 +399,6 @@ class DifferentialSyncManager {
       });
     });
 
-    console.log('[DifferentialSyncManager] getPartialState', {
-      pendingChangesCount: this.pendingChanges.length,
-      hasPlayerChanges,
-      changedObjectIds: Array.from(changedObjectIds),
-      pendingActions: this.pendingChanges.map(c => ({ type: c.action.type, changeType: c.type, payloadId: c.action.payload?.id || c.action.payload?.deckId }))
-    });
-
     // Limit number of objects in partial sync
     const objectIds = Array.from(changedObjectIds).slice(
       0,
@@ -441,16 +431,8 @@ class DifferentialSyncManager {
         }
         partialObjects[id] = obj;
         validObjectIds.push(id);
-        console.log('[DifferentialSyncManager] Including object', {
-          id,
-          type: obj.type,
-          hasCharacterData: !!(obj as any).characterData
-        });
       } else {
-        console.warn('[DifferentialSyncManager] ⚠️ Object not found in currentState.objects (skipping):', {
-          id,
-          availableIds: Object.keys(currentState.objects).slice(0, 10)
-        });
+        logger.debug('[DifferentialSyncManager] object not found in currentState.objects (skipping):', id);
       }
     });
 
@@ -459,9 +441,6 @@ class DifferentialSyncManager {
       if (!partialObjects[id]) {
         partialObjects[id] = { id, _deleted: true };
         validObjectIds.push(id);
-        if (import.meta.env.DEV) {
-          console.log('[DifferentialSyncManager] 🗑️ Including deletion tombstone:', id);
-        }
       }
     });
 
@@ -488,7 +467,6 @@ class DifferentialSyncManager {
     // 🔥 FIX: If no objects found but there are player changes, still send state with players
     // This ensures player state (like handCardOrder) is synced even when no objects changed
     if (validObjectIds.length === 0 && !hasPlayerChanges) {
-      console.log('[DifferentialSyncManager] ❌ No valid objects or player changes found for partial sync');
       return null;
     }
 
@@ -502,19 +480,6 @@ class DifferentialSyncManager {
       // This ensures handCardOrder and other player state is synced
       players: currentState.players || [],
     };
-
-    // 🔥 DEBUG: Log players in partial state
-    console.log('[DifferentialSyncManager] Partial state result', {
-      objectCount: Object.keys(partialObjects).length,
-      hasPlayerChanges,
-      playersCount: result.players?.length || 0,
-      players: result.players?.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        handCardOrder: p.handCardOrder?.length || 0
-      })),
-      _changeCount: result._changeCount
-    });
 
     return result;
   }

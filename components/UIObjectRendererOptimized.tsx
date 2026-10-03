@@ -2198,7 +2198,6 @@ const DicePanelWithDragDetection: React.FC<{ panel: PanelObject }> = ({ panel })
   }, [isShiftDragging]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    console.log('DicePanelWithDragDetection handleMouseDown', e.button, e.shiftKey);
     // Only handle Shift+drag for panel movement
     if (e.shiftKey) {
       e.preventDefault();

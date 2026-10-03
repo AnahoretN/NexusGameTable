@@ -116,13 +116,6 @@ export function broadcastTokenCounters(tokenId: string, counters: TokenSlider[],
     timestamp: Date.now()
   };
 
-  // DirectP2P: Broadcasting token counters
-  console.log('DirectP2P: Broadcasting token counters', {
-    tokenId,
-    counterCount: counters.length,
-    counters: counters.map(c => ({ name: c.name, value: c.value }))
-  });
-
   sendToAllPeers(message);
 }
 
@@ -147,14 +140,6 @@ export function broadcastCharacterSliders(
     playerId,
     timestamp: Date.now()
   };
-
-  // DirectP2P: Broadcasting character sliders
-  console.log('DirectP2P: Broadcasting character sliders', {
-    panelId,
-    characterId,
-    sliderCount: sliders.length,
-    sliders: sliders.map(s => ({ name: s.label, value: s.value }))
-  });
 
   sendToAllPeers(message);
 }
@@ -186,14 +171,6 @@ export function broadcastCharacterBlock(
     playerId,
     timestamp: Date.now()
   };
-
-  // DirectP2P: Broadcasting character block
-  console.log('DirectP2P: Broadcasting character block', {
-    panelId,
-    characterId,
-    blockId,
-    blockType
-  });
 
   sendToAllPeers(message);
 }
@@ -353,8 +330,6 @@ export function handleDirectSyncMessage(
         // DirectP2P: Character not found
         return null;
       }
-
-      console.log('[DirectP2P] Updating character block:', payload.blockId);
 
       // Build updated character data with new block data
       const updatedCharacters = characterData.characters.map((c: CharacterTab) => {

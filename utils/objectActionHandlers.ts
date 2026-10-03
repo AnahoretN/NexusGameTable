@@ -318,7 +318,6 @@ export function handleClone(obj: TableObject, context: ActionHandlerContext) {
 export function handleLock(obj: TableObject, dispatch: Dispatch<Action>, allObjects?: Record<string, TableObject>) {
   // Get current locked state from fresh object to avoid stale closure
   const currentObj = allObjects?.[obj.id] || obj;
-  console.log('[handleLock] obj.id:', obj.id, 'current locked:', currentObj.locked, 'setting to:', !currentObj.locked);
   dispatch({
     type: 'UPDATE_OBJECT',
     payload: { id: obj.id, updates: { locked: !currentObj.locked } }

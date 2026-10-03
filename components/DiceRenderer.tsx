@@ -136,16 +136,6 @@ export const DiceRenderer: React.FC<DiceRendererProps> = ({
   // Auto-animate explosive dice (unless explicitly disabled)
   const shouldAnimate = animate || shouldPlayExplosionAnim;
 
-  // Debug: log explosive dice data
-  if (isExplosive) {
-    console.log('Explosive dice:', {
-      name: dice.name,
-      explosiveRoll: dice.explosiveRoll,
-      explosiveColor: dice.explosiveColor,
-      explosiveGlow: dice.explosiveGlow,
-    });
-  }
-
   // Use explosive colors when exploded
   const diceColor = isExplosive ? (dice.explosiveColor || '#ff6b00') : dice.color;
   const diceBorderColor = isExplosive ? (dice.explosiveGlow || '#ff0000') : (dice.borderColor || '#ffffff');

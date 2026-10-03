@@ -182,13 +182,8 @@ export const saveGameState = async (state: GameState): Promise<void> => {
   if (typeof window === 'undefined') return;
 
   const objectsCount = Object.keys(state.objects).length;
-  const objectIds = Object.keys(state.objects);
 
-  console.log('[AUTOSAVE] Saving game state', {
-    objectsCount,
-    objectIds,
-    timestamp: new Date().toISOString()
-  });
+  logger.debug(`[AUTOSAVE] saving game state (${objectsCount} objects)`);
 
   try {
     // Filter out main menu panel (each player has their own local position)
@@ -293,14 +288,12 @@ export const loadGameState = async (
 ): Promise<Partial<GameState> | null> => {
   if (typeof window === 'undefined') return null;
 
-  console.log('[LOAD] Loading game state', { isGuest });
+  logger.debug('[LOAD] loading game state', { isGuest });
 
   try {
     // Try compressed version first
     let stored = localStorage.getItem(STORAGE_KEY_COMPRESSED);
     let isCompressed = !!stored;
-
-    console.log('[LOAD] Found compressed version:', isCompressed);
 
     // If no compressed version, try uncompressed
     if (!stored) {
@@ -308,11 +301,11 @@ export const loadGameState = async (
     }
 
     if (!stored) {
-      console.log('[LOAD] No saved state found');
+      logger.debug('[LOAD] no saved state found');
       return null;
     }
 
-    console.log('[LOAD] Saved state found, size:', stored.length, 'bytes');
+    logger.debug(`[LOAD] saved state found, ${stored.length} bytes`);
 
     // Check size before parsing
     const storedSize = stored.length;
@@ -371,11 +364,7 @@ export const loadGameState = async (
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
       const result = migrateToVersion6(adaptedState);
-      console.log('[LOAD] State loaded successfully', {
-        version: parsed.version,
-        objectsCount: result.objects ? Object.keys(result.objects).length : 0,
-        objectIds: result.objects ? Object.keys(result.objects) : []
-      });
+      logger.debug(`[LOAD] state loaded (v${parsed.version}, ${result.objects ? Object.keys(result.objects).length : 0} objects)`);
       return result;
     }
 
@@ -391,11 +380,7 @@ export const loadGameState = async (
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
       const result = migrateToVersion6(adaptedState);
-      console.log('[LOAD] State loaded successfully', {
-        version: parsed.version,
-        objectsCount: result.objects ? Object.keys(result.objects).length : 0,
-        objectIds: result.objects ? Object.keys(result.objects) : []
-      });
+      logger.debug(`[LOAD] state loaded (v${parsed.version}, ${result.objects ? Object.keys(result.objects).length : 0} objects)`);
       return result;
     }
 
