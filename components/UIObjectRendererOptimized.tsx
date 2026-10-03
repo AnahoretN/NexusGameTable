@@ -1544,7 +1544,7 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                     className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500"
                   >
                     <option value="peerjs">{translate('PeerJS (default)', language as Locale)}</option>
-                    <option value="iroh" disabled={!isIrohUnlocked}>{translate('Iroh (P2P)', language as Locale)}</option>
+                    <option value="iroh" disabled={!isIrohUnlocked}>{translate('Iroh (in development)', language as Locale)}</option>
                     <option value="trystero">{translate('Trystero (BitTorrent)', language as Locale)}</option>
                   </select>
                 </div>
