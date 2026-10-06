@@ -489,18 +489,25 @@ export function useTrysteroConnection(
       setConnectionStatus('connected');
 
       // Wait until a peer actually joins the room. Tracker discovery can take
-      // a while — a HELO sent into an empty room is simply lost, leaving the
-      // guest with no game state.
+      // a while (slow/remote wss trackers) — a HELO sent into an empty room is
+      // simply lost, leaving the guest with no game state.
       updateP2PLoadingStep('connect', 'loading', 'Waiting for peers via trackers...');
-      const found = await waitForPeer(room, 20000);
+      const discoveryStart = Date.now();
+      // Keep the user informed — a slow tracker can take well over 20s
+      const slowTrackerTimer = setTimeout(() => {
+        updateP2PLoadingStep('connect', 'loading',
+          'Still looking for the host via trackers (this can take up to 80 seconds)...');
+      }, 15000);
+      const found = await waitForPeer(room, 80000);
+      clearTimeout(slowTrackerTimer);
       if (!found) {
-        logger.error('[P2P][Trystero] No peers discovered within 20s — aborting join');
+        logger.error('[P2P][Trystero] No peers discovered within 80s — aborting join');
         setConnectionStatus('disconnected');
         updateP2PLoadingStep('connect', 'error',
-          'Could not find the host via trackers. Make sure the host window is open, then press "Retry connection".');
+          'Could not find the host via trackers. Make sure the host window is open and the game is hosted, then press "Retry connection".');
         return;
       }
-      logger.log('[P2P][Trystero] peer discovered — joined room');
+      logger.log('[P2P][Trystero] peer discovered in', Date.now() - discoveryStart, 'ms');
 
       updateP2PLoadingStep('connect', 'success', 'Joined room');
       updateP2PLoadingStep('p2p', 'loading', 'Establishing P2P connection...');
