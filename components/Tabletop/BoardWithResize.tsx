@@ -156,7 +156,12 @@ const SimplifiedBoard: React.FC<{
                 height: '100%',
                 transform: `rotate(${token.rotation}deg)`,
                 zIndex: obj.zIndex ?? 0,
-                border: '2px solid #212f3c',
+                // Use outline instead of border: a CSS border shifts the padding box,
+                // which offsets the grid SVG and background image by 2px from the
+                // board's (x, y) origin — grid magnetism then snaps off-center by
+                // 2/pixelsPerVU vu (depends on viewport height). Outline doesn't
+                // affect layout, so the grid stays aligned with the math origin.
+                outline: '2px solid #212f3c',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
                 backgroundColor: token.color || '#34495e',
                 borderRadius: '4px',
@@ -428,7 +433,12 @@ export const BoardWithResize: React.FC<BoardWithResizeProps> = ({
                 height: '100%',
                 transform: `rotate(${token.rotation}deg)`,
                 zIndex: obj.zIndex ?? 0,
-                border: '2px solid #212f3c',
+                // Use outline instead of border: a CSS border shifts the padding box,
+                // which offsets the grid SVG and background image by 2px from the
+                // board's (x, y) origin — grid magnetism then snaps off-center by
+                // 2/pixelsPerVU vu (depends on viewport height). Outline doesn't
+                // affect layout, so the grid stays aligned with the math origin.
+                outline: '2px solid #212f3c',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
                 backgroundColor: token.color || '#34495e',
                 borderRadius: '4px',

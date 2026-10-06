@@ -196,13 +196,6 @@ export function calculateGridCellCenter(
     };
   }
 
-  // Apply compensation offset to fix magnetism misalignment
-  // Offset: 2.5 VU right (x+2.5) and 2.5 VU down (y+2.5)
-  result = {
-    x: result.x + 2.5,
-    y: result.y + 2.5
-  };
-
   return result;
 }
 
