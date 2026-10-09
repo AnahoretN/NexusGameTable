@@ -15,6 +15,7 @@ import { Player, PackInfo } from '../../types';
 import { logger } from '../../utils/logger';
 import { decompressWebRTCData } from '../../utils/dataCompression';
 import { registerRemoteMovement } from '../../utils/remoteMovementAnimator';
+import { isAnchorAttachedObject } from '../../utils/gridUtils';
 import { filterLocalPanelProperties } from '../../utils/panelSync';
 import { filterObjectsForBroadcast } from '../../utils/individualPositions';
 import { differentialSyncManager } from '../../utils/webrtcOptimization';
@@ -332,9 +333,13 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
         }
         const existingObj = stateRef.current.objects[pos.id];
         if (existingObj) {
-          // 🔧 Remote movement animation for big sync jumps
+          // 🔧 Remote movement animation for big sync jumps.
+          // Anchor-attached objects (gridCellKey / snappedToCellId) never
+          // animate: they ride along with their board/cell and appear
+          // instantly at the new position on drop.
           if (pos.x !== undefined && pos.y !== undefined && existingObj.x !== undefined &&
-              (Math.abs(existingObj.x - pos.x) > 20 || Math.abs(existingObj.y - pos.y) > 20)) {
+              (Math.abs(existingObj.x - pos.x) > 20 || Math.abs(existingObj.y - pos.y) > 20) &&
+              !isAnchorAttachedObject(existingObj)) {
             registerRemoteMovement(pos.id, existingObj.x, existingObj.y, pos.x, pos.y);
           }
           localDispatch({

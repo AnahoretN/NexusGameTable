@@ -458,6 +458,7 @@ export interface BattlefieldCell extends GameItem {
   // Own movement magnetism
   edgeMagnetism?: boolean; // When true (default), this cell's edges snap to other cells' edges and to game field edges (like panels)
   snapToBoardGrid?: boolean; // When true, this cell snaps to board grid cells like a token
+  moveAttachedObjects?: boolean; // When true (default), moving this cell moves snapped objects (tokens, cards) by the same delta
 }
 
 // Hex direction for Nexus board cell connections
@@ -583,6 +584,7 @@ export interface Board extends GameItem {
   snapToGrid: boolean; // Snap tokens to grid
   snapCardsToGrid?: boolean; // Snap cards to grid
   snapRotationToGrid?: boolean; // Apply board rotation to snapped objects
+  moveAttachedObjects?: boolean; // When true (default), moving this board moves snapped objects (tokens, cards, cells) by the same delta
   linkGridSize?: boolean; // Remember proportions button state for grid settings
   fromPoolPanel?: string; // ID of pool panel this board was picked up from (if any)
 

@@ -1,5 +1,5 @@
 import { Coordinates, MagnetPoint, BattlefieldCell, NexusCellObject, GridCellKey, GridCellMagnetPoints, Board } from '../types';
-import { GridType, TableObject } from '../types';
+import { GridType, ItemType, TableObject } from '../types';
 
 export interface GridSnapResult {
   x: number;
@@ -1529,4 +1529,86 @@ export function findGridCellForSnappedObject(
     }
   }
   return null;
+}
+
+/**
+ * Collect objects that must move together with `movedObj` (same delta):
+ * - BOARD: everything with gridCellKey "boardId:col,row" (tokens, cards,
+ *   battlefield cells snapped to its grid), plus tokens/cards snapped
+ *   (snappedToCellId) to those battlefield cells (chained case).
+ * - BATTLEFIELD_CELL: everything with snappedToCellId === cell.id.
+ * Back-refs are authoritative (set on snap, cleared on pickup); locked and
+ * in-cursor-slot objects are skipped (a locked object is never moved, and an
+ * object another player is holding must not be yanked mid-drag).
+ * Pure enumeration - the `moveAttachedObjects` gate lives at the call sites.
+ */
+/**
+ * True for objects whose position follows a board/cell they are snapped to
+ * (`gridCellKey` / `snappedToCellId` back-refs). Such objects move by anchor
+ * propagation: they hide while their anchor is held in a cursor slot and
+ * appear instantly at the new position on drop — never glide.
+ */
+export function isAnchorAttachedObject(obj: TableObject): boolean {
+  if (!obj) return false;
+  return !!(obj as { gridCellKey?: string }).gridCellKey ||
+    !!(obj as { snappedToCellId?: string }).snappedToCellId;
+}
+
+export function getAttachedObjectsForMove(
+  movedObj: TableObject,
+  objects: Record<string, TableObject>
+): TableObject[] {
+  if (movedObj.type !== ItemType.BOARD && movedObj.type !== ItemType.BATTLEFIELD_CELL) {
+    return [];
+  }
+
+  const attached = new Map<string, TableObject>();
+  const boardPrefix =
+    movedObj.type === ItemType.BOARD ? `${movedObj.id}:` : null;
+
+  for (const obj of Object.values(objects)) {
+    if (obj.id === movedObj.id) continue;
+    if (obj.locked) continue;
+    if ((obj as { inCursorSlot?: boolean }).inCursorSlot === true) continue;
+    if (!Number.isFinite(obj.x) || !Number.isFinite(obj.y)) continue;
+
+    const isOnBoardGrid =
+      boardPrefix !== null &&
+      !!(obj as { gridCellKey?: string }).gridCellKey?.startsWith(boardPrefix);
+    const isOnCell = (obj as { snappedToCellId?: string }).snappedToCellId === movedObj.id;
+
+    if (isOnBoardGrid || isOnCell) {
+      attached.set(obj.id, obj);
+    }
+  }
+
+  // Chained case: battlefield/nexus cells sitting on the moved board's grid
+  // carry their own snapped tokens/cards along.
+  if (movedObj.type === ItemType.BOARD && attached.size > 0) {
+    for (const obj of Object.values(objects)) {
+      if (obj.id === movedObj.id) continue;
+      if (obj.locked) continue;
+      if ((obj as { inCursorSlot?: boolean }).inCursorSlot === true) continue;
+      if (!Number.isFinite(obj.x) || !Number.isFinite(obj.y)) continue;
+      if (
+        obj.type !== ItemType.BATTLEFIELD_CELL &&
+        obj.type !== ItemType.NEXUS_CELL
+      ) {
+        continue;
+      }
+      if (!attached.has(obj.id)) continue;
+
+      for (const follower of Object.values(objects)) {
+        if (follower.id === movedObj.id) continue;
+        if (follower.locked) continue;
+        if ((follower as { inCursorSlot?: boolean }).inCursorSlot === true) continue;
+        if (!Number.isFinite(follower.x) || !Number.isFinite(follower.y)) continue;
+        if ((follower as { snappedToCellId?: string }).snappedToCellId === obj.id) {
+          attached.set(follower.id, follower);
+        }
+      }
+    }
+  }
+
+  return Array.from(attached.values());
 }

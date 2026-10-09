@@ -20,6 +20,57 @@ import { intersectsPlayableArea } from '../../utils/viewportConstraints';
 import { subscribeToCursorSlotChanges } from '../../utils/cursorSlotTracker';
 
 /**
+ * IDs of objects that must be hidden while the board/cell they are snapped to
+ * is held in a cursor slot ("Move Attached Objects" feature): the attached
+ * objects vanish during the drag and appear instantly at the new position on
+ * drop. Computed from the authoritative back-refs (gridCellKey,
+ * snappedToCellId) against the anchors' inCursorSlot flag — no state changes,
+ * works identically for the holder and for remote viewers.
+ */
+const collectHiddenFollowIds = (objects: TableObject[]): Set<string> => {
+  const hidden = new Set<string>();
+
+  // Anchors currently held in a cursor slot (setting enabled only)
+  const heldAnchors = new Set<string>();
+  for (const obj of objects) {
+    if ((obj as any).inCursorSlot === true &&
+        (obj.type === ItemType.BOARD || obj.type === ItemType.BATTLEFIELD_CELL) &&
+        (obj as { moveAttachedObjects?: boolean }).moveAttachedObjects !== false) {
+      heldAnchors.add(obj.id);
+    }
+  }
+  if (heldAnchors.size === 0) return hidden;
+
+  // Pass 1: objects on a held board's grid or snapped to a held cell
+  const hiddenCells = new Set<string>();
+  for (const obj of objects) {
+    if ((obj as any).inCursorSlot === true) continue;
+    const gridCellKey = (obj as { gridCellKey?: string }).gridCellKey;
+    const snappedToCellId = (obj as { snappedToCellId?: string }).snappedToCellId;
+    const anchorId = gridCellKey ? gridCellKey.split(':')[0] : snappedToCellId;
+    if (anchorId && heldAnchors.has(anchorId)) {
+      hidden.add(obj.id);
+      if (obj.type === ItemType.BATTLEFIELD_CELL) {
+        hiddenCells.add(obj.id);
+      }
+    }
+  }
+
+  // Pass 2 (chained case): tokens snapped to cells hidden in pass 1
+  if (hiddenCells.size > 0) {
+    for (const obj of objects) {
+      if ((obj as any).inCursorSlot === true) continue;
+      const snappedToCellId = (obj as { snappedToCellId?: string }).snappedToCellId;
+      if (snappedToCellId && hiddenCells.has(snappedToCellId)) {
+        hidden.add(obj.id);
+      }
+    }
+  }
+
+  return hidden;
+};
+
+/**
  * Filter objects by various criteria for rendering optimization
  */
 export const useObjectFilters = (
@@ -36,12 +87,24 @@ export const useObjectFilters = (
     });
   }, []);
 
+  // Objects following a board/cell currently held in a cursor slot (recomputed
+  // with the same inputs as the filters below — inCursorSlot lives in state)
+  const hiddenFollowObjectIds = useMemo(
+    () => collectHiddenFollowIds(Object.values(state.objects || {}) as TableObject[]),
+    [state.objects, cursorSlotVersion]
+  );
+
   // All table objects (convert from object record to array)
   const tableObjects = useMemo(() => {
 
     return (Object.values(state.objects || {}) as TableObject[]).filter((obj) => {
       // Exclude objects with isOnTable: false (hidden objects)
       if ((obj as any).isOnTable === false) {
+        return false;
+      }
+
+      // 🔧 Hide objects that follow a board/cell held in a cursor slot
+      if (hiddenFollowObjectIds.has(obj.id)) {
         return false;
       }
 
@@ -92,7 +155,7 @@ export const useObjectFilters = (
 
       return true;
     });
-  }, [state.objects, cursorSlotVersion]);
+  }, [state.objects, cursorSlotVersion, hiddenFollowObjectIds]);
 
   // Visible table objects (viewport culling would be applied here with viewport bounds)
   const visibleTableObjects = useMemo(() => {
@@ -265,6 +328,8 @@ export const useObjectFilters = (
         if (!(obj as any).isPinnedToViewport) return false;
         // Must be on table
         if ((obj as any).isOnTable === false) return false;
+        // 🔧 Hide objects that follow a board/cell held in a cursor slot
+        if (hiddenFollowObjectIds.has(obj.id)) return false;
         // Exclude UI objects and decks (they have their own pinned lists)
         if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW || obj.type === ItemType.DECK) return false;
         // 🔥 FIX: Don't exclude objects at cursor slot holding position - render as ghost
@@ -275,7 +340,7 @@ export const useObjectFilters = (
       })
       .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
     return result;
-  }, [state.objects, cursorSlotVersion]);
+  }, [state.objects, cursorSlotVersion, hiddenFollowObjectIds]);
 
   return {
     tableObjects,

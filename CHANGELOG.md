@@ -2,6 +2,22 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.3.4] - 2026-10-09
+
+### ✨ New Features
+
+#### 🧲 Move Attached Objects
+- **Battlefield cells and boards now carry their magnetized objects along**: dragging a board or a cell moves the tokens, cards and snapped cells attached to it by the same delta (cards, tokens, etc.)
+- Per-object **"Move Attached Objects" toggle** in the object settings (on by default)
+- Moving a NexusBoard also moves its linked NexusCellObjects; moving a cell moves the other cells of the same board and the board itself
+- Anchor-attached objects (grid cell key / snapped-to-cell) hide while their board/cell is dragged and appear instantly at the new position on drop — no movement animation
+
+### 🛠️ Fixes
+- **Tokens snap exactly to the grid cell center**
+- **Trystero guest peer discovery window extended to 80 s** — guests no longer give up on slow hosts
+
+---
+
 ## [0.3.3] - 2026-10-02
 
 ### ✨ New Features

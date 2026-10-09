@@ -150,6 +150,8 @@
   "Snap Rotation to Grid": "Поворачивать примагниченное",
   "Cell Edge Magnetism": "Примагничивание ячеек к краям",
   "Snap Cell to Board Grid": "Магнититься к сетке поля",
+  "Move Attached Objects": "Двигать присоединённые объекты",
+  "Moving this object also moves objects snapped to it (tokens, cards, cells)": "При перемещении этого объекта вместе с ним перемещаются примагниченные объекты (токены, карты, ячейки)",
   "Snap cell edges to other cells and the game field edges": "Края ячейки примагничиваются к краям других ячеек и к краям игрового поля",
   "Cell snaps to board grid cells like tokens": "Ячейка примагничивается к ячейкам сетки игрового поля, как токен",
   "Counter Limits": "Пределы счётчика",

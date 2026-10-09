@@ -11,7 +11,8 @@ import {
   addObjectToGridCellMagnet,
   generateGridCellKey,
   addObjectToCellMagnet,
-  removeObjectFromCellMagnet
+  removeObjectFromCellMagnet,
+  getAttachedObjectsForMove
 } from '../../utils/gridUtils';
 import {
   applyClickOffset,
@@ -1611,6 +1612,33 @@ const dropCursorSlot = (
           }
         }
       });
+
+      // 🔧 "Move Attached Objects": a dropped board/cell carries its
+      // magnetized objects (tokens, cards, snapped cells) along by the same
+      // delta. Flat {id,x,y} payloads get batched into one POSITION_UPDATE
+      // for P2P, and absolute sets are idempotent on the receiving clients.
+      const movedStateObj = state.objects[item.id];
+      if (
+        movedStateObj &&
+        (item.type === ItemType.BOARD || item.type === ItemType.BATTLEFIELD_CELL) &&
+        (movedStateObj as BoardType | BattlefieldCell).moveAttachedObjects !== false
+      ) {
+        const origX = (item as any).originalX;
+        const origY = (item as any).originalY;
+        if (origX !== undefined && origY !== undefined) {
+          const attachedDeltaX = finalX - origX;
+          const attachedDeltaY = finalY - origY;
+          if (attachedDeltaX !== 0 || attachedDeltaY !== 0) {
+            for (const attached of getAttachedObjectsForMove(movedStateObj, state.objects)) {
+              if (attached.id === item.id) continue;
+              dispatch({
+                type: 'UPDATE_OBJECT',
+                payload: { id: attached.id, x: attached.x + attachedDeltaX, y: attached.y + attachedDeltaY }
+              });
+            }
+          }
+        }
+      }
     }
 
     // 🔥 FIX: Remove from cursor slot tracker immediately

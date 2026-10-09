@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, Randomizer, CardOrientation, DrawingLayer, Drawing, Stroke, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, HyperscaleLayer, NexusBoard, NexusCellObject, PanelTab, PoolPanelData, TableauPanelData } from '../types';
+import { Player, ItemType, TableObject, CardLocation, Card, Deck, Token, TokenType, DiceRoll, DiceObject, Counter, TokenShape, CardShape, GridType, CardPile, PanelType, WindowType, PanelObject, WindowObject, Board, BattlefieldCell, Randomizer, CardOrientation, DrawingLayer, Drawing, Stroke, UndoState, MarkerHistoryEntry, GeneralHistoryEntry, HyperscaleLayer, NexusBoard, NexusCellObject, PanelTab, PoolPanelData, TableauPanelData } from '../types';
 import { CARD_SHAPE_DIMS, MAIN_MENU_WIDTH, DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT, DEFAULT_DECK_WIDTH, DEFAULT_DECK_HEIGHT, SCROLLBAR_WIDTH_THICK } from '../constants';
 import { GuestConnectionModal } from '../components/GuestConnectionModal';
 import { InitialLoadModal, InitialLoadStep } from '../components/InitialLoadModal';
@@ -32,6 +32,7 @@ import { calculatePixelsPerVU, trackViewportResize } from '../utils/vuSystem';
 import { logger } from '../utils/logger';
 import { clearCardDimensionsCache } from '../utils/cardUtils';
 import { findAvailableTerritory } from '../utils/territoryManager';
+import { getAttachedObjectsForMove, isAnchorAttachedObject } from '../utils/gridUtils';
 import { runPoolMigrationIfNeeded } from '../utils/poolMigration';
 import {
   syncSlidersToTokens,
@@ -71,6 +72,85 @@ function getWrappedUpdates(action: Extract<Action, { type: 'UPDATE_OBJECT' }>): 
 function getFlatUpdates(action: Extract<Action, { type: 'UPDATE_OBJECT' }>): Partial<TableObject> {
   const { id: _id, updates: _updates, ...rest } = action.payload as typeof action.payload & { updates?: Partial<TableObject> };
   return rest as Partial<TableObject>;
+}
+
+/**
+ * Extend `updatedObjects` with every object that must follow `movedObj`:
+ * - NEXUS_BOARD/NEXUS_CELL linking (existing behavior, unconditional)
+ * - BOARD/BATTLEFIELD_CELL magnetized objects (new, gated by
+ *   `moveAttachedObjects !== false` — the "Move Attached Objects" setting)
+ * Returns the same record for convenience.
+ */
+function collectMoveCompanions(
+  state: GameState,
+  movedObj: TableObject,
+  deltaX: number,
+  deltaY: number,
+  updatedObjects: Record<string, TableObject>
+): Record<string, TableObject> {
+  // If moving a NexusBoard, also move all linked NexusCellObjects
+  if (movedObj.type === ItemType.NEXUS_BOARD) {
+    Object.values(state.objects).forEach(o => {
+      if (o.type === ItemType.NEXUS_CELL) {
+        const cell = o as NexusCellObject;
+        if (cell.nexusBoardId === movedObj.id) {
+          updatedObjects[cell.id] = {
+            ...cell,
+            x: cell.x + deltaX,
+            y: cell.y + deltaY,
+          };
+        }
+      }
+    });
+  }
+
+  // If moving a NexusCellObject, also move all other cells in the same board
+  if (movedObj.type === ItemType.NEXUS_CELL) {
+    const movedCell = movedObj as NexusCellObject;
+    const boardId = movedCell.nexusBoardId;
+
+    Object.values(state.objects).forEach(o => {
+      if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
+        const cell = o as NexusCellObject;
+        if (cell.nexusBoardId === boardId) {
+          updatedObjects[cell.id] = {
+            ...cell,
+            x: cell.x + deltaX,
+            y: cell.y + deltaY,
+          };
+        }
+      }
+    });
+
+    // Also move the NexusBoard itself
+    const board = state.objects[boardId];
+    if (board && board.type === ItemType.NEXUS_BOARD) {
+      updatedObjects[boardId] = {
+        ...board,
+        x: board.x + deltaX,
+        y: board.y + deltaY,
+      };
+    }
+  }
+
+  // 🔧 "Move Attached Objects" (default on): boards and battlefield cells
+  // carry their magnetized objects (tokens, cards, snapped cells) along by
+  // the same delta. Absolute x/y sets keep this idempotent on every client.
+  if (
+    (movedObj.type === ItemType.BOARD || movedObj.type === ItemType.BATTLEFIELD_CELL) &&
+    (movedObj as Board | BattlefieldCell).moveAttachedObjects !== false
+  ) {
+    for (const attached of getAttachedObjectsForMove(movedObj, state.objects)) {
+      if (updatedObjects[attached.id]) continue; // never double-move
+      updatedObjects[attached.id] = {
+        ...attached,
+        x: attached.x + deltaX,
+        y: attached.y + deltaY,
+      };
+    }
+  }
+
+  return updatedObjects;
 }
 
 /**
@@ -1251,6 +1331,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // glides the object instead of teleporting. Cursor-slot bookkeeping
       // positions (-999999) never animate, and POSITION_UPDATE-driven updates
       // are skipped — the protocol handler already registered those.
+      // Anchor-attached objects (gridCellKey / snappedToCellId) never animate:
+      // they hide while their board/cell is dragged and appear instantly at
+      // the new position on drop.
       {
         const animUpdates: any = wrapped || flatUpdates;
         if (!(action as any)._localOnly && !(action as any).skipNetworkSync &&
@@ -1258,7 +1341,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             obj.x !== undefined && obj.y !== undefined &&
             obj.x > -90000 && obj.y > -90000 &&
             animUpdates.x > -90000 && animUpdates.y > -90000 &&
-            (Math.abs(obj.x - animUpdates.x) > 20 || Math.abs(obj.y - animUpdates.y) > 20)) {
+            (Math.abs(obj.x - animUpdates.x) > 20 || Math.abs(obj.y - animUpdates.y) > 20) &&
+            !isAnchorAttachedObject(obj)) {
           registerRemoteMovement(obj.id, obj.x, obj.y, animUpdates.x, animUpdates.y);
         }
       }
@@ -2161,55 +2245,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           };
         }
 
-        // Build updated objects including NexusCellObjects linked to moved NexusBoard
-        const updatedObjects: Record<string, TableObject> = {
-          [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
-        };
-
-        // If moving a NexusBoard, also move all linked NexusCellObjects
-        if (obj.type === ItemType.NEXUS_BOARD) {
-          Object.values(state.objects).forEach(o => {
-            if (o.type === ItemType.NEXUS_CELL) {
-              const cell = o as NexusCellObject;
-              if (cell.nexusBoardId === obj.id) {
-                updatedObjects[cell.id] = {
-                  ...cell,
-                  x: cell.x + deltaX,
-                  y: cell.y + deltaY,
-                };
-              }
-            }
-          });
-        }
-
-        // If moving a NexusCellObject, also move all other cells in the same board
-        if (obj.type === ItemType.NEXUS_CELL) {
-          const movedCell = obj as NexusCellObject;
-          const boardId = movedCell.nexusBoardId;
-
-          Object.values(state.objects).forEach(o => {
-            if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
-              const cell = o as NexusCellObject;
-              if (cell.nexusBoardId === boardId) {
-                updatedObjects[cell.id] = {
-                  ...cell,
-                  x: cell.x + deltaX,
-                  y: cell.y + deltaY,
-                };
-              }
-            }
-          });
-
-          // Also move the NexusBoard itself
-          const board = state.objects[boardId];
-          if (board && board.type === ItemType.NEXUS_BOARD) {
-            updatedObjects[boardId] = {
-              ...board,
-              x: board.x + deltaX,
-              y: board.y + deltaY,
-            };
-          }
-        }
+        // Build updated objects: Nexus cells follow their board, and boards /
+        // battlefield cells carry magnetized objects ("Move Attached Objects")
+        const updatedObjects = collectMoveCompanions(
+          state,
+          obj,
+          deltaX,
+          deltaY,
+          { [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y } }
+        );
 
         return {
           ...state,
@@ -2235,55 +2279,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
       }
 
-      // Build updated objects including NexusCellObjects linked to moved NexusBoard (local-only moves)
-      const updatedObjects: Record<string, TableObject> = {
-        [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y },
-      };
-
-      // If moving a NexusBoard, also move all linked NexusCellObjects
-      if (obj.type === ItemType.NEXUS_BOARD) {
-        Object.values(state.objects).forEach(o => {
-          if (o.type === ItemType.NEXUS_CELL) {
-            const cell = o as NexusCellObject;
-            if (cell.nexusBoardId === obj.id) {
-              updatedObjects[cell.id] = {
-                ...cell,
-                x: cell.x + deltaX,
-                y: cell.y + deltaY,
-              };
-            }
-          }
-        });
-      }
-
-      // If moving a NexusCellObject, also move all other cells in the same board
-      if (obj.type === ItemType.NEXUS_CELL) {
-        const movedCell = obj as NexusCellObject;
-        const boardId = movedCell.nexusBoardId;
-
-        Object.values(state.objects).forEach(o => {
-          if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
-            const cell = o as NexusCellObject;
-            if (cell.nexusBoardId === boardId) {
-              updatedObjects[cell.id] = {
-                ...cell,
-                x: cell.x + deltaX,
-                y: cell.y + deltaY,
-              };
-            }
-          }
-        });
-
-        // Also move the NexusBoard itself
-        const board = state.objects[boardId];
-        if (board && board.type === ItemType.NEXUS_BOARD) {
-          updatedObjects[boardId] = {
-            ...board,
-            x: board.x + deltaX,
-            y: board.y + deltaY,
-          };
-        }
-      }
+      // Build updated objects (local-only moves): Nexus cells follow their
+      // board, and boards / battlefield cells carry magnetized objects
+      const updatedObjects = collectMoveCompanions(
+        state,
+        obj,
+        deltaX,
+        deltaY,
+        { [action.payload.id]: { ...obj, x: action.payload.x, y: action.payload.y } }
+      );
 
       return {
         ...state,
@@ -2441,55 +2445,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
       }
 
-      // Build updated objects including NexusCellObjects linked to moved NexusBoard (drawings/local-only)
-      const updatedObjects: Record<string, TableObject> = {
-        [id]: { ...obj, x, y },
-      };
-
-      // If moving a NexusBoard, also move all linked NexusCellObjects
-      if (obj.type === ItemType.NEXUS_BOARD) {
-        Object.values(state.objects).forEach(o => {
-          if (o.type === ItemType.NEXUS_CELL) {
-            const cell = o as NexusCellObject;
-            if (cell.nexusBoardId === obj.id) {
-              updatedObjects[cell.id] = {
-                ...cell,
-                x: cell.x + deltaX,
-                y: cell.y + deltaY,
-              };
-            }
-          }
-        });
-      }
-
-      // If moving a NexusCellObject, also move all other cells in the same board
-      if (obj.type === ItemType.NEXUS_CELL) {
-        const movedCell = obj as NexusCellObject;
-        const boardId = movedCell.nexusBoardId;
-
-        Object.values(state.objects).forEach(o => {
-          if (o.type === ItemType.NEXUS_CELL && o.id !== movedCell.id) {
-            const cell = o as NexusCellObject;
-            if (cell.nexusBoardId === boardId) {
-              updatedObjects[cell.id] = {
-                ...cell,
-                x: cell.x + deltaX,
-                y: cell.y + deltaY,
-              };
-            }
-          }
-        });
-
-        // Also move the NexusBoard itself
-        const board = state.objects[boardId];
-        if (board && board.type === ItemType.NEXUS_BOARD) {
-          updatedObjects[boardId] = {
-            ...board,
-            x: board.x + deltaX,
-            y: board.y + deltaY,
-          };
-        }
-      }
+      // Build updated objects (drawings/local-only): Nexus cells follow their
+      // board, and boards / battlefield cells carry magnetized objects
+      const updatedObjects = collectMoveCompanions(
+        state,
+        obj,
+        deltaX,
+        deltaY,
+        { [id]: { ...obj, x, y } }
+      );
 
       return {
         ...state,
@@ -5818,12 +5782,32 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         case 'object-moved': {
           const obj = state.objects[lastEntry.objectId];
           if (!obj) return state;
+
+          const restoredObjects: Record<string, TableObject> = {
+            ...state.objects,
+            [lastEntry.objectId]: { ...obj, x: lastEntry.previousX, y: lastEntry.previousY },
+          };
+
+          // 🔧 "Move Attached Objects": undoing a board/cell move returns its
+          // magnetized objects to their previous spot too (inverse delta).
+          if (
+            (obj.type === ItemType.BOARD || obj.type === ItemType.BATTLEFIELD_CELL) &&
+            (obj as Board | BattlefieldCell).moveAttachedObjects !== false
+          ) {
+            const undoDeltaX = lastEntry.previousX - obj.x;
+            const undoDeltaY = lastEntry.previousY - obj.y;
+            for (const attached of getAttachedObjectsForMove(obj, state.objects)) {
+              restoredObjects[attached.id] = {
+                ...attached,
+                x: attached.x + undoDeltaX,
+                y: attached.y + undoDeltaY,
+              };
+            }
+          }
+
           return {
             ...state,
-            objects: {
-              ...state.objects,
-              [lastEntry.objectId]: { ...obj, x: lastEntry.previousX, y: lastEntry.previousY },
-            },
+            objects: restoredObjects,
             undo: { ...state.undo, generalHistory: newHistory },
           };
         }
@@ -8262,9 +8246,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
                 const existingObj = stateRef.current.objects[pos.id];
                 if (existingObj) {
-                  // 🔧 Remote movement animation for big sync jumps
+                  // 🔧 Remote movement animation for big sync jumps.
+                  // Anchor-attached objects (gridCellKey / snappedToCellId)
+                  // never animate — parity with the session protocol handler.
                   if (pos.x !== undefined && pos.y !== undefined && existingObj.x !== undefined &&
-                      (Math.abs(existingObj.x - pos.x) > 20 || Math.abs(existingObj.y - pos.y) > 20)) {
+                      (Math.abs(existingObj.x - pos.x) > 20 || Math.abs(existingObj.y - pos.y) > 20) &&
+                      !isAnchorAttachedObject(existingObj)) {
                     registerRemoteMovement(pos.id, existingObj.x, existingObj.y, pos.x, pos.y);
                   }
                   localDispatch({
