@@ -152,6 +152,8 @@
   "Snap Cell to Board Grid": "Магнітитися до сітки поля",
   "Move Attached Objects": "Переміщувати приєднані об'єкти",
   "Moving this object also moves objects snapped to it (tokens, cards, cells)": "Переміщення цього об'єкта також переміщує притягнуті об'єкти (фішки, картки, комірки)",
+  "Board Edge Magnetism": "Притягування країв поля",
+  "Board edges snap to other boards and cells edges": "Краї поля притягуються до країв інших полів і комірок",
   "Snap cell edges to other cells and the game field edges": "Краї комірки притягуються до країв інших комірок і до країв ігрового поля",
   "Cell snaps to board grid cells like tokens": "Комірка притягується до комірок сітки ігрового поля, як фішка",
   "Counter Limits": "Межі лічильника",

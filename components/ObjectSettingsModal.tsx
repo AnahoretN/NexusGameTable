@@ -2796,6 +2796,25 @@ setGridDebugInfo(null);
                         }`} />
                       </button>
                     </div>
+                    {/* Board Edge Magnetism - only for boards */}
+                    {isBoard && (
+                    <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2" title={translate('Board edges snap to other boards and cells edges', language as Locale)}>
+                      <label className="text-xs text-gray-400 flex items-center gap-2">
+                        <Magnet size={12} />
+                        {translate('Board Edge Magnetism', language as Locale)}
+                      </label>
+                      <button
+                        onClick={() => update('edgeMagnetism', (data as Board).edgeMagnetism === false)}
+                        className={`w-10 h-5 rounded-full transition-colors ${
+                          (data as Board).edgeMagnetism !== false ? 'bg-green-600' : 'bg-slate-700'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
+                          (data as Board).edgeMagnetism !== false ? 'translate-x-5' : 'translate-x-0.5'
+                        }`} />
+                      </button>
+                    </div>
+                    )}
                     {/* Show Grid - only for boards */}
                     {isBoard && (
                     <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">

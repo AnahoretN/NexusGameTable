@@ -149,6 +149,8 @@
   "Snap Cell to Board Grid": "Lepljenje na mrežu polja",
   "Move Attached Objects": "Pomeri prikačene objekte",
   "Moving this object also moves objects snapped to it (tokens, cards, cells)": "Pomeranje ovog objekta pomera i prikačene objekte (žetone, karte, ćelije)",
+  "Board Edge Magnetism": "Magnetisanje ivica polja",
+  "Board edges snap to other boards and cells edges": "Ivice polja se lepe na ivice drugih polja i ćelija",
   "Snap cell edges to other cells and the game field edges": "Ivice ćelije se lepe na ivice drugih ćelija i na ivice igralnog polja",
   "Cell snaps to board grid cells like tokens": "Ćelija se lepi na ćelije mreže igralnog polja kao žeton",
   "Counter Limits": "Ograničenja brojača",

@@ -584,6 +584,7 @@ export interface Board extends GameItem {
   snapToGrid: boolean; // Snap tokens to grid
   snapCardsToGrid?: boolean; // Snap cards to grid
   snapRotationToGrid?: boolean; // Apply board rotation to snapped objects
+  edgeMagnetism?: boolean; // When true (default), this board's edges snap to other boards' and cells' edges
   moveAttachedObjects?: boolean; // When true (default), moving this board moves snapped objects (tokens, cards, cells) by the same delta
   linkGridSize?: boolean; // Remember proportions button state for grid settings
   fromPoolPanel?: string; // ID of pool panel this board was picked up from (if any)

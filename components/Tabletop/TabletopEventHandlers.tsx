@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { TableObject, ItemType, Card as CardType, Token, TokenType, Deck as DeckType, Board as BoardType, BattlefieldCell, CardOrientation, GridType, CardLocation, EffectTemplate, Drawing } from '../../types';
 import { clampScrollToPlayableArea, clampObjectPositionToPlayableArea } from '../../utils/viewportConstraints';
 import { PLAYABLE_AREA_SIZE } from '../../constants';
@@ -1468,32 +1469,52 @@ const dropCursorSlot = (
       }
       }
 
-      // Cell edge magnetism: snap this cell's edges flush to other cells' edges and to
-      // the game field edges (playable area). Hex cells snap side-to-side instead:
-      // parallel sides attract and settle flush along the shared apothem (the line from
-      // the center that bisects a side), aligning centers for a proper hex tiling
-      // position. Skipped when the cell snapped to a board grid cell - grid snapping wins
-      if (isBattlefieldCellItem && (item as BattlefieldCell).edgeMagnetism !== false && !snappedToGrid) {
+      // Edge magnetism: snap the dragged cell's/board's edges flush to other
+      // cells' and boards' edges and to the game field edges (playable area).
+      // Hex shapes snap side-to-side instead: parallel sides attract and settle
+      // flush along the shared apothem (the line from the center that bisects a
+      // side), aligning centers for a proper hex tiling position. Skipped when
+      // the cell snapped to a board grid cell - grid snapping wins
+      const isBoardItem = item.type === ItemType.BOARD;
+      const draggedObjForMagnet = item as BattlefieldCell | BoardType;
+      const edgeMagnetismEnabled = isBattlefieldCellItem || isBoardItem
+        ? (draggedObjForMagnet as BattlefieldCell | BoardType).edgeMagnetism !== false
+        : false;
+      if ((isBattlefieldCellItem || isBoardItem) && edgeMagnetismEnabled && !snappedToGrid) {
         const nearbyCells: CellEdgeSnapCell[] = [];
+        // Containment is not an edge relationship: a board must not snap its
+        // edges to its own grid cells (or to cells it currently hovers over),
+        // and a cell inside a board snaps to the grid, not out of the board
+        const isContained = (
+          ax: number, ay: number, aw: number, ah: number,
+          bx: number, by: number, bw: number, bh: number
+        ) => ax >= bx && ay >= by && ax + aw <= bx + bw && ay + ah <= by + bh;
 
         for (const cellId of Object.keys(state.objects)) {
           if (cellId === item.id) continue;
           const otherObj = state.objects[cellId] as TableObject;
-          if (otherObj.type !== ItemType.BATTLEFIELD_CELL) continue;
+          if (otherObj.type !== ItemType.BATTLEFIELD_CELL && otherObj.type !== ItemType.BOARD) continue;
           // Skip hidden cells - magnetism should not work when cell is hidden
           if (otherObj.isOnTable === false) continue;
           // Skip pinned cells - their x/y may not match their actual visual position
           if ((otherObj as any).isPinnedToViewport) continue;
 
+          const otherW = otherObj.width ?? 100;
+          const otherH = otherObj.height ?? 100;
+          if (isContained(otherObj.x, otherObj.y, otherW, otherH, finalX, finalY, objWidth, objHeight) ||
+              isContained(finalX, finalY, objWidth, objHeight, otherObj.x, otherObj.y, otherW, otherH)) {
+            continue;
+          }
+
           nearbyCells.push({
             id: otherObj.id,
             x: otherObj.x,
             y: otherObj.y,
-            width: otherObj.width ?? 100,
-            height: otherObj.height ?? 100,
-            shape: (otherObj as BattlefieldCell).shape,
+            width: otherW,
+            height: otherH,
+            shape: (otherObj as BattlefieldCell | BoardType).shape,
             rotation: otherObj.rotation,
-            borderWidth: (otherObj as BattlefieldCell).borderWidth,
+            borderWidth: (otherObj as BattlefieldCell | BoardType).borderWidth,
           });
         }
 
@@ -1501,9 +1522,9 @@ const dropCursorSlot = (
           cell: {
             width: objWidth,
             height: objHeight,
-            shape: (item as BattlefieldCell).shape,
+            shape: (draggedObjForMagnet as BattlefieldCell | BoardType).shape,
             rotation: item.rotation,
-            borderWidth: (item as BattlefieldCell).borderWidth,
+            borderWidth: (draggedObjForMagnet as BattlefieldCell | BoardType).borderWidth,
           },
           position: { x: finalX, y: finalY },
           others: nearbyCells,
@@ -3230,11 +3251,15 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
   // Wheel handler (native event for passive: false support)
   const handleWheel = useCallback((e: WheelEvent) => {
     // Check if the event target is inside a scrollable panel
-    // If so, don't handle the wheel event here (let the panel handle it)
+    // If so, don't handle the wheel event here (let the panel handle it).
+    // Exception: the tabletop container itself is .overflow-auto - Ctrl+scroll
+    // must fall through to the zoom branch below (the plain-wheel panning
+    // keeps using native scrolling exactly as before).
     const target = e.target as HTMLElement;
     const scrollableParent = target.closest('[data-scrollable], .overflow-y-auto, .overflow-auto, [data-hand-panel], [data-tokens-panel], [data-tools-panel]');
 
-    if (scrollableParent) {
+    if (scrollableParent &&
+        !((e.ctrlKey || e.metaKey) && (scrollableParent as HTMLElement).hasAttribute('data-tabletop'))) {
       // Let the scrollable panel handle the wheel event
       return;
     }
@@ -3246,22 +3271,68 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       const zoomSensitivity = 0.001;
       const delta = -e.deltaY * zoomSensitivity;
       const currentZoom = localSettings.zoom ?? 100;
-      const newZoom = Math.max(25, Math.min(400, currentZoom + delta * 100));
+      // Clamp to 50%–200%
+      const newZoom = Math.max(50, Math.min(200, currentZoom + delta * 100));
 
       // Round to nearest 5%
       const roundedZoom = Math.round(newZoom / 5) * 5;
 
       if (roundedZoom !== currentZoom) {
-        // Update localSettings
-        updateSetting('zoom', roundedZoom);
+        // 🔧 Zoom to cursor: keep the world point under the pointer fixed while
+        // zooming (instead of anchoring at the content origin). The world
+        // position under the cursor is (scroll + cursorOffset) / oldPpv; after
+        // the zoom it must stay there: scroll' = world * newPpv - cursorOffset.
+        const container = scrollContainerRef.current;
+        const basePpv = viewTransform?.pixelsPerVU ?? 1;
+        const oldPpv = basePpv * (viewTransform?.zoom ?? (currentZoom / 100));
+        const newPpv = basePpv * (roundedZoom / 100);
 
-        // Sync with ViewTransformContext (convert 25-400 to 0.25-4.0)
-        if (setZoom) {
-          const zoomFactor = roundedZoom / 100;
-          setZoom(zoomFactor);
+        if (container && oldPpv > 0 && newPpv > 0) {
+          const rect = container.getBoundingClientRect();
+          const cursorX = e.clientX - rect.left;
+          const cursorY = e.clientY - rect.top;
+          const worldX = (container.scrollLeft + cursorX) / oldPpv;
+          const worldY = (container.scrollTop + cursorY) / oldPpv;
+          const constrained = clampScrollToPlayableArea(
+            worldX * newPpv - cursorX,
+            worldY * newPpv - cursorY,
+            container.clientWidth,
+            container.clientHeight,
+            newPpv
+          );
+
+          // All zoom state updates flush SYNCHRONOUSLY (new content size is in
+          // the DOM), then the corrected scroll is applied right after - both
+          // land in the same paint, so the view never shows the zoomed content
+          // with the old (stale) scroll offset. Batched default-priority
+          // updates + rAF correction here caused visible jitter instead.
+          flushSync(() => {
+            updateSetting('zoom', roundedZoom);
+            if (setZoom) {
+              setZoom(roundedZoom / 100);
+            }
+            setScroll?.(constrained.x, constrained.y);
+            dispatch({
+              type: 'UPDATE_VIEW_TRANSFORM',
+              payload: {
+                ...viewTransform,
+                scroll: { x: constrained.x, y: constrained.y }
+              }
+            });
+          });
+
+          // The content is resized now - apply the anchored scroll immediately
+          container.scrollLeft = constrained.x;
+          container.scrollTop = constrained.y;
+        } else {
+          // No anchor target - just update the zoom
+          updateSetting('zoom', roundedZoom);
+          if (setZoom) {
+            setZoom(roundedZoom / 100);
+          }
         }
 
-        // Sync with ToolSettingsContext via custom event
+        // Sync with ToolSettingsContext via custom event (outside flushSync)
         window.dispatchEvent(new CustomEvent('zoom-settings-changed', {
           detail: { level: roundedZoom }
         }));

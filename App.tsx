@@ -32,16 +32,19 @@ const BrowserZoomBlocker: React.FC = () => {
     // Block wheel-based zoom (Ctrl+scroll)
     const wheelHandler = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
-        // Check if target is inside a scrollable panel (but NOT the main tabletop!)
         const target = e.target as HTMLElement;
+
+        // 🔧 The tabletop handles Ctrl+scroll zoom itself (zoom-to-cursor
+        // anchor, 50-200% clamp) via its own wheel handler - let the event
+        // through untouched
+        if (target.closest('[data-tabletop="true"]')) {
+          return;
+        }
+
+        // Check if target is inside a scrollable panel (hand/tokens/tools,
+        // modals) - those handle their own scrolling
         const scrollableParent = target.closest('[data-scrollable], .overflow-y-auto, [data-hand-panel], [data-tokens-panel], [data-tools-panel]');
-
-        // Additional check: if we found an element with overflow-auto, make sure it's NOT the tabletop
-        const overflowAutoParent = target.closest('.overflow-auto');
-        const isTabletop = overflowAutoParent?.getAttribute('data-tabletop') === 'true';
-
-        // Only allow default behavior if we're in a scrollable panel AND it's NOT the tabletop
-        if (scrollableParent && !isTabletop) {
+        if (scrollableParent) {
           return;
         }
 
@@ -54,7 +57,7 @@ const BrowserZoomBlocker: React.FC = () => {
         const zoomSensitivity = 0.001;
         const delta = -e.deltaY * zoomSensitivity;
         const currentZoom = localSettings.zoom ?? 100;
-        const newZoom = Math.max(25, Math.min(400, currentZoom + delta * 100));
+        const newZoom = Math.max(50, Math.min(200, currentZoom + delta * 100));
         const roundedZoom = Math.round(newZoom / 5) * 5;
 
         if (roundedZoom !== currentZoom) {
