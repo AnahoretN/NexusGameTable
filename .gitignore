@@ -25,3 +25,6 @@ tmpclaude-*
 
 # Claude Code local settings (user-specific)
 .claude/settings.local.json
+
+# Blender toolkit plugin (recreated by its SessionStart hook)
+.blender-toolkit/

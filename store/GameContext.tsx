@@ -8235,6 +8235,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         dispatch,
         getState: () => stateRef.current,
         connectionMethod,
+        connectionStatus,
         initializeHost,
         getRoomId: () => devRoomIdRef.current,
         getPeerId: () => devPeerIdRef.current,
