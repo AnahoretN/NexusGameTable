@@ -465,7 +465,11 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
       const localOnlyActions = [
         'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
         'SET_PIXELS_PER_VU',      // Pixels per VU is screen-specific
-        'RESIZE_UI_OBJECT'        // Panel/window size is local (handled by UPDATE_PLAYER_PANEL_SETTINGS)
+        'RESIZE_UI_OBJECT',       // Panel/window size is local (handled by UPDATE_PLAYER_PANEL_SETTINGS)
+        // 🔥 HOST GUARD: a guest's "Clear Cache" must never reset the HOST's
+        // game (the reducer would wipe the host's state AND localStorage).
+        // Defense in depth — the guest middleware already refuses to send it.
+        'CLEAR_SAVED_STATE'
       ];
 
       // NOTE: MOVE_OBJECT_COMMIT is NOT in localOnlyActions because it needs to reach the host

@@ -380,6 +380,18 @@ describe('protocol dispatcher — ACTION', () => {
 
     expect(deps.localDispatch).not.toHaveBeenCalled();
   });
+
+  test('guest CLEAR_SAVED_STATE never resets the host (cache-clear host guard)', () => {
+    // Regression: a guest's "Clear Cache" forwarded the state reset to the
+    // host — the host reducer wiped its own state AND localStorage, ruining
+    // the game for everyone.
+    const deps = createDeps();
+    const handler = createProtocolHandler(deps);
+
+    handler({ type: 'ACTION', payload: { type: 'CLEAR_SAVED_STATE' } }, makeConn());
+
+    expect(deps.localDispatch).not.toHaveBeenCalled();
+  });
 });
 
 describe('protocol dispatcher — HELO (host)', () => {

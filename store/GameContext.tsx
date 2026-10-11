@@ -7724,7 +7724,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const localOnlyActions = [
               'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
               'SET_PIXELS_PER_VU',       // Pixels per VU is screen-specific
-              'RESIZE_UI_OBJECT'         // Panel/window size is local (handled separately)
+              'RESIZE_UI_OBJECT',        // Panel/window size is local (handled separately)
+              // 🔥 HOST GUARD: "Clear Cache" is per-device — the guest wipes its
+              // OWN localStorage/IndexedDB and reloads. Forwarding the state
+              // reset to the host wiped the HOST's game for everyone.
+              'CLEAR_SAVED_STATE'
           ];
 
           // 🔥 FIX: MOVE_OBJECT_COMMIT needs special handling for individualObjects layers
