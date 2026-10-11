@@ -14,6 +14,7 @@ import { vi, describe, test, expect } from 'vitest';
 import { gameReducer } from '../GameContext';
 import { initialState } from '../gameState';
 import { CardLocation } from '../../types';
+import { registerRemoteMovement } from '../../utils/remoteMovementAnimator';
 
 vi.mock('../../utils/logger', () => ({
   logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -267,5 +268,90 @@ describe('gameReducer — ADD_CARD_TO_PILE', () => {
       payload: { cardId: 'c1', deckId: 'd1', pileId: 'ghost-pile' },
     } as any);
     expect(next).toBe(state);
+  });
+});
+
+describe('gameReducer — REMOVE_PLAYER (kick cleanup)', () => {
+  const baseState = {
+    ...initialState,
+    players: [
+      { id: 'gm', name: 'GM', color: '#e74c3c', isGM: true },
+      { id: 'guest-a', name: 'A', color: '#3498db', isGM: false },
+      { id: 'guest-b', name: 'B', color: '#2ecc71', isGM: false },
+    ],
+    guestPackStatus: {
+      'guest-a': { guestName: 'A', loadedPacks: {}, connectedAt: 1 },
+      'guest-b': { guestName: 'B', loadedPacks: {}, connectedAt: 2 },
+    },
+    playerObjectPositions: {
+      'guest-a': { obj1: { x: 1, y: 2 } },
+      'guest-b': { obj1: { x: 3, y: 4 } },
+    },
+    playerPanelSettings: {
+      'guest-a': { panel1: { x: 10, y: 20 } },
+      'guest-b': { panel1: { x: 30, y: 40 } },
+    },
+  } as any;
+
+  test('removes the player and ALL their per-player data', () => {
+    const next = gameReducer(baseState, { type: 'REMOVE_PLAYER', payload: { id: 'guest-a' } } as any);
+
+    expect(next.players.map(p => p.id)).toEqual(['gm', 'guest-b']);
+    expect(next.guestPackStatus['guest-a']).toBeUndefined();
+    expect(next.playerObjectPositions['guest-a']).toBeUndefined();
+    expect(next.playerPanelSettings['guest-a']).toBeUndefined();
+  });
+
+  test('keeps other players data intact', () => {
+    const next = gameReducer(baseState, { type: 'REMOVE_PLAYER', payload: { id: 'guest-a' } } as any);
+
+    expect(next.guestPackStatus['guest-b']).toBeDefined();
+    expect(next.playerObjectPositions['guest-b']).toEqual(baseState.playerObjectPositions['guest-b']);
+    expect(next.playerPanelSettings['guest-b']).toEqual(baseState.playerPanelSettings['guest-b']);
+  });
+
+  test('removing an unknown player does not touch per-player maps', () => {
+    const next = gameReducer(baseState, { type: 'REMOVE_PLAYER', payload: { id: 'ghost' } } as any);
+
+    expect(next.playerObjectPositions).toEqual(baseState.playerObjectPositions);
+    expect(next.playerPanelSettings).toEqual(baseState.playerPanelSettings);
+  });
+});
+
+describe('gameReducer — DROP_FROM_CURSOR_SLOT movement-animation guard', () => {
+  test('does NOT animate a drop from the -999999 cursor-slot hide position', () => {
+    (registerRemoteMovement as any).mockClear();
+
+    const state = {
+      ...initialState,
+      objects: {
+        'c1': makeCard({ id: 'c1', x: -999999, y: -999999, inCursorSlot: true, isOnTable: false }),
+      },
+    } as any;
+
+    gameReducer(state, {
+      type: 'DROP_FROM_CURSOR_SLOT',
+      payload: { objectId: 'c1', x: 500, y: 300 },
+    } as any);
+
+    expect(registerRemoteMovement).not.toHaveBeenCalled();
+  });
+
+  test('animates a real cross-client position jump', () => {
+    (registerRemoteMovement as any).mockClear();
+
+    const state = {
+      ...initialState,
+      objects: {
+        'c1': makeCard({ id: 'c1', x: 100, y: 100 }),
+      },
+    } as any;
+
+    gameReducer(state, {
+      type: 'DROP_FROM_CURSOR_SLOT',
+      payload: { objectId: 'c1', x: 2000, y: 2000 },
+    } as any);
+
+    expect(registerRemoteMovement).toHaveBeenCalledWith('c1', 100, 100, 2000, 2000);
   });
 });

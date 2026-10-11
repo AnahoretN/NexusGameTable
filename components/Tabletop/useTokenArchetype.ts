@@ -201,8 +201,10 @@ export const useTokenArchetype = (props: UseTokenArchetypeProps) => {
     return () => window.removeEventListener('add-token-to-cursor-slot', handleAddTokenToSlot);
   }, [cursorSlotRef, dispatch, state.objects, setCursorSlot, setCursorPosition, cursorPositionRef, setCursorSlotSource, isAddingTokenRef]);
 
-  // Handle add-effect-to-cursor-slot events (tool panel flyout)
-  // This adds a NEW copy of an effect template to the cursor slot on click
+  // Handle add-effect-to-cursor-slot events (shift+click on an effects flyout
+  // button): creates a NEW COPY of the effect template in the cursor slot.
+  // The plain click toggle (pick up / hide the existing object) lives in
+  // TabletopEventHandlers ('handle-pick-to-cursor-slot' / 'cursor-slot-hide-from-menu').
   useEffect(() => {
     const handleAddEffectToSlot = (e: Event) => {
       const customEvent = e as CustomEvent<{ templateId: string; clientX?: number; clientY?: number }>;

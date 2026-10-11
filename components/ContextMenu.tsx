@@ -4,7 +4,8 @@ import { TableObject, ItemType, Card, Deck, ContextAction, Deck as DeckType, Car
 import { Lock, Unlock, RefreshCw, Copy, Settings, Eye, EyeOff, Layers, Trash2, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Hand, Shuffle, Search, Undo, ChevronRight, RotateCw, RotateCcw, Pin, ImageDown, CornerDownRight, Check, Plus, Users, Sparkles } from 'lucide-react';
 import { t as translate, Locale } from '../utils/translations';
 import { useGame } from '../store/GameContext';
-import { useHyperscaleLayers } from '../store/contexts';
+import { useHyperscaleLayers, useLayerSelection } from '../store/contexts';
+import { isObjectLayerSelected, canMoveObjectToLayer } from '../utils/layerPermissions';
 
 interface ContextMenuProps {
   x: number;
@@ -102,6 +103,9 @@ RegularMenuItem.displayName = 'RegularMenuItem';
 const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, onAction, onClose, allObjects, hideCardActions, isSearchWindow, language = 'en', nexusBoardEditingId, shiftKey: _shiftKey, contextMenuType = 'tabletop' }) => {
   const { state: _state } = useGame();
   const hyperscaleLayers = useHyperscaleLayers();
+  const [selectedLayerIds] = useLayerSelection();
+  // Objects on layers the user hasn't selected: no delete/clone/lock/pin
+  const objLayerSelected = isObjectLayerSelected(object, selectedLayerIds, hyperscaleLayers);
 
   // Early return if allObjects is not available
   if (!allObjects) {
@@ -796,11 +800,9 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
         const sortedLayers = [...hyperscaleLayers]
           .sort((a, b) => b.maxZIndex - a.maxZIndex);
 
-        // Check if player/GM can see this layer in context menu
-        const canViewLayer = (layer: HyperscaleLayer) => {
-          if (isGM) return true;
-          return layer.playerCanView;
-        };
+        // Players may only move objects to layers they can select themselves
+        // (GM sees all layers)
+        const canViewLayer = (layer: HyperscaleLayer) => canMoveObjectToLayer(layer, isGM);
 
         // Generate menu items for each hyperscale layer
         const layerItems: MenuItem[] = sortedLayers
@@ -948,7 +950,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       label: object.locked ? translate('Unlock', language as Locale) : translate('Lock', language as Locale),
       action: 'lock',
       icon: object.locked ? <Unlock size={14} /> : <Lock size={14} />,
-      visible: !hideCardActions && can('lock'),
+      visible: !hideCardActions && can('lock') && objLayerSelected,
       group: 'visibilityState',
     },
     {
@@ -956,7 +958,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       action: object.isPinnedToViewport ? 'unpinFromViewport' : 'pinToViewport',
       icon: <Pin size={14} />,
       // Pinning available for cards, tokens, decks, dice, counters (not boards, and not in pool panel)
-      visible: !hideCardActions && can('pin') && object.type !== ItemType.BOARD && contextMenuType !== 'pool',
+      visible: !hideCardActions && can('pin') && object.type !== ItemType.BOARD && contextMenuType !== 'pool' && objLayerSelected,
       group: 'visibilityState',
     },
     // Hide Card / Unhide Card
@@ -993,7 +995,7 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       label: translate('Clone', language as Locale),
       action: 'clone',
       icon: <Copy size={14} />,
-      visible: (isSearchWindow && isGM && object.type === ItemType.CARD) || (!hideCardActions && can('clone')),
+      visible: ((isSearchWindow && isGM && object.type === ItemType.CARD) || (!hideCardActions && can('clone'))) && objLayerSelected,
       group: 'destructive',
     },
     // Destroy - permanently removes card from deck (GM only in search window for cards) - AT THE BOTTOM
@@ -1009,10 +1011,10 @@ const ContextMenuComponent: React.FC<ContextMenuProps> = ({ x, y, object, isGM, 
       label: translate('Delete', language as Locale),
       action: 'delete',
       icon: <Trash2 size={14} />,
-      visible: !isSearchWindow && !hideCardActions && can('delete'),
+      visible: !isSearchWindow && !hideCardActions && can('delete') && objLayerSelected,
       group: 'destructive',
     },
-  ], [object, isGM, hideCardActions, isSearchWindow, language, nexusBoardEditingId, contextMenuType, hyperscaleLayers, moveToSection, can, object.isPinnedToViewport]);
+  ], [object, isGM, hideCardActions, isSearchWindow, language, nexusBoardEditingId, contextMenuType, hyperscaleLayers, selectedLayerIds, moveToSection, can, object.isPinnedToViewport]);
 
   /**
    * Group menu items and add automatic separators for groups

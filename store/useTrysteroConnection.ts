@@ -37,6 +37,7 @@ import {
   readTabSession,
   isTabSessionFresh,
   rememberGuestIdentity,
+  clearSessionDescriptor,
 } from './session/sessionResume';
 
 // ============================================================================
@@ -79,6 +80,8 @@ export interface UseTrysteroConnectionReturn {
   retryGuestConnection: () => void;
   /** Ref-based hook: invoked once when the reconnect loop gives up (UI shows backup restore). */
   onReconnectFailedRef: React.MutableRefObject<(() => void) | null>;
+  /** 🔧 KICK: invoked once when the host removes this player from the session. */
+  onRemovedFromSessionRef: React.MutableRefObject<(() => void) | null>;
 }
 
 // Trystero room type
@@ -268,6 +271,10 @@ export function useTrysteroConnection(
   const startGuestReconnectRef = useRef<(() => void) | null>(null);
   // 🔥 RESUME: hook for reconnect to report terminal failure to the UI
   const onReconnectFailedRef = useRef<(() => void) | null>(null);
+  // 🔧 KICK: set when the host removes this player — suppresses the reconnect
+  // loop and connection-loss recovery; GameContext shows the removed modal.
+  const kickedRef = useRef(false);
+  const onRemovedFromSessionRef = useRef<(() => void) | null>(null);
 
   // Whether the guest has received at least one state sync from the host
   const receivedSyncRef = useRef(false);
@@ -365,6 +372,38 @@ export function useTrysteroConnection(
     onSessionEstablished,
   });
 
+  // 🔧 KICK: host removed this player — full session teardown (no reconnect,
+  // no resume); GameContext shows the blocking removed-player modal.
+  const handleRemovedFromSession = useCallback(() => {
+    if (kickedRef.current) return;
+    kickedRef.current = true;
+    logger.warn('[P2P][Trystero] This player was removed from the session by the host');
+    // Stop the reconnect loop — nobody may re-join automatically
+    reconnectingRef.current = false;
+    const rst = reconnectStateRef.current;
+    if (rst.timer) { clearTimeout(rst.timer); rst.timer = null; }
+    rst.active = false;
+    setConnectionStatus('disconnected');
+    // Kill auto-resume: without the descriptor a reload won't rejoin.
+    // nexus-player-id is intentionally KEPT — re-joining via the invite link
+    // re-registers the same player (with their per-player data).
+    clearSessionDescriptor();
+    // Tear the room down (async leave — same pattern as the reconnect loop)
+    const oldRoom = roomRef.current;
+    if (oldRoom) {
+      lastLeftRoomRef.current = oldRoom;
+      Promise.race([
+        oldRoom.leave(),
+        new Promise(resolve => setTimeout(resolve, 3000)),
+      ]).catch(() => { /* ignore */ });
+      if (roomRef.current === oldRoom) roomRef.current = null;
+    }
+    liveConnections.length = 0;
+    hostConnectionRef.current = null;
+    sendRef.current = null;
+    onRemovedFromSessionRef.current?.();
+  }, []);
+
   const handleNetworkData = useCallback((data: any, peerId: string) => {
     if (data?.type === 'SYNC_STATE') {
       receivedSyncRef.current = true;
@@ -380,6 +419,14 @@ export function useTrysteroConnection(
       // watchdog must keep counting from the last REAL traffic so it kicks in
       // if the host never comes back.
       setConnectionStatus('reconnecting');
+      return;
+    }
+    // 🔧 KICK: the host removed this player from the session. Tear the session
+    // down (no auto-reconnect, no resume) and let GameContext show the modal.
+    if (!isHost && data?.type === 'PLAYER_REMOVED') {
+      if (data.payload?.playerId === getPlayerId()) {
+        handleRemovedFromSession();
+      }
       return;
     }
     // 🔥 RESUME: liveness tracking (guest side). The host broadcasts HOST_PING
@@ -587,6 +634,9 @@ export function useTrysteroConnection(
       armRejoin();
       updateP2PLoadingStep('connect', 'loading', 'Reconnecting to host room...');
     } else {
+      // 🔧 KICK: a fresh join (via invite link) clears a previous kick —
+      // re-joining after removal is explicitly allowed.
+      kickedRef.current = false;
       resetP2PLoading();
       updateP2PLoadingStep('connect', 'loading', 'Joining room...');
     }
@@ -884,6 +934,7 @@ export function useTrysteroConnection(
 
   const startGuestReconnect = useCallback(() => {
     if (reconnectingRef.current) return;
+    if (kickedRef.current) return; // 🔧 KICK: removed by the host — no rejoin
     const roomIdToJoin = roomIdStateRef.current;
     const identity = identityRef.current;
     if (!roomIdToJoin || !identity) {
@@ -1076,5 +1127,7 @@ export function useTrysteroConnection(
     resumeGuest,
     retryGuestConnection,
     onReconnectFailedRef,
+    // 🔧 KICK: GameContext wires the removed-player modal through this
+    onRemovedFromSessionRef,
   };
 }

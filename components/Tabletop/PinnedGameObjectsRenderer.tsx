@@ -16,6 +16,8 @@ interface PinnedGameObjectsRendererProps {
   isGM: boolean;
   activePlayerId: string;
   pixelsPerVU: number;
+  /** Per-layer zoom compensation (1 = zoom applies). */
+  getLayerInverseScale: (layerId: string) => number;
   onContextMenu: (e: React.MouseEvent, obj: TableObject) => void;
   onMouseDown: (e: React.MouseEvent, objId: string) => void;
   dispatch: React.Dispatch<any>;
@@ -127,6 +129,7 @@ TokenCountersDisplay.displayName = 'PinnedTokenCountersDisplay';
 interface PinnedCounterRendererProps {
   obj: TableObject;
   pixelsPerVU: number;
+  layerInverseScale?: number;
   isGM: boolean;
   activePlayerId: string;
   draggingId: string | null;
@@ -138,6 +141,7 @@ interface PinnedCounterRendererProps {
 const PinnedCounterRenderer = memo(({
   obj,
   pixelsPerVU,
+  layerInverseScale = 1,
   isGM: _isGM,
   activePlayerId,
   draggingId: _draggingId,
@@ -230,7 +234,8 @@ const PinnedCounterRenderer = memo(({
         width: counterWidth * pixelsPerVU,
         height: counterHeight * pixelsPerVU,
         pointerEvents: 'auto',
-        transform: `rotate(${obj.rotation || 0}deg)`,
+        transform: `rotate(${obj.rotation || 0}deg)${layerInverseScale !== 1 ? ` scale(${layerInverseScale})` : ''}`,
+        transformOrigin: layerInverseScale !== 1 ? 'center center' : undefined,
         borderRadius: '5px',
         overflow: 'visible',
       }}
@@ -270,6 +275,7 @@ const PinnedCounterRenderer = memo(({
   return (
     prevProps.obj === nextProps.obj &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.layerInverseScale === nextProps.layerInverseScale &&
     prevProps.isGM === nextProps.isGM &&
     prevProps.activePlayerId === nextProps.activePlayerId &&
     prevProps.draggingId === nextProps.draggingId
@@ -282,6 +288,7 @@ PinnedCounterRenderer.displayName = 'PinnedCounterRenderer';
 interface PinnedDiceRendererProps {
   obj: TableObject;
   pixelsPerVU: number;
+  layerInverseScale?: number;
   isGM: boolean;
   activePlayerId: string;
   draggingId: string | null;
@@ -294,6 +301,7 @@ interface PinnedDiceRendererProps {
 const PinnedDiceRenderer = memo(({
   obj,
   pixelsPerVU,
+  layerInverseScale = 1,
   isGM: _isGM,
   activePlayerId,
   draggingId: _draggingId,
@@ -407,7 +415,8 @@ const PinnedDiceRenderer = memo(({
         width: diceWidth,
         height: diceHeight,
         pointerEvents: 'auto',
-        transform: `rotate(${obj.rotation || 0}deg)`,
+        transform: `rotate(${obj.rotation || 0}deg)${layerInverseScale !== 1 ? ` scale(${layerInverseScale})` : ''}`,
+        transformOrigin: layerInverseScale !== 1 ? 'center center' : undefined,
         overflow: 'visible',
       }}
       onMouseDown={(e) => canDrag && onMouseDown(e, obj.id)}
@@ -470,6 +479,7 @@ const PinnedDiceRenderer = memo(({
   return (
     prevProps.obj === nextProps.obj &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.layerInverseScale === nextProps.layerInverseScale &&
     prevProps.isGM === nextProps.isGM &&
     prevProps.activePlayerId === nextProps.activePlayerId &&
     prevProps.draggingId === nextProps.draggingId
@@ -483,6 +493,7 @@ interface PinnedTokenRendererProps {
   obj: TableObject;
   allObjects: Record<string, TableObject>;
   pixelsPerVU: number;
+  layerInverseScale?: number;
   isGM: boolean;
   activePlayerId: string;
   draggingId: string | null;
@@ -496,6 +507,7 @@ const PinnedTokenRenderer = memo(({
   obj,
   allObjects,
   pixelsPerVU,
+  layerInverseScale = 1,
   isGM,
   activePlayerId: _activePlayerId,
   draggingId: _draggingId,
@@ -622,7 +634,8 @@ const PinnedTokenRenderer = memo(({
         width: token.width * pixelsPerVU,
         height: token.height * pixelsPerVU,
         pointerEvents: 'auto',
-        transform: `rotate(${obj.rotation || 0}deg)`,
+        transform: `rotate(${obj.rotation || 0}deg)${layerInverseScale !== 1 ? ` scale(${layerInverseScale})` : ''}`,
+        transformOrigin: layerInverseScale !== 1 ? 'center center' : undefined,
         overflow: 'visible',
       }}
       onMouseDown={(e) => onMouseDown(e, obj.id)}
@@ -666,6 +679,7 @@ const PinnedTokenRenderer = memo(({
     prevProps.obj === nextProps.obj &&
     prevProps.allObjects === nextProps.allObjects &&
     prevProps.draggingId === nextProps.draggingId &&
+    prevProps.layerInverseScale === nextProps.layerInverseScale &&
     prevProps.isGM === nextProps.isGM &&
     prevProps.activePlayerId === nextProps.activePlayerId
   );
@@ -682,6 +696,7 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
   isGM,
   activePlayerId,
   pixelsPerVU,
+  getLayerInverseScale,
   onContextMenu,
   onMouseDown,
   dispatch,
@@ -692,12 +707,17 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
   // in both places simultaneously, which causes the "clipping" effect.
   const pinnedObjectsToRender = pinnedGameObjects.filter(obj => obj.id !== draggingId);
 
+  // Layer-aware zoom compensation (pinned objects size with the zoomed pixelsPerVU)
+  const getPinnedInverseScale = (obj: TableObject): number =>
+    getLayerInverseScale(obj.hyperscaleLayerId || 'tokens');
+
   const renderPinnedToken = (obj: TableObject) => {
     return (
       <PinnedTokenRenderer
         obj={obj}
         allObjects={state.objects}
         pixelsPerVU={pixelsPerVU}
+        layerInverseScale={getPinnedInverseScale(obj)}
         isGM={isGM}
         activePlayerId={activePlayerId}
         draggingId={draggingId}
@@ -712,6 +732,7 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
   const renderPinnedEffect = (obj: TableObject) => {
     const pinnedPosition = (obj as any).pinnedScreenPosition;
     if (!pinnedPosition) return null;
+    const inverseScale = getPinnedInverseScale(obj);
 
     return (
       <div
@@ -721,6 +742,10 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
           left: pinnedPosition.x,
           top: pinnedPosition.y,
           pointerEvents: 'auto',
+          ...(inverseScale !== 1 && {
+            transform: `scale(${inverseScale})`,
+            transformOrigin: 'top left',
+          }),
         }}
         onMouseDown={(e) => onMouseDown(e, obj.id)}
         onContextMenu={(e) => onContextMenu(e, obj)}
@@ -746,6 +771,7 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
     if (obj.type === ItemType.TEXT) {
       const pinnedPosition = (obj as any).pinnedScreenPosition;
       if (!pinnedPosition) return null;
+      const inverseScale = getPinnedInverseScale(obj);
       return (
         <TextObjectRendererMemo
           key={obj.id}
@@ -755,7 +781,14 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
           dispatch={dispatch}
           onMouseDown={(e) => onMouseDown(e, obj.id)}
           onContextMenu={(e) => onContextMenu(e, obj)}
-          style={{ left: pinnedPosition.x, top: pinnedPosition.y }}
+          style={{
+            left: pinnedPosition.x,
+            top: pinnedPosition.y,
+            ...(inverseScale !== 1 && {
+              transform: `scale(${inverseScale})`,
+              transformOrigin: 'top left',
+            }),
+          }}
         />
       );
     }
@@ -765,6 +798,7 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
           key={obj.id}
           obj={obj}
           pixelsPerVU={pixelsPerVU}
+          layerInverseScale={getPinnedInverseScale(obj)}
           isGM={isGM}
           activePlayerId={activePlayerId}
           draggingId={draggingId}
@@ -780,6 +814,7 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
           key={obj.id}
           obj={obj}
           pixelsPerVU={pixelsPerVU}
+          layerInverseScale={getPinnedInverseScale(obj)}
           isGM={isGM}
           activePlayerId={activePlayerId}
           draggingId={draggingId}
@@ -793,6 +828,7 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
     // For other types (CARD, etc.), render a simple placeholder
     const pinnedPosition = (obj as any).pinnedScreenPosition;
     if (!pinnedPosition) return null;
+    const inverseScale = getPinnedInverseScale(obj);
 
     return (
       <div
@@ -803,6 +839,10 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
           left: pinnedPosition.x,
           top: pinnedPosition.y,
           pointerEvents: 'auto',
+          ...(inverseScale !== 1 && {
+            transform: `scale(${inverseScale})`,
+            transformOrigin: 'top left',
+          }),
         }}
         onMouseDown={(e) => onMouseDown(e, obj.id)}
         onContextMenu={(e) => onContextMenu(e, obj)}
@@ -845,6 +885,7 @@ export const PinnedGameObjectsRenderer = memo<PinnedGameObjectsRendererProps>(({
     prevProps.isGM === nextProps.isGM &&
     prevProps.activePlayerId === nextProps.activePlayerId &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.getLayerInverseScale === nextProps.getLayerInverseScale &&
     !objectsChanged // Re-render when state.objects changes (archetype edits)
   );
 });

@@ -110,6 +110,8 @@ function calculateRotatedRectPolygon(
 interface EffectTemplateRendererProps {
   obj: EffectTemplate;
   pixelsPerVU: number;
+  /** Inverse scale for zoom-disabled layers (1 = zoom applies normally). */
+  layerInverseScale?: number;
   isDragging?: boolean;
   onMouseDown?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
@@ -123,6 +125,7 @@ interface EffectTemplateRendererProps {
 export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   obj,
   pixelsPerVU,
+  layerInverseScale = 1,
   isDragging = false,
   onMouseDown,
   onContextMenu,
@@ -731,7 +734,14 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     pointerEvents: 'none',
     // Use visible overflow so markers are visible
     overflow: 'visible',
-    ...style
+    ...style,
+    // 🔒 Zoom-disabled layer: sizes/positions above use the zoomed pixelsPerVU,
+    // cancel the visual zoom with an inverse scale (same pattern as other
+    // renderers' rotate-string workaround). top-left origin keeps the anchor.
+    ...(layerInverseScale !== 1 && {
+      transform: `scale(${layerInverseScale})`,
+      transformOrigin: 'top left',
+    })
   };
 
   // Image wrapper with rotation (pivoted correctly)
@@ -1147,6 +1157,7 @@ export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProp
     (prevProps.obj as EffectTemplate).proportionalScaling === (nextProps.obj as EffectTemplate).proportionalScaling &&
     (prevProps.obj as any).inCursorSlot === (nextProps.obj as any).inCursorSlot &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
+    prevProps.layerInverseScale === nextProps.layerInverseScale &&
     prevProps.isDragging === nextProps.isDragging &&
     prevProps.isGM === nextProps.isGM &&
     prevProps.rulerStep === nextProps.rulerStep &&

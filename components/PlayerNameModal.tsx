@@ -1,7 +1,7 @@
 import { t as translate, Locale } from '../utils/translations';
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { User, Check } from 'lucide-react';
+import { User, Check, UserMinus } from 'lucide-react';
 import { AppLanguage } from '../types';
 
 interface PlayerNameModalProps {
@@ -10,6 +10,9 @@ interface PlayerNameModalProps {
   defaultName?: string;
   title?: string;
   language?: AppLanguage;
+  /** Host-only: shows a remove button that calls this handler. */
+  onRemove?: () => void;
+  removeLabel?: string;
 }
 
 export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
@@ -17,7 +20,9 @@ export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
   onSubmit,
   defaultName = 'Player',
   title = 'Join Game',
-  language = 'en'
+  language = 'en',
+  onRemove,
+  removeLabel
 }) => {
 
   const [name, setName] = useState(defaultName);
@@ -74,14 +79,25 @@ export const PlayerNameModal: React.FC<PlayerNameModalProps> = ({
             />
           </form>
 
-          <button
-            onClick={handleSubmit}
-            disabled={!name.trim()}
-            className="w-full px-4 py-3 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-500 transition-all shadow-lg shadow-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
-          >
-            <Check size={18} />
-            {translate('Join Game', language as Locale)}
-          </button>
+          <div className="flex gap-2 mt-2">
+            {onRemove && (
+              <button
+                onClick={() => onRemove()}
+                className="flex-1 px-4 py-3 rounded-lg bg-red-600/80 text-white font-bold hover:bg-red-500 transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2"
+              >
+                <UserMinus size={18} />
+                {removeLabel || translate('Remove Player', language as Locale)}
+              </button>
+            )}
+            <button
+              onClick={handleSubmit}
+              disabled={!name.trim()}
+              className="flex-1 px-4 py-3 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-500 transition-all shadow-lg shadow-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <Check size={18} />
+              {translate('Join Game', language as Locale)}
+            </button>
+          </div>
         </div>
       </div>
     </div>,

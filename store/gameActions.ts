@@ -59,6 +59,7 @@ export type Action =
   | BaseAction<'REGISTER_PACK', { packName: string; packHash: string; packSize: number; imageCount: number }> // Register asset pack used in game
   | BaseAction<'ADD_PLAYER', Player>
   | BaseAction<'REMOVE_PLAYER', { id: string }>
+  | BaseAction<'KICK_PLAYER', { playerId: string }> // Host-only orchestration: notify the guest (PLAYER_REMOVED) + REMOVE_PLAYER
   // 🔥 NEW: Guest pack status tracking actions (host only)
   | BaseAction<'INITIALIZE_GUEST_PACK_STATUS', { guestId: string; guestName: string; connectedAt: number }>
   | BaseAction<'UPDATE_GUEST_PACK_STATUS', { guestId: string; packName: string; packHash: string; imageCount: number }>

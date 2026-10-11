@@ -153,6 +153,13 @@ describe('buildInitialSyncState', () => {
     buildInitialSyncState(state);
     expect(state.objects).toEqual({ a: { id: 'a' } });
   });
+
+  test('attaches hostViewport so guests can apply relative positioning', () => {
+    const state = { objects: { a: { id: 'a' } }, players: [] };
+    const msg = buildInitialSyncState(state);
+    expect(msg.payload.hostViewport.width).toBe(window.innerWidth);
+    expect(msg.payload.hostViewport.height).toBe(window.innerHeight);
+  });
 });
 
 // --- dispatcher ---

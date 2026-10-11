@@ -96,8 +96,9 @@ export function generateMockLayers(count: number = 3): HyperscaleLayer[] {
     maxZIndex: (i + 1) * 1000 - 1,
     color: colors[i % colors.length],
     playerCanSelect: true,
-    playerCanView: true,
+    playerCanUseContextMenu: true,
     individualObjects: false,
+    relativePositioning: false,
     zoomEnabled: true,
     order: i,
   }));

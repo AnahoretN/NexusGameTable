@@ -91,6 +91,27 @@ function uiReducer(state: UIState, action: UIAction): UIState {
         ),
       };
 
+    case 'SET_HYPERSCALE_LAYERS': {
+      // Whole-list replacement (GameContext sync bridge). Selection is per-user:
+      // layers REMOVED by the host are dropped from the selection, and NEW
+      // layers are ADDED (matching the default "all selectable layers selected"
+      // philosophy — otherwise a layer created mid-session would silently be
+      // unselected for everyone, blocking interaction with its objects).
+      // Removal of non-selectable layers for players is the sanitize effect's
+      // job (TabletopRefactored).
+      const newIds = action.payload.map(l => l.id);
+      const currentLayerIds = new Set(state.hyperscaleLayers.map(l => l.id));
+      const addedIds = newIds.filter(id => !currentLayerIds.has(id) && !state.selectedHyperscaleLayerIds.includes(id));
+      return {
+        ...state,
+        hyperscaleLayers: action.payload,
+        selectedHyperscaleLayerIds: [
+          ...state.selectedHyperscaleLayerIds.filter(id => newIds.includes(id)),
+          ...addedIds,
+        ],
+      };
+    }
+
     case 'TOGGLE_LAYER_SELECTION':
       const isSelected = state.selectedHyperscaleLayerIds.includes(action.payload);
       return {
@@ -174,6 +195,10 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'REMOVE_HYPERSCALE_LAYER', payload: layerId });
   }, []);
 
+  const setHyperscaleLayers = useCallback((layers: HyperscaleLayer[]) => {
+    dispatch({ type: 'SET_HYPERSCALE_LAYERS', payload: layers });
+  }, []);
+
   // Layer selection actions
   const toggleLayerSelection = useCallback((layerId: string) => {
     dispatch({ type: 'TOGGLE_LAYER_SELECTION', payload: layerId });
@@ -226,6 +251,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     addHyperscaleLayer,
     updateHyperscaleLayer,
     removeHyperscaleLayer,
+    setHyperscaleLayers,
 
     // Layer selection
     toggleLayerSelection,

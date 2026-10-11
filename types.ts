@@ -684,9 +684,10 @@ export interface HyperscaleLayer {
   maxZIndex: number;  // Maximum z-index for this layer
   color: string;       // Display color in UI
   // GM-only settings
-  playerCanSelect: boolean;  // Can players select this layer in Layers panel
-  playerCanView: boolean;    // Can players see this layer in context menu
+  playerCanSelect: boolean;  // Can players select this layer in Layers panel (unselected = no move/delete/clone/lock/pin)
+  playerCanUseContextMenu: boolean;  // Can players (non-GM) open the context menu on objects of this layer
   individualObjects: boolean;  // Layer is completely local - objects, positions, and visibility are individual per player (host knows for saving)
+  relativePositioning: boolean;  // On first connect, scale this layer's horizontal positions by the guest/host visible-world-width (aspect) ratio (requires individualObjects)
   zoomEnabled: boolean;  // Whether local zoom affects objects in this layer
   order: number;       // Display order (lower = higher priority in list)
 }

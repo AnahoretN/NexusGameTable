@@ -7,7 +7,7 @@
  * - Components use useImageUrl() hook to resolve sha256: to displayable URLs
  */
 
-import type { TableObject } from '../types';
+import type { TableObject, HyperscaleLayer } from '../types';
 import type { GameState } from '../store/gameState';
 import { SCROLLBAR_WIDTH_THICK } from '../constants';
 import { logger } from './logger';
@@ -27,7 +27,7 @@ const STORAGE_KEY_COMPRESSED = 'nexus-game-state-compressed';
 // clobber each other and a host reload would restore the guest's save.
 const STORAGE_KEY_GUEST = 'nexus-game-state-guest';
 const STORAGE_KEY_GUEST_COMPRESSED = 'nexus-game-state-guest-compressed';
-const STORAGE_VERSION = 8; // Version with new objects and settings (diceGroups, access control, etc.)
+const STORAGE_VERSION = 10; // v10: layer relativePositioning (default on for interface, requires individualObjects)
 const USE_COMPRESSION = true; // Enable compression for localStorage
 
 export type SaveRole = 'host' | 'guest';
@@ -363,11 +363,13 @@ export const loadGameState = async (
 
     // Migrate old formats
     if (!parsed.version || parsed.version < 3) {
-      return migrateOldFormat(parsed);
+      const oldState = migrateOldFormat(parsed);
+      return oldState ? migrateToVersion10(migrateToVersion9(oldState)) : null;
     }
 
     if (parsed.version === 3) {
-      return migrateVersion3(parsed);
+      const v3State = migrateVersion3(parsed);
+      return v3State ? migrateToVersion10(migrateToVersion9(v3State)) : null;
     }
 
     if (parsed.version === 4) {
@@ -381,7 +383,7 @@ export const loadGameState = async (
       const adaptedState = shouldAdapt
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
-      const result = migrateToVersion6(adaptedState);
+      const result = migrateToVersion10(migrateToVersion9(migrateToVersion6(adaptedState)));
       logger.debug(`[LOAD] state loaded (v${parsed.version}, ${result.objects ? Object.keys(result.objects).length : 0} objects)`);
       return result;
     }
@@ -397,7 +399,7 @@ export const loadGameState = async (
       const adaptedState = shouldAdapt
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
-      const result = migrateToVersion6(adaptedState);
+      const result = migrateToVersion10(migrateToVersion9(migrateToVersion6(adaptedState)));
       logger.debug(`[LOAD] state loaded (v${parsed.version}, ${result.objects ? Object.keys(result.objects).length : 0} objects)`);
       return result;
     }
@@ -413,7 +415,37 @@ export const loadGameState = async (
       const adaptedState = shouldAdapt
         ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
         : data.state;
-      return migrateToVersion8(adaptedState);
+      return migrateToVersion10(migrateToVersion9(migrateToVersion8(adaptedState)));
+    }
+
+    // v8 saves: run the v9 layer-permission rework on top
+    if (parsed.version === 8) {
+      const data: StoredGameState = parsed;
+      const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      if (data.timestamp < weekAgo) {
+        clearGameState();
+        return null;
+      }
+      const shouldAdapt = !isGuest;
+      const adaptedState = shouldAdapt
+        ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
+        : data.state;
+      return migrateToVersion10(migrateToVersion9(adaptedState));
+    }
+
+    // v9 saves: run the v10 relative-positioning backfill on top
+    if (parsed.version === 9) {
+      const data: StoredGameState = parsed;
+      const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      if (data.timestamp < weekAgo) {
+        clearGameState();
+        return null;
+      }
+      const shouldAdapt = !isGuest;
+      const adaptedState = shouldAdapt
+        ? adaptStateToViewport(data.state, data.viewport, window.innerWidth, window.innerHeight)
+        : data.state;
+      return migrateToVersion10(adaptedState);
     }
 
     const data: StoredGameState = parsed;
@@ -444,8 +476,8 @@ export const loadGameState = async (
     // The migration to the new system happens during app initialization
     // No need to preload images here - they will be fetched as needed
 
-    // Return state with img_ref:// URLs intact
-    return withAuditLog;
+    // Return state with img_ref:// URLs intact (v10 is idempotent — normalize layers defensively)
+    return migrateToVersion10(withAuditLog);
   } catch (error) {
     logger.error('[LOAD] Failed to load game state:', error);
     return null;
@@ -615,6 +647,66 @@ function migrateVersion3(parsed: any): Partial<GameState> | null {
   return parsed;
 }
 
+/**
+ * v9 (2026-10-11): layer permission rework.
+ * - Renames playerCanView -> playerCanUseContextMenu with NEW semantics:
+ *   "players can open the context menu on objects of this layer".
+ *   The old playerCanView=false only hid the layer from the Change Layer
+ *   submenu, so it must NOT map to menu=false (that would silently block
+ *   menus on players' panels) — new flag defaults to true for all layers.
+ * - Game Boards defaults: playerCanSelect=false, playerCanUseContextMenu=false.
+ * - Backfills zoomEnabled (same rule as v8). Idempotent.
+ */
+/** v9 layer-permission rework (exported for unit tests; idempotent). */
+export function migrateToVersion9(state: Partial<GameState>): Partial<GameState> {
+  const migrated = { ...state };
+
+  if (migrated.hyperscaleLayers) {
+    migrated.hyperscaleLayers = migrated.hyperscaleLayers.map(layer => {
+      const legacy = layer as HyperscaleLayer & { playerCanView?: boolean };
+      const updated: HyperscaleLayer = {
+        ...legacy,
+        zoomEnabled: legacy.zoomEnabled ?? (legacy.id !== 'interface'),
+        playerCanUseContextMenu: legacy.playerCanUseContextMenu ?? true,
+      };
+      delete (updated as Partial<HyperscaleLayer> & { playerCanView?: boolean }).playerCanView;
+
+      if (legacy.id === 'boards') {
+        updated.playerCanSelect = false;
+        updated.playerCanUseContextMenu = false;
+      }
+      return updated;
+    });
+  }
+
+  return migrated;
+}
+
+/**
+ * v10 (2026-10-11): layer "relative positioning" setting.
+ * - Backfills relativePositioning: default on for the interface layer only.
+ * - relativePositioning requires individualObjects — force off otherwise.
+ * Idempotent.
+ */
+export function migrateToVersion10(state: Partial<GameState>): Partial<GameState> {
+  const migrated = { ...state };
+
+  if (migrated.hyperscaleLayers) {
+    migrated.hyperscaleLayers = migrated.hyperscaleLayers.map(layer => {
+      const updated: HyperscaleLayer = {
+        ...layer,
+        relativePositioning: layer.relativePositioning ?? (layer.id === 'interface'),
+      };
+      if (updated.individualObjects !== true) {
+        updated.relativePositioning = false;
+      }
+      return updated;
+    });
+  }
+
+  return migrated;
+}
+
 function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
   const migrated = { ...state };
 
@@ -646,8 +738,9 @@ function migrateToVersion8(state: Partial<GameState>): Partial<GameState> {
       maxZIndex: 7000,
       color: '#ec4899',
       playerCanSelect: true,
-      playerCanView: true,
+      playerCanUseContextMenu: true,
       individualObjects: false,
+      relativePositioning: false,
       zoomEnabled: true,
       order: 3
     });
@@ -752,9 +845,10 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         minZIndex: 1,
         maxZIndex: 1000,
         color: '#3b82f6',
-        playerCanSelect: true,
-        playerCanView: true,
+        playerCanSelect: false,
+        playerCanUseContextMenu: false,
         individualObjects: false,
+        relativePositioning: false,
         zoomEnabled: true,
         order: 0
       },
@@ -765,8 +859,9 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         maxZIndex: 3000,
         color: '#f59e0b',
         playerCanSelect: true,
-        playerCanView: true,
+        playerCanUseContextMenu: true,
         individualObjects: false,
+        relativePositioning: false,
         zoomEnabled: true,
         order: 1
       },
@@ -777,8 +872,9 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         maxZIndex: 6000,
         color: '#10b981',
         playerCanSelect: true,
-        playerCanView: true,
+        playerCanUseContextMenu: true,
         individualObjects: false,
+        relativePositioning: false,
         zoomEnabled: true,
         order: 2
       },
@@ -789,8 +885,9 @@ function migrateToVersion6(state: Partial<GameState>): Partial<GameState> {
         maxZIndex: 10000,
         color: '#8b5cf6',
         playerCanSelect: true,
-        playerCanView: false,
+        playerCanUseContextMenu: true,
         individualObjects: false,
+        relativePositioning: true,
         zoomEnabled: false,
         order: 3
       }

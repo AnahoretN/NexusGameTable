@@ -1549,7 +1549,21 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width: _width 
             setRenamePlayerId(null);
           }}
           defaultName={players.find(p => p.id === renamePlayerId)?.name || 'Player'}
-          title={renamePlayerId === activePlayerId ? 'Edit Your Name' : 'Edit Player Name'}
+          title={renamePlayerId === activePlayerId ? 'Edit Your Name' : 'Edit Player'}
+          onRemove={
+            // 🔧 Host can remove a player (not themselves, not GM-related)
+            (activePlayerId === 'gm' || activePlayerId === 'gm-player') &&
+            renamePlayerId !== activePlayerId &&
+            !['gm', 'gm-player'].includes(renamePlayerId)
+              ? () => {
+                  if (confirm(translate('Remove this player from the session?', language as Locale))) {
+                    dispatch({ type: 'KICK_PLAYER', payload: { playerId: renamePlayerId } });
+                    setRenamePlayerId(null);
+                  }
+                }
+              : undefined
+          }
+          removeLabel={translate('Remove Player', language as Locale)}
         />
       )}
 

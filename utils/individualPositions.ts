@@ -3,7 +3,7 @@
  * Handles object positions and visibility on hyperscale layers with individualObjects enabled
  */
 
-import { TableObject, HyperscaleLayer, ItemType } from '../types';
+import { TableObject, HyperscaleLayer, ItemType, PanelType } from '../types';
 import { PlayerObjectPositions } from '../store/gameState';
 
 /**
@@ -11,9 +11,19 @@ import { PlayerObjectPositions } from '../store/gameState';
  * guests must see a new panel where the host created it. Their subsequent
  * MOVEMENT stays per-player (position changes are excluded from sync in the
  * GameContext change tracker and rendering uses playerObjectPositions).
+ *
+ * Objects on layers with relativePositioning enabled ALSO keep their position:
+ * the first-connect aspect-ratio scaling needs the host's x to scale from —
+ * without it a new guest would materialize the object at (0,0).
  */
-export function individualObjectKeepsPosition(obj: TableObject): boolean {
-  return obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW;
+export function individualObjectKeepsPosition(
+  obj: TableObject,
+  hyperscaleLayers?: HyperscaleLayer[]
+): boolean {
+  if (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW) return true;
+  if (!hyperscaleLayers || !obj.hyperscaleLayerId) return false;
+  const layer = hyperscaleLayers.find(l => l.id === obj.hyperscaleLayerId);
+  return layer?.relativePositioning === true;
 }
 
 /**
@@ -101,8 +111,10 @@ export function filterObjectsForBroadcast(
 
       // Remove position-related properties
       // 🔧 Panels/windows keep x/y/rotation/zIndex — their creation position
-      // must sync to guests (movement is per-player and is excluded from sync)
-      if (!individualObjectKeepsPosition(obj)) {
+      // must sync to guests (movement is per-player and is excluded from sync).
+      // Objects on relativePositioning layers keep them too (aspect scaling
+      // needs the host's x; without it guests render at (0,0)).
+      if (!individualObjectKeepsPosition(obj, hyperscaleLayers)) {
         delete filteredObj.x;
         delete filteredObj.y;
         delete filteredObj.rotation;
@@ -170,4 +182,99 @@ export function filterVisibilityUpdatesForIndividualLayers(
   });
 
   return filteredUpdates;
+}
+
+/**
+ * Is this object the main menu panel? The main menu is "virtually individual":
+ * one shared object per session whose position is per-player and never synced.
+ */
+export function isMainMenuPanelObj(obj: any): boolean {
+  return !!obj && obj.type === ItemType.PANEL && (obj as any).panelType === PanelType.MAIN_MENU;
+}
+
+/**
+ * Left edge (screen-space x) of the main menu panel among the given objects.
+ * Pinned panels render from pinnedScreenPosition (falls back to x).
+ * Returns null when no main menu object exists.
+ */
+export function getMainMenuLeftEdge(objects: Record<string, TableObject>): number | null {
+  for (const obj of Object.values(objects)) {
+    if (isMainMenuPanelObj(obj)) {
+      const menu = obj as any;
+      const left = menu.pinnedScreenPosition?.x ?? menu.x;
+      return typeof left === 'number' && isFinite(left) ? left : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * 🔧 Relative positioning (layer setting `relativePositioning`, requires
+ * individualObjects): when a player first connects, horizontal positions of
+ * this layer's objects are scaled by the ratio of VISIBLE WORLD WIDTH (in VU):
+ *
+ *   ratio = visibleVUWidth_guest / visibleVUWidth_host
+ *         = (guestWidth / guestHeight) / (hostWidth / hostHeight)
+ *
+ * The world scale is height-locked (pixelsPerVU = innerHeight/1000), so two
+ * screens of the same aspect have the SAME visible VU width regardless of
+ * resolution (FHD vs 4K → ratio 1) — only differing aspects need the scaling.
+ * After it, an object keeps the same FRACTION of the visible world width as on
+ * the host. Applied uniformly to world objects (x in VU) and panels
+ * (x / pinnedScreenPosition in screen px).
+ *
+ * Applied ONLY at first-connect seeding (new objects in SYNC_STATE); afterwards
+ * per-player positions diverge freely via the normal individualObjects flow.
+ *
+ * Fail-open: ratio missing/not finite/==1 → no change; x not finite → no
+ * change; the main menu never scales (its position is per-player and the
+ * incoming menu is dropped anyway).
+ */
+export function applyRelativePositioning(
+  obj: TableObject,
+  hyperscaleLayers: HyperscaleLayer[],
+  ratio: number
+): TableObject {
+  if (typeof ratio !== 'number' || !isFinite(ratio) || ratio === 1) return obj;
+  if (isMainMenuPanelObj(obj)) return obj;
+
+  const layer = obj.hyperscaleLayerId
+    ? hyperscaleLayers.find(l => l.id === obj.hyperscaleLayerId)
+    : undefined;
+  if (layer?.relativePositioning !== true) return obj;
+
+  const x = (obj as any).x;
+  if (typeof x !== 'number' || !isFinite(x)) return obj;
+
+  const scaled: any = { ...obj, x: x * ratio };
+  if (scaled.pinnedScreenPosition && typeof scaled.pinnedScreenPosition.x === 'number') {
+    scaled.pinnedScreenPosition = {
+      ...scaled.pinnedScreenPosition,
+      x: scaled.pinnedScreenPosition.x * ratio,
+    };
+  }
+  return scaled as TableObject;
+}
+
+/**
+ * Aspect ratio for the relative-positioning scaling from the two viewports
+ * (guest computing from its own window + the host's sent viewport).
+ * Returns 1 (no-op) when the host viewport is missing or invalid.
+ */
+export function getRelativePositioningRatio(
+  localWidth: number,
+  localHeight: number,
+  hostViewport: { width?: number; height?: number } | null | undefined
+): number {
+  const hw = hostViewport?.width;
+  const hh = hostViewport?.height;
+  if (
+    typeof hw !== 'number' || !isFinite(hw) || hw <= 0 ||
+    typeof hh !== 'number' || !isFinite(hh) || hh <= 0 ||
+    !localWidth || !localHeight || !isFinite(localWidth) || !isFinite(localHeight)
+  ) {
+    return 1;
+  }
+  const ratio = (localWidth / localHeight) / (hw / hh);
+  return isFinite(ratio) && ratio > 0 ? ratio : 1;
 }

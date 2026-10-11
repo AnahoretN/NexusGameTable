@@ -23,6 +23,7 @@ import {
   readRememberedIdentity,
 } from './session/sessionResume';
 import { SessionResumeBanner } from '../components/SessionResumeBanner';
+import { RemovedPlayerModal } from '../components/RemovedPlayerModal';
 import { getConnectionSettings, ConnectionMethod } from '../utils/localSettings';
 import { isInCursorSlot, getOriginalPosition, removeFromCursorSlot } from '../utils/cursorSlotTracker';
 import { registerRemoteMovement } from '../utils/remoteMovementAnimator';
@@ -53,7 +54,7 @@ import {
   syncTokenImageToCharacter
 } from '../utils/characterTokenSync';
 import { allocateZIndexInHyperslice, defragmentHyperslice } from '../utils/zIndexAllocator';
-import { isObjectIndividual, individualObjectKeepsPosition } from '../utils/individualPositions';
+import { isObjectIndividual, individualObjectKeepsPosition, applyRelativePositioning, getRelativePositioningRatio } from '../utils/individualPositions';
 import { addPackToGameReducer } from './reducers/appReducers';
 
 const GameContext = createContext<{
@@ -385,6 +386,16 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
               }
             }
 
+            // 🔧 Relative positioning: first-connect horizontal scaling for
+            // layers with the flag on. The world scale is height-locked, so the
+            // visible-world-width ratio equals the viewport aspect ratio; the
+            // host's viewport arrives in the initial SYNC_STATE payload.
+            const relativeRatio = getRelativePositioningRatio(
+              typeof window !== 'undefined' ? window.innerWidth : 0,
+              typeof window !== 'undefined' ? window.innerHeight : 0,
+              (action.payload as any).hostViewport
+            );
+
             // Check if this is a partial sync (differential update)
             const isPartialSync = action.payload._isPartial === true;
 
@@ -424,8 +435,14 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
                   // 🔧 Position-only update (MOVE_OBJECT sync): merge coordinates
                   // into the existing object — the full object (strokes, content)
                   // was never broadcast for this change, minimal traffic.
+                  // 🔧 EXCEPT individual layers: host position never applies
+                  // (per-player). Must run BEFORE this branch, or a host-side
+                  // MOVE_OBJECT stomps every guest's copy with the host's x/y.
                   if (obj && (obj as any).type === undefined && obj.x !== undefined) {
                     const local = state.objects[id];
+                    if (local && isObjectIndividual(local, state.hyperscaleLayers)) {
+                      return;
+                    }
                     if (local) {
                       finalObjects[id] = { ...local, x: obj.x, y: obj.y };
                       if ((obj as any).rotation !== undefined) {
@@ -478,7 +495,11 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
                       }
                       finalObjects[id] = merged;
                     } else {
-                      finalObjects[id] = obj;
+                      // Object NEW to this client: take the host's creation
+                      // position, aspect-scaled for relativePositioning layers
+                      finalObjects[id] = applyRelativePositioning(
+                        obj, state.hyperscaleLayers, relativeRatio
+                      );
                     }
                     return;
                   }
@@ -531,7 +552,12 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
                   if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) return;
                   if (isObjectIndividual(obj, state.hyperscaleLayers)) return;
                   const pre = state.objects[id] as any;
-                  if (pre && pre.x !== undefined && (pre.x !== obj.x || pre.y !== obj.y)) {
+                  // 🔥 -90000 guard: the local copy of a cursor-slot-held object
+                  // sits at -999999 — animating "from" it would lock the object
+                  // for the full max duration (3s, pointerEvents none) right
+                  // when the drop echo lands (e.g. play-top drops).
+                  if (pre && pre.x !== undefined && pre.x > -90000 && obj.x > -90000 &&
+                      (pre.x !== obj.x || pre.y !== obj.y)) {
                     registerRemoteMovement(id, pre.x, pre.y, obj.x, obj.y);
                   }
                 });
@@ -587,16 +613,28 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
 
               // Merge incoming objects with local individual objects
               // Individual objects (on layers with individualObjects: true) are per-player
-              // and should be preserved when receiving state from host
+              // and should be preserved when receiving state from host.
+              // 🔧 Main menu INCLUDED: the incoming host menu is deleted above,
+              // so the only menu here is the client's own — preserving it keeps
+              // the menu alive across full syncs (it used to be dropped here,
+              // and the recreation safety net could miss its 100 ms guard
+              // window, leaving the guest with no menu at all).
               const localIndividualObjects: Record<string, TableObject> = {};
               Object.values(state.objects).forEach(obj => {
                 if (isObjectIndividual(obj, state.hyperscaleLayers)) {
-                  // 🔧 Main menu: the adopted (host's) menu was merged above with
-                  // per-player overrides — never re-add the local pre-connect menu
-                  if ((obj as PanelObject).panelType === PanelType.MAIN_MENU) {
-                    return;
-                  }
                   localIndividualObjects[obj.id] = obj;
+                }
+              });
+
+              // 🔧 Relative positioning: individual objects NEW to this client
+              // (not overridden by localIndividualObjects below) take the host's
+              // creation position, scaled by the visible-world-width ratio
+              Object.keys(incomingObjects).forEach(id => {
+                const incoming = incomingObjects[id];
+                if (!localIndividualObjects[id] && isObjectIndividual(incoming, state.hyperscaleLayers)) {
+                  incomingObjects[id] = applyRelativePositioning(
+                    incoming, state.hyperscaleLayers, relativeRatio
+                  );
                 }
               });
 
@@ -611,7 +649,7 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
 
         // Remove viewTransform and internal fields from payload to prevent overwriting local settings
         // But MERGE playerPanelSettings from host (guest receives all players' settings)
-        const { viewTransform, _lastPanelSettingsUpdate, _pendingPanelSettings, _isPartial, _syncTimestamp, ...restPayload } = action.payload;
+        const { viewTransform, _lastPanelSettingsUpdate, _pendingPanelSettings, _isPartial, _syncTimestamp, hostViewport: _hostViewport, ...restPayload } = action.payload as any;
         const payloadWithoutViewTransform: Record<string, unknown> = { ...restPayload };
 
         // Filter out undefined values to prevent overwriting valid state with undefined
@@ -1080,10 +1118,16 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
         // 🔥 NEW: Also remove guest pack status when player disconnects
         const guestPackStatus = state.guestPackStatus ?? {};
         const { [action.payload.id]: removedStatus, ...remainingStatus } = guestPackStatus;
+        // 🔧 Kicked/removed player: drop their per-player data too (positions
+        // and panel settings are keyed by playerId and are useless afterwards)
+        const { [action.payload.id]: _removedPositions, ...remainingPositions } = state.playerObjectPositions;
+        const { [action.payload.id]: _removedPanels, ...remainingPanels } = state.playerPanelSettings;
         return {
             ...state,
             players: state.players.filter(p => p.id !== action.payload.id),
             guestPackStatus: remainingStatus,
+            playerObjectPositions: remainingPositions,
+            playerPanelSettings: remainingPanels,
         };
     }
     // 🔥 NEW: Initialize guest pack status when guest connects
@@ -2169,6 +2213,7 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       // from another client — the receiving clients glide the object to the
       // new position (1000 VU/s). Own small drag steps stay instant.
       if (obj.x !== undefined && obj.y !== undefined &&
+          obj.x > -90000 && obj.y > -90000 &&
           (Math.abs(obj.x - action.payload.x) > 20 || Math.abs(obj.y - action.payload.y) > 20)) {
         registerRemoteMovement(action.payload.id, obj.x, obj.y, action.payload.x, action.payload.y);
       }
@@ -2834,7 +2879,10 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
 
         // 🔧 Remote movement animation: a significant jump means this drop came
         // from another client — receiving clients glide the object (1000 VU/s).
+        // 🔥 -90000 guard: the holder's own copy sits at -999999 while the
+        // object is in the cursor slot — dropping must NOT animate/lock it.
         if (obj.x !== undefined && obj.y !== undefined &&
+            obj.x > -90000 && obj.y > -90000 &&
             (Math.abs(obj.x - action.payload.x) > 20 || Math.abs(obj.y - action.payload.y) > 20)) {
           registerRemoteMovement(action.payload.objectId, obj.x, obj.y, action.payload.x, action.payload.y);
         }
@@ -6502,9 +6550,10 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       const { playerId, objectId, x, y, rotation, zIndex } = action.payload;
 
       // 🔧 Remote movement animation: glide the object from its shared position
-      // to the mover's new position (1000 VU/s)
+      // to the mover's new position (1000 VU/s). -90000 guard: never animate
+      // from a cursor-slot hide position.
       const ppObj = state.objects[objectId] as any;
-      if (ppObj && ppObj.x !== undefined &&
+      if (ppObj && ppObj.x !== undefined && ppObj.x > -90000 && x > -90000 &&
           (Math.abs(ppObj.x - x) > 20 || Math.abs(ppObj.y - y) > 20)) {
         registerRemoteMovement(objectId, ppObj.x, ppObj.y, x, y);
       }
@@ -6624,6 +6673,12 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       const isIndividualObjects = newLayer.individualObjects === true;
       const objectsDisabled = wasIndividualObjects && !isIndividualObjects;
       const objectsEnabled = !wasIndividualObjects && isIndividualObjects;
+
+      // 🔧 relativePositioning requires individualObjects — turning
+      // individualObjects off silently disables it too
+      if (!isIndividualObjects && newLayer.relativePositioning === true) {
+        newLayer.relativePositioning = false;
+      }
 
       // If individualObjects setting is changing, we need to clear individual settings
       // and trigger a full sync to propagate host state to all guests
@@ -7108,6 +7163,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // The ONE session hook: transports bring players in, one shared protocol
   // handles all gameplay sync (store/session/).
   const session = useGameSession(localDispatch, stateRef, connectionMethod);
+
+  // 🔧 KICK: the host removed this player from the session. The transport
+  // tears the connection down and calls onRemovedFromSessionRef — show the
+  // blocking modal; OK switches the client to offline mode with its local
+  // copy of the game (re-joining via the invite link stays allowed).
+  const [removedFromSession, setRemovedFromSession] = useState(false);
+  useEffect(() => {
+    session.onRemovedFromSessionRef.current = () => setRemovedFromSession(true);
+    return () => { session.onRemovedFromSessionRef.current = null; };
+  }, [session.onRemovedFromSessionRef]);
   // 🔥 RESUME: auto-resume orchestration (recreates host identity / re-attaches
   // guest on page load). Must render before the init effect below so a
   // resuming host/guest is classified before any state load decisions.
@@ -7707,6 +7772,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
       }
 
+      // 🔧 KICK: the host removing a player notifies the removed guest before
+      // dropping the player locally. Sent room-wide (each guest compares the
+      // playerId against its own) — a targeted send is unreliable because the
+      // PeerJS conn id differs from the player id (only HELO maps them).
+      if (isHost && action.type === 'KICK_PLAYER') {
+          const kickedId = action.payload.playerId;
+          const kickConnRef = connectionsRefRef.current;
+          if (kickConnRef?.current) {
+              kickConnRef.current.forEach((conn: any) => {
+                  if (conn.open) {
+                      try {
+                          conn.send({ type: 'PLAYER_REMOVED', payload: { playerId: kickedId } });
+                      } catch {
+                          // conn is dying — the player is offline, nothing to notify
+                      }
+                  }
+              });
+          }
+          localDispatch({ type: 'REMOVE_PLAYER', payload: { id: kickedId } } as Action);
+          return;
+      }
+
       if (isHost) {
           // Host executes locally
           localDispatch(action);
@@ -7941,6 +8028,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                           localDispatch(action);
                       }
                   }
+                  // 🔧 PLAY-TOP DROP: apply locally too (like the UPDATE_OBJECT
+                  // drop above). Without this the played card stayed invisible
+                  // until the host echo — and the echo animated it from the
+                  // -999999 hide position, locking it for up to 3 s.
+                  if (action.type === 'DROP_FROM_CURSOR_SLOT' && (action.payload as any)?.objectId) {
+                      localDispatch(action);
+                  }
               }
           } else if (hasManualConnection) {
               // Using manual P2P connection (DataChannelAdapter has PeerJS-compatible interface)
@@ -7999,7 +8093,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // (host show/hide → everyone; creation position → guests). Minimize/expand
           // state and size stay per-player (guest merge preserves local values).
           if (layer?.individualObjects) {
-            const isPanelLike = individualObjectKeepsPosition(obj as any);
+            // 🔧 Panels/windows keep position; objects on relativePositioning
+            // layers keep it too (first-connect aspect scaling needs host x)
+            const isPanelLike = individualObjectKeepsPosition(obj as any, currentState.hyperscaleLayers);
             const {
               x, y, rotation, zIndex,
               hidden, visible, visibleToOthers,
@@ -8063,7 +8159,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const broadcastState = {
           ...currentState,
           objects: filteredObjects,
-          playerPanelSettings: filteredPlayerPanelSettings
+          playerPanelSettings: filteredPlayerPanelSettings,
+          // 🔧 Relative positioning: partial syncs need the host viewport too —
+          // an object moved onto a relativePositioning layer mid-session is
+          // materialized guest-side via a partial full-object entry, and the
+          // aspect scaling must apply there as well (guest strips the field).
+          hostViewport: typeof window !== 'undefined'
+            ? { width: window.innerWidth, height: window.innerHeight }
+            : undefined,
         };
 
         return broadcastState;
@@ -8287,8 +8390,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                               if (layer?.individualObjects) {
                                 // Filter out position, visibility, locked, and pinned properties
-                                // 🔧 Panels/windows: position AND hidden/visible sync
-                                const isPanelLike = individualObjectKeepsPosition(obj as any);
+                                // 🔧 Panels/windows: position AND hidden/visible sync;
+                                // relativePositioning layers keep position too
+                                // (first-connect aspect scaling needs host x)
+                                const isPanelLike = individualObjectKeepsPosition(obj as any, stateRef.current.hyperscaleLayers);
                                 const {
                                   x, y, rotation, zIndex,
                                   hidden, visible, visibleToOthers,
@@ -8358,6 +8463,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   // Anchor-attached objects (gridCellKey / snappedToCellId)
                   // never animate — parity with the session protocol handler.
                   if (pos.x !== undefined && pos.y !== undefined && existingObj.x !== undefined &&
+                      existingObj.x > -90000 && pos.x > -90000 &&
                       (Math.abs(existingObj.x - pos.x) > 20 || Math.abs(existingObj.y - pos.y) > 20) &&
                       !isAnchorAttachedObject(existingObj)) {
                     registerRemoteMovement(pos.id, existingObj.x, existingObj.y, pos.x, pos.y);
@@ -8460,7 +8566,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         onJoin={handleJoinGame}
       />
       {/* 🔥 RESUME: reconnection banner (silent rejoin status + host-unreachable recovery) */}
-      {!isHost && !offlineModeRef.current && !resumeDismissed && (
+      {!isHost && !offlineModeRef.current && !resumeDismissed && !removedFromSession && (
         <SessionResumeBanner
           phase={resumeState.phase}
           connectionStatus={connectionStatus}
@@ -8472,6 +8578,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // User gave up on this session — don't auto-resume it next load
             clearSessionDescriptor();
             setResumeDismissed(true);
+          }}
+        />
+      )}
+      {/* 🔧 KICK: blocking removed-from-session modal (guest only) */}
+      {!isHost && removedFromSession && (
+        <RemovedPlayerModal
+          onOk={() => {
+            // Basic offline mode: all actions stay local, resume banner hidden.
+            // The local copy of the game is kept (per spec).
+            offlineModeRef.current = true;
+            setRemovedFromSession(false);
           }}
         />
       )}

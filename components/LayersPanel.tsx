@@ -97,8 +97,9 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
         maxZIndex: clampedMaxZ,
         color,
         playerCanSelect: true,
-        playerCanView: true,
+        playerCanUseContextMenu: true,
         individualObjects: false,
+        relativePositioning: false,
         zoomEnabled: true,
         order
       }
@@ -230,13 +231,15 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ language }) => {
                   isSelected ? 'bg-slate-700' : canSelect ? 'bg-slate-800 hover:bg-slate-750' : 'bg-slate-900 opacity-50'
                 }`}
               >
-                {/* Selection checkbox */}
-                {canSelect && (
+                {/* Selection checkbox (empty box for layers this user can't select) */}
+                {canSelect ? (
                   <div className={`flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${
                     isSelected ? 'bg-purple-500 border-purple-500' : 'border-slate-600'
                   }`}>
                     {isSelected && <div className="w-2 h-2 bg-white rounded-sm" />}
                   </div>
+                ) : (
+                  <div className="flex-shrink-0 w-4 h-4 rounded border border-slate-700" />
                 )}
 
                 {/* Layer color indicator */}

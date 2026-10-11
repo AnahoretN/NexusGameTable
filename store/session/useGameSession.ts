@@ -37,6 +37,8 @@ export interface UseGameSessionReturn {
   retryGuestConnection: () => void;
   /** Ref-based hook: invoked once when the reconnect loop gives up (UI shows backup restore). */
   onReconnectFailedRef: React.MutableRefObject<(() => void) | null>;
+  /** 🔧 KICK: invoked once when the host removes this player from the session. */
+  onRemovedFromSessionRef: React.MutableRefObject<(() => void) | null>;
   // Method-specific extras (null for other methods)
   nodeId: string | null;
   ticket: string | null;
@@ -129,6 +131,10 @@ export function useGameSession(
   const onReconnectFailedRef = connectionMethod === 'trystero' ? trysteroConn.onReconnectFailedRef
     : connectionMethod === 'peerjs' ? peerJsConn.onReconnectFailedRef
     : noopFailedRef;
+  // 🔧 KICK: transports call this when the host removes this player
+  const onRemovedFromSessionRef = connectionMethod === 'trystero' ? trysteroConn.onRemovedFromSessionRef
+    : connectionMethod === 'peerjs' ? peerJsConn.onRemovedFromSessionRef
+    : noopFailedRef;
 
   return {
     peerId,
@@ -148,6 +154,7 @@ export function useGameSession(
     resumeGuest,
     retryGuestConnection,
     onReconnectFailedRef,
+    onRemovedFromSessionRef,
     nodeId,
     ticket,
     roomId,

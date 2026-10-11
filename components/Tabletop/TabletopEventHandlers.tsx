@@ -26,11 +26,13 @@ import { applyPanelToPanelMagnetism, type PanelBounds, type MagnetismConfig, typ
 import type { LocalSettings } from '../../utils/localSettings';
 import { getTokenWithAppliedState } from '../../hooks/useTokenWithState';
 import { findDrawingAtPosition } from '../../utils/drawingUtils';
-import { addToCursorSlot, removeFromCursorSlot, isInCursorSlot, getCursorSlotObjects } from '../../utils/cursorSlotTracker';
+import { addToCursorSlot, removeFromCursorSlot, isInCursorSlot, getCursorSlotObjects, getOriginalPosition } from '../../utils/cursorSlotTracker';
 import { isRemoteMovementActive } from '../../utils/remoteMovementAnimator';
 import { executeClickAction, type ActionHandlerContext } from '../../utils/objectActionHandlers';
 import { applyCellEdgeMagnetism, type CellEdgeSnapCell } from '../../utils/cellEdgeMagnetism';
 import { createTextObject } from '../../utils/objectFactories';
+import { isObjectLayerSelected, canUseContextMenuOnLayer } from '../../utils/layerPermissions';
+import { isObjectIndividual } from '../../utils/individualPositions';
 
 interface TabletopEventHandlersProps {
   state: any;
@@ -120,6 +122,13 @@ interface TabletopEventHandlersProps {
   // Latest game state, updated every render. Memoized renderers keep old handler
   // closures whose props.state is stale - read state via this ref instead.
   stateRef?: React.MutableRefObject<any>;
+  // Layer access snapshot, updated every render (stable ref - memoized renderers
+  // hold old handler closures, so handlers read access through this ref).
+  layerAccessRef?: React.MutableRefObject<{
+    selectedLayerIds: string[];
+    layers: any[];
+    isGM: boolean;
+  }>;
 }
 
 // Helper function to add object to cursor slot
@@ -129,7 +138,8 @@ const addToCursorSlotLocal = (
   mousePosition: { x: number; y: number } | undefined,
   props: TabletopEventHandlersProps,
   source: 'hold' | 'shift' = 'hold',
-  ignoreLock: boolean = false
+  ignoreLock: boolean = false,
+  centeredOffsets: boolean = false
 ) => {
   const {
     cursorSlot: _cursorSlot,
@@ -497,8 +507,8 @@ const addToCursorSlotLocal = (
     // Calculate click offset in SCREEN PIXELS
     // Use calculated objScreenX/objScreenY for all objects (including rotated Effect Templates)
     // This ensures the offset is relative to the container's position (obj.x/obj.y)
-    const finalOffsetX_PX = mousePosition.x - objScreenX;
-    const finalOffsetY_PX = mousePosition.y - objScreenY;
+    let finalOffsetX_PX = mousePosition.x - objScreenX;
+    let finalOffsetY_PX = mousePosition.y - objScreenY;
 
     // IMPORTANT: Calculate offset in VIRTUAL UNITS relative to object's game position
     // This ensures offset works correctly regardless of scroll position
@@ -522,6 +532,18 @@ const addToCursorSlotLocal = (
       // This works because finalOffsetX_PX is calculated from objScreenX (container position)
       clickOffsetX_VU = clickX_VU - obj.x;
       clickOffsetY_VU = clickY_VU - obj.y;
+    }
+
+    if (centeredOffsets) {
+      // Menu pickups (effects flyout) have no meaningful grab point — the click
+      // happened on a flyout button, not on the object. Center the object under
+      // the cursor instead; the drop then lands centered on the click point too.
+      const wVU = (itemClone as any).width ?? 100;
+      const hVU = (itemClone as any).height ?? 100;
+      finalOffsetX_PX = (wVU * pixelsPerVU) / 2;
+      finalOffsetY_PX = (hVU * pixelsPerVU) / 2;
+      clickOffsetX_VU = wVU / 2;
+      clickOffsetY_VU = hVU / 2;
     }
 
     // Store offset in SCREEN PIXELS for CursorSlotVisualization (for visual rendering)
@@ -1576,6 +1598,22 @@ const dropCursorSlot = (
           zIndex: finalZIndex
         }
       });
+
+      // 🔧 Individual objects layers: record the drop position through the
+      // per-player pipeline (same as the standard drop below)
+      const playTopObj = state.objects[item.id];
+      if (playTopObj && isObjectIndividual(playTopObj, state.hyperscaleLayers)) {
+        dispatch({
+          type: 'MOVE_OBJECT_COMMIT',
+          payload: {
+            id: item.id,
+            x: finalX,
+            y: finalY,
+            previousX: (item as any).originalX ?? finalX,
+            previousY: (item as any).originalY ?? finalY,
+          },
+        });
+      }
     } else {
       // 🔥 FIX: Check if object exists in state.objects (pool panel objects might not)
       const objExists = !!state.objects[item.id];
@@ -1633,6 +1671,26 @@ const dropCursorSlot = (
           }
         }
       });
+
+      // 🔧 Individual objects layers: the mixed UPDATE_OBJECT above gets its
+      // position fields stripped by the per-player filter (locally AND on the
+      // host — the drop "snapped back" to the pre-drag coordinates). Record the
+      // drop position through the per-player pipeline instead: on a guest this
+      // is intercepted and sent as UPDATE_PLAYER_OBJECT_POSITION, and the local
+      // dispatch applies x/y.
+      const droppedObj = state.objects[item.id];
+      if (droppedObj && isObjectIndividual(droppedObj, state.hyperscaleLayers)) {
+        dispatch({
+          type: 'MOVE_OBJECT_COMMIT',
+          payload: {
+            id: item.id,
+            x: finalX,
+            y: finalY,
+            previousX: (item as any).originalX ?? finalX,
+            previousY: (item as any).originalY ?? finalY,
+          },
+        });
+      }
 
       // 🔧 "Move Attached Objects": a dropped board/cell carries its
       // magnetized objects (tokens, cards, snapped cells) along by the same
@@ -1862,14 +1920,19 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
   const propsRef = useRef(props);
   propsRef.current = props;
 
+  // 🔒 Layer-permission snapshot (stable ref, updated by TabletopRefactored every
+  // render) — memoized renderers hold old handler closures, so handlers read
+  // layer access through this ref.
+  const layerAccessRef = props.layerAccessRef;
+
   // Move handles (text labels, marker drawings) pick objects into the cursor slot
   // via this event - the SAME pipeline as cursor drag-and-drop: ghost follows the
   // cursor, mouseup drops via dropCursorSlot (magnetism, clamping, z-index).
   // ignoreLock: handles may move locked text/drawings.
   useEffect(() => {
     const handlePickToSlot = (e: Event) => {
-      const ce = e as CustomEvent<{ objectId: string; clientX: number; clientY: number }>;
-      const { objectId, clientX, clientY } = ce.detail;
+      const ce = e as CustomEvent<{ objectId: string; clientX: number; clientY: number; centered?: boolean }>;
+      const { objectId, clientX, clientY, centered } = ce.detail;
       const obj = stateRef.current?.objects?.[objectId];
       if (!obj) return;
       addToCursorSlotLocal(
@@ -1878,11 +1941,76 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         { x: clientX, y: clientY },
         propsRef.current,
         'hold',
-        true // handles ignore the lock
+        true, // handles ignore the lock
+        centered === true // menu pickups center the object under the cursor
       );
     };
     window.addEventListener('handle-pick-to-cursor-slot', handlePickToSlot);
     return () => window.removeEventListener('handle-pick-to-cursor-slot', handlePickToSlot);
+  }, []);
+
+  // Effects flyout "toggle off": return ONE effect from MY cursor slot to its
+  // original coordinates and hide it (isOnTable:false). Not a normal drop — no
+  // click point, no magnetism. Same single-item removal pattern as the
+  // clear-cursor-slot {objectIds} path, plus a hide-position UPDATE_OBJECT.
+  useEffect(() => {
+    const handleHideFromMenu = (e: Event) => {
+      const ce = e as CustomEvent<{ objectId: string }>;
+      const { objectId } = ce.detail;
+      const p = propsRef.current;
+
+      const slotItem = p.cursorSlotRef.current.find((i: any) => i.id === objectId);
+      if (!slotItem) return; // not in MY slot → no-op
+
+      // Original position: object field is primary (pickup stored it), tracker as fallback
+      const obj = stateRef.current?.objects?.[objectId] as any;
+      const tracked = getOriginalPosition(objectId);
+      const origX = obj?.originalX ?? tracked?.x ?? obj?.x ?? 0;
+      const origY = obj?.originalY ?? tracked?.y ?? obj?.y ?? 0;
+
+      // 1) Remove from the global tracker
+      removeFromCursorSlot(objectId);
+
+      // 2) Remove ONE item from local slot state (ref first — source of truth)
+      const newSlot = p.cursorSlotRef.current.filter((i: any) => i.id !== objectId);
+      p.cursorSlotRef.current = newSlot;
+      p.setCursorSlot(newSlot);
+      if (newSlot.length === 0) {
+        p.setCursorPosition(null);
+        p.cursorPositionRef.current = null;
+        p.setCursorSlotSource(null);
+      }
+
+      // 3) Object deleted while held → local cleanup only, no dispatch
+      if (!obj) {
+        window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+          detail: { cardIds: [objectId] }
+        }));
+        return;
+      }
+
+      // 4) Hide at original coordinates (inCursorSlot:false syncs as a normal UPDATE_OBJECT)
+      p.dispatch({
+        type: 'UPDATE_OBJECT',
+        payload: {
+          id: objectId,
+          updates: {
+            inCursorSlot: false,
+            isOnTable: false,
+            x: origX,
+            y: origY
+          }
+        }
+      });
+
+      // 5) Reset hover outlines + guard against immediate re-pickup (same as dropCursorSlot)
+      window.dispatchEvent(new CustomEvent('cursor-slot-dropped', {
+        detail: { cardIds: [objectId] }
+      }));
+      p.cursorSlotLastDroppedRef.current = Date.now();
+    };
+    window.addEventListener('cursor-slot-hide-from-menu', handleHideFromMenu);
+    return () => window.removeEventListener('cursor-slot-hide-from-menu', handleHideFromMenu);
   }, []);
 
   // Track previous deck for cursor hover detection
@@ -1909,6 +2037,17 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       return;
     }
 
+    // 🔒 Layer permission: players can't open the context menu on objects of
+    // layers with "Players can use the context menu" disabled (right-click acts
+    // like a click on empty space). Read through the stable ref — memoized
+    // renderers hold old handler closures.
+    const access = layerAccessRef?.current;
+    if (access && !canUseContextMenuOnLayer(obj, access.layers, access.isGM)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     // Block context menu if settings modal is open
     if (isSettingsModalOpen) return;
     e.preventDefault();
@@ -1919,10 +2058,25 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       object: obj,
       shiftKey: isShiftPressed
     });
-  }, [currentTool, isSettingsModalOpen, isShiftPressed, setContextMenu]);
+  }, [currentTool, isSettingsModalOpen, isShiftPressed, setContextMenu, layerAccessRef]);
 
   // Pile context menu handler
   const handlePileContextMenu = useCallback((e: React.MouseEvent, pile: any, deck: any) => {
+    // 🔒 Layer permission: piles inherit their deck's layer — same gates as
+    // the regular context menu (menu permission + layer selection).
+    const access = layerAccessRef?.current;
+    if (access) {
+      if (!canUseContextMenuOnLayer(deck, access.layers, access.isGM)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (!isObjectLayerSelected(deck, access.selectedLayerIds, access.layers)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
     e.preventDefault();
     e.stopPropagation();
     setPileContextMenu({
@@ -1931,7 +2085,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
       pile,
       deck
     });
-  }, [setPileContextMenu]);
+  }, [setPileContextMenu, layerAccessRef]);
 
   // Mouse down handler
   const handleMouseDown = useCallback((e: React.MouseEvent, objId?: string) => {
@@ -2219,7 +2373,11 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     }
 
     if (currentTool === 'eraser') {
-      if (isShiftPressed && isOwner) {
+      // 🔒 Layer selection gate: no deleting objects on unselected layers
+      const accessForEraser = layerAccessRef?.current;
+      const eraserLayerOk = !accessForEraser ||
+        isObjectLayerSelected(obj, accessForEraser.selectedLayerIds, accessForEraser.layers);
+      if (isShiftPressed && isOwner && eraserLayerOk) {
         setDeleteCandidateId(objId);
       }
       return;
@@ -2245,6 +2403,15 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         addedToSlot: false,
         skipThreshold: false
       };
+      return;
+    }
+
+    // 🔒 Layer selection gate: objects (and panels) on layers the user hasn't
+    // selected can't be moved — no drag, no Shift+click into cursor slot, no
+    // UI-panel drag. Placed AFTER the dropCursorSlot block so dropping held
+    // items onto unselected-layer objects (e.g. board cells) keeps working.
+    const layerAccess = layerAccessRef?.current;
+    if (layerAccess && !isObjectLayerSelected(obj, layerAccess.selectedLayerIds, layerAccess.layers)) {
       return;
     }
 
@@ -3413,6 +3580,11 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
     e.preventDefault();
     e.stopPropagation();
     const obj = state.objects[objId];
+    // 🔒 Layer selection gate: no resizing objects on unselected layers
+    const access = layerAccessRef?.current;
+    if (obj && access && !isObjectLayerSelected(obj, access.selectedLayerIds, access.layers)) {
+      return;
+    }
     if (obj) {
       setResizingId(objId);
       setResizeStart({
@@ -3422,7 +3594,7 @@ export const useTabletopEventHandlers = (props: TabletopEventHandlersProps) => {
         height: obj.height
       });
     }
-  }, [state.objects, setResizingId, setResizeStart]);
+  }, [state.objects, setResizingId, setResizeStart, layerAccessRef]);
 
   // Nexus board add cell handler
   const handleAddNexusCell = useCallback((_objId: string, _direction: string) => {

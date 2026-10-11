@@ -16,6 +16,13 @@ export const DECK_OFFSET = 3; // vu
 // UI Panel dimensions (pixels - not scaled, for interface elements)
 export const MAIN_MENU_WIDTH = 306; // px (reduced by 2% from 313)
 
+// Z-index ceiling for WORLD objects. The fixed panel containers live at
+// z-[9800] (unpinned UI) / z-[9900] (pinned UI incl. main menu), and the world
+// scroll container creates NO stacking context — so a world z-index ≥ 9800
+// would paint game objects above the panels. Interface-layer z-indexes
+// (9001..10000) are clamped to this value.
+export const WORLD_Z_INDEX_MAX = 9799;
+
 // Scrollbar widths (pixels - must match CSS values)
 export const SCROLLBAR_WIDTH_THIN = 12; // px - default/standard scrollbar
 export const SCROLLBAR_WIDTH_THICK_CSS = 25; // px - visual width in CSS

@@ -128,9 +128,10 @@ export const initialState: GameState = {
       minZIndex: 1,
       maxZIndex: 1000,
       color: '#3b82f6',
-      playerCanSelect: true,
-      playerCanView: true,
+      playerCanSelect: false,
+      playerCanUseContextMenu: false,
       individualObjects: false,
+      relativePositioning: false,
       zoomEnabled: true,
       order: 0
     },
@@ -141,8 +142,9 @@ export const initialState: GameState = {
       maxZIndex: 3000,
       color: '#f59e0b',
       playerCanSelect: true,
-      playerCanView: true,
+      playerCanUseContextMenu: true,
       individualObjects: false,
+      relativePositioning: false,
       zoomEnabled: true,
       order: 1
     },
@@ -153,8 +155,9 @@ export const initialState: GameState = {
       maxZIndex: 6000,
       color: '#10b981',
       playerCanSelect: true,
-      playerCanView: true,
+      playerCanUseContextMenu: true,
       individualObjects: false,
+      relativePositioning: false,
       zoomEnabled: true,
       order: 2
     },
@@ -165,8 +168,9 @@ export const initialState: GameState = {
       maxZIndex: 7000,
       color: '#ec4899',
       playerCanSelect: true,
-      playerCanView: true,
+      playerCanUseContextMenu: true,
       individualObjects: false,
+      relativePositioning: false,
       zoomEnabled: true,
       order: 3
     },
@@ -177,8 +181,9 @@ export const initialState: GameState = {
       maxZIndex: 10000,
       color: '#8b5cf6',
       playerCanSelect: true,
-      playerCanView: false,
+      playerCanUseContextMenu: true,
       individualObjects: true, // Each player has their own interface objects (panels, windows, etc.)
+      relativePositioning: true, // Shift objects on first connect to keep their offset from the main menu
       zoomEnabled: false, // Interface layer NOT affected by zoom
       order: 4
     }

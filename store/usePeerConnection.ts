@@ -33,6 +33,7 @@ import {
   readTabSession,
   isTabSessionFresh,
   rememberGuestIdentity,
+  clearSessionDescriptor,
 } from './session/sessionResume';
 
 // ============================================================================
@@ -119,6 +120,8 @@ export interface UsePeerConnectionReturn {
   retryGuestConnection: () => void;
   /** Ref-based hook: invoked once when the reconnect loop gives up (UI shows backup restore). */
   onReconnectFailedRef: React.MutableRefObject<(() => void) | null>;
+  /** 🔧 KICK: invoked once when the host removes this player from the session. */
+  onRemovedFromSessionRef: React.MutableRefObject<(() => void) | null>;
 }
 
 /**
@@ -349,6 +352,10 @@ export function usePeerConnection(
   // Indirection so connection handlers can trigger the reconnect loop
   // (defined after connectToHost) without declaration-order hazards.
   const startGuestReconnectRef = useRef<(() => void) | null>(null);
+  // 🔧 KICK: set when the host removes this player — suppresses the reconnect
+  // loop and connection-loss recovery; GameContext shows the removed modal.
+  const kickedRef = useRef(false);
+  const onRemovedFromSessionRef = useRef<(() => void) | null>(null);
 
   // 🔥 SYNC: Sync singleton with refs after updates
   const syncSingleton = useCallback(() => {
@@ -423,6 +430,37 @@ export function usePeerConnection(
     ux: sessionUxRef.current,
     onSessionEstablished,
   });
+  // 🔧 KICK: host removed this player — full session teardown (no reconnect,
+  // no resume); GameContext shows the blocking removed-player modal.
+  const handleRemovedFromSession = useCallback(() => {
+    if (kickedRef.current) return;
+    kickedRef.current = true;
+    logger.warn('[P2P][PeerJS] This player was removed from the session by the host');
+    // Stop the reconnect loop — nobody may re-join automatically
+    reconnectingRef.current = false;
+    const st = guestReconnectStateRef.current;
+    if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+    st.active = false;
+    setConnectionStatus('disconnected');
+    // Kill auto-resume: without the descriptor a reload won't rejoin.
+    // nexus-player-id is intentionally KEPT — re-joining via the invite link
+    // re-registers the same player (with their per-player data).
+    clearSessionDescriptor();
+    // Tear down the peer/connection (host side keeps its own cleanup)
+    const peer = peerRef.current;
+    if (peer && !peer.destroyed) {
+      try { peer.destroy(); } catch { /* already dead */ }
+    }
+    if (p2pSingleton.peer === peer) {
+      p2pSingleton.peer = null;
+      p2pSingleton.hostConnection = null;
+      p2pSingleton.isInitialized = false;
+    }
+    peerRef.current = null;
+    hostConnectionRef.current = null;
+    onRemovedFromSessionRef.current?.();
+  }, []);
+
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
     // 🔥 RECONNECT MODAL: the host announced its own reload (F5) — flip the
     // guest to 'reconnecting' at once so the blocking reconnect modal shows
@@ -431,6 +469,14 @@ export function usePeerConnection(
     // HOST_PING watchdog would otherwise stay silent for up to 45s.
     if (data?.type === 'HOST_RELOADING') {
       setConnectionStatus('reconnecting');
+      return;
+    }
+    // 🔧 KICK: the host removed this player from the session. Tear the session
+    // down (no auto-reconnect, no resume) and let GameContext show the modal.
+    if (data?.type === 'PLAYER_REMOVED') {
+      if (data.payload?.playerId === getPlayerId()) {
+        handleRemovedFromSession();
+      }
       return;
     }
     protocolHandlerRef.current(data, senderConn);
@@ -560,6 +606,9 @@ export function usePeerConnection(
       armRejoin();
       updateP2PLoadingStep('connect', 'loading', 'Reconnecting to host...');
     } else {
+      // 🔧 KICK: a fresh join (via invite link) clears a previous kick —
+      // re-joining after removal is explicitly allowed.
+      kickedRef.current = false;
       resetP2PLoading();
       updateP2PLoadingStep('connect', 'loading', 'Connecting to signaling server...');
     }
@@ -804,6 +853,11 @@ export function usePeerConnection(
           setConnectionStatus('disconnected');
           return;
         }
+        if (kickedRef.current) {
+          // 🔧 KICK: removed by the host — never auto-reconnect.
+          setConnectionStatus('disconnected');
+          return;
+        }
         startGuestReconnectRef.current?.();
       };
 
@@ -842,7 +896,7 @@ export function usePeerConnection(
       setTimeout(checkIceState, 3000);
 
       peer.on('disconnected', () => {
-        if (peer && !peer.destroyed && !isIntentionalDisconnectRef.current) {
+        if (peer && !peer.destroyed && !isIntentionalDisconnectRef.current && !kickedRef.current) {
           peer.reconnect();
         }
       });
@@ -919,6 +973,7 @@ export function usePeerConnection(
 
   const startGuestReconnect = useCallback(() => {
     if (reconnectingRef.current) return;
+    if (kickedRef.current) return; // 🔧 KICK: removed by the host — no rejoin
     const hostId = lastHostIdRef.current;
     const identity = identityRef.current;
     if (!hostId || !identity) {
@@ -1487,6 +1542,8 @@ export function usePeerConnection(
     resumeGuest,
     retryGuestConnection,
     onReconnectFailedRef,
+    // 🔧 KICK: GameContext wires the removed-player modal through this
+    onRemovedFromSessionRef,
   };
 }
 

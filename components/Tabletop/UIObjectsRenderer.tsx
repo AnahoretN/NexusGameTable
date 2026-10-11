@@ -6,6 +6,7 @@ import { getLockedInSlotStyle } from '../../utils/cursorSlotTracker';
 import { UIObjectRendererOptimizedMemo as UIObjectRendererMemo } from '../UIObjectRendererOptimized';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { TableObject, Deck as DeckType, PanelObject, WindowObject } from '../../types';
+import { WORLD_Z_INDEX_MAX } from '../../constants';
 import { TabletopRenderContext } from './types';
 
 interface UIObjectsRendererProps {
@@ -62,14 +63,24 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
   // Re-render when remote movement animations start/end (lock visuals)
   useSyncExternalStore(subscribeToMovementChanges, getMovementVersion);
 
-  const { v2p } = context;
+  const { v2p, getLayerInverseScale } = context;
 
-  // Helper to calculate z-index for a deck based on its hyperscale layer
+  // Helper to calculate z-index for a deck based on its hyperscale layer.
+  // 🔥 FIX: obj.zIndex is already LAYER-ABSOLUTE (the allocator returns values
+  // in minZIndex..maxZIndex) — adding the layer base again pushed interface-layer
+  // decks to ~18000, above the z-[9900] main-menu container (the world scroll
+  // container creates no stacking context). Clamp to the world ceiling so world
+  // objects can never paint above the fixed panel containers.
   const getDeckZIndex = (deck: DeckType): number => {
     const deckLayer = hyperscaleLayers.find(l => l.id === (deck.hyperscaleLayerId || 'cards'));
     const layerMinZ = deckLayer?.minZIndex ?? 1001;
-    return layerMinZ + (deck.zIndex ?? 0);
+    return Math.min(deck.zIndex ?? layerMinZ, WORLD_Z_INDEX_MAX);
   };
+
+  // Decks size/position with the zoomed pixelsPerVU — on layers with
+  // "Affected by zoom" disabled the inverse scale cancels the visual zoom.
+  const getDeckLayerInverseScale = (deck: DeckType): number =>
+    getLayerInverseScale(deck.hyperscaleLayerId || 'cards');
 
   const renderPinnedDeck = (deck: DeckType) => {
     const deckObj = deck as DeckType;
@@ -79,6 +90,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
     const canDrag = !deckObj.locked;
     // 🔥 FIX: Don't add z-[100000] - z-index is already set via globalZIndex prop
     const draggingClass = draggingId === deckObj.id ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
+    const inverseScale = getDeckLayerInverseScale(deckObj);
 
     return (
       <div
@@ -95,6 +107,10 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
         <PinnedIndicator />
         <div
           className={`inline-block ${currentTool !== 'none' && currentTool !== 'zoom' ? 'cursor-default' : draggingClass}`}
+          style={inverseScale !== 1 ? {
+            transform: `scale(${inverseScale})`,
+            transformOrigin: 'top left',
+          } : undefined}
           onMouseDown={(e) => onMouseDown(e, deckObj.id)}
           onDoubleClick={(e) => onDoubleClick?.(e, deckObj)}
           onContextMenu={(e) => onContextMenu(e, deckObj)}
@@ -124,6 +140,7 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
 
     // Calculate z-index based on the deck's hyperscale layer
     const globalZIndex = getDeckZIndex(deckObj);
+    const inverseScale = getDeckLayerInverseScale(deckObj);
 
     return (
       <div
@@ -133,6 +150,10 @@ export const UIObjectsRenderer = memo<UIObjectsRendererProps>(({
           left: v2p(deckObj.x),
           top: v2p(deckObj.y),
           zIndex: globalZIndex,
+          ...(inverseScale !== 1 && {
+            transform: `scale(${inverseScale})`,
+            transformOrigin: 'top left',
+          }),
           ...getLockedInSlotStyle(deckObj),
           ...getMovementExtraStyle(deckObj.id),
         }}

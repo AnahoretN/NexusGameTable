@@ -87,6 +87,17 @@ export function buildInitialSyncState(state: any): { type: 'SYNC_STATE'; payload
     // Also filter out individual objects (on layers with individualObjects enabled)
     filteredObjects = filterObjectsForBroadcast(filteredObjects, stateToSend.hyperscaleLayers);
     stateToSend.objects = filteredObjects;
+
+    // 🔧 Relative positioning: guests scale this layer's horizontal positions
+    // by the visible-world-width ratio, which is the viewport aspect ratio
+    // (pixelsPerVU is height-locked). The host's viewport is required to
+    // compute it guest-side.
+    if (typeof window !== 'undefined') {
+      stateToSend.hostViewport = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
+    }
   }
   return { type: 'SYNC_STATE', payload: stateToSend };
 }

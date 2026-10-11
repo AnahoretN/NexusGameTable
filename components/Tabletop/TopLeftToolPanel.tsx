@@ -1,10 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useSyncExternalStore } from 'react';
 import { MousePointer2, Pen, Eraser, Ruler, Type, Grid3x3, Hexagon, Target } from 'lucide-react';
 import { useToolSettings, DrawingTool } from '../../contexts/ToolSettingsContext';
 import { useLanguage } from '../../store/contexts/UIContext';
+import { useIsGM } from '../../store/contexts';
 import { useGame } from '../../store/GameContext';
 import { t, Locale } from '../../utils/translations';
 import { ItemType, TokenShape } from '../../types';
+import { subscribeToCursorSlotChanges, getCursorSlotVersion, isInCursorSlot } from '../../utils/cursorSlotTracker';
 import { ToolPanelFlyout, ToolPanelFlyoutItem } from './ToolPanelFlyout';
 
 /**
@@ -51,7 +53,12 @@ interface QuickToolButtonConfig {
 export const TopLeftToolPanel: React.FC = () => {
   const { settings, setSelectedTool, updateGridSettings } = useToolSettings();
   const language = useLanguage();
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
+  const isGM = useIsGM();
+  // Re-render when the LOCAL cursor slot changes (the tracker is module-global,
+  // not game state, so useGame alone won't catch pickup/drop of slot items)
+  const cursorSlotVersion = useSyncExternalStore(subscribeToCursorSlotChanges, getCursorSlotVersion);
+  void cursorSlotVersion;
 
   // Flyout state ('tokens' | 'effects' | null) + hover close timer
   const [openFlyout, setOpenFlyout] = useState<'tokens' | 'effects' | null>(null);
@@ -87,15 +94,14 @@ export const TopLeftToolPanel: React.FC = () => {
     { id: 'text', icon: <Type size={18} />, labelKey: 'Text', visible: settings.text.showButton },
   ];
 
-  // Session token types / effect templates for the flyouts
+  // Session token types / effect templates for the flyouts.
+  // Effects: ALL templates (including hidden ones, isOnTable:false) — each flyout
+  // button is a toggle between "held in my cursor slot" and "hidden on the field".
   const tokenTypes = Object.values(state.objects).filter(
     (obj): obj is any => obj.type === ItemType.TOKEN_TYPE
   );
   const effectTemplates = Object.values(state.objects).filter(
-    (obj): obj is any =>
-      obj.type === ItemType.EFFECT_TEMPLATE &&
-      (obj as any).inCursorSlot !== true &&
-      obj.isOnTable !== false
+    (obj): obj is any => obj.type === ItemType.EFFECT_TEMPLATE
   );
 
   const tokensFlyoutItems: ToolPanelFlyoutItem[] = tokenTypes.map((arch) => ({
@@ -111,17 +117,25 @@ export const TopLeftToolPanel: React.FC = () => {
     width: arch.width,
     height: arch.height,
   }));
-  const effectsFlyoutItems: ToolPanelFlyoutItem[] = effectTemplates.map((tpl) => ({
-    id: tpl.id,
-    name: tpl.name,
-    kind: 'effect' as const,
-    content: tpl.content || '',
-  }));
+  const effectsFlyoutItems: ToolPanelFlyoutItem[] = effectTemplates.map((tpl) => {
+    const mine = isInCursorSlot(tpl.id); // in MY local cursor slot
+    const heldByOther = tpl.inCursorSlot === true && !mine;
+    return {
+      id: tpl.id,
+      name: tpl.name,
+      kind: 'effect' as const,
+      content: tpl.content || '',
+      // Highlighted + Eye when the effect is VISIBLE: held in my cursor slot
+      // or shown on the field. EyeOff (inactive) = hidden stash state.
+      active: mine || tpl.isOnTable !== false,
+      disabled: heldByOther,
+    };
+  });
 
   const showTokensLauncher = tokensFlyoutItems.length > 0;
   const showEffectsLauncher = effectsFlyoutItems.length > 0;
 
-  const activateFlyoutItem = (item: ToolPanelFlyoutItem, clientX: number, clientY: number) => {
+  const activateFlyoutItem = (item: ToolPanelFlyoutItem, clientX: number, clientY: number, shiftKey?: boolean) => {
     clearCloseTimer();
     // Keep the flyout open so several tokens/effects can be gathered by clicking
     // repeatedly (same UX as the persistent token panels). It closes on mouse leave.
@@ -130,11 +144,55 @@ export const TopLeftToolPanel: React.FC = () => {
       window.dispatchEvent(new CustomEvent('add-token-to-cursor-slot', {
         detail: { archetypeId: item.id, clientX, clientY },
       }));
-    } else {
+      return;
+    }
+    // Shift+click on an INACTIVE (hidden) effect: spawn a NEW COPY into the
+    // cursor slot (like token archetypes), leaving the original untouched.
+    // GM only — regular players can't duplicate effects from the flyout.
+    if (shiftKey && !item.active && isGM) {
       window.dispatchEvent(new CustomEvent('add-effect-to-cursor-slot', {
         detail: { templateId: item.id, clientX, clientY },
       }));
+      return;
     }
+    // Plain click toggles the EXISTING object by visibility:
+    // visible (in my slot or on the field) → hide (slot items drop to their
+    // original coordinates first); hidden → pick it up into the cursor slot.
+    const obj = (state.objects as any)[item.id];
+    if (!obj) return; // deleted mid-session
+    if (isInCursorSlot(item.id)) {
+      window.dispatchEvent(new CustomEvent('cursor-slot-hide-from-menu', {
+        detail: { objectId: item.id },
+      }));
+    } else if (obj.inCursorSlot === true) {
+      return; // held by another player (button is disabled anyway)
+    } else if (obj.isOnTable !== false) {
+      // Visible on the field → hide in place (coords kept for the next pickup)
+      dispatch({ type: 'UPDATE_OBJECT', payload: { id: item.id, updates: { isOnTable: false } } });
+    } else {
+      window.dispatchEvent(new CustomEvent('handle-pick-to-cursor-slot', {
+        detail: { objectId: item.id, clientX, clientY, centered: true },
+      }));
+    }
+  };
+
+  // "Hide all effects": effects on the field hide in place (keeping their
+  // coordinates for the next toggle), effects in MY cursor slot drop back to
+  // their original coordinates hidden; effects held by OTHER players are skipped.
+  const hideAllEffects = () => {
+    effectsFlyoutItems.forEach((item) => {
+      const obj = (state.objects as any)[item.id];
+      if (!obj) return;
+      if (isInCursorSlot(item.id)) {
+        window.dispatchEvent(new CustomEvent('cursor-slot-hide-from-menu', {
+          detail: { objectId: item.id },
+        }));
+      } else if (obj.inCursorSlot === true) {
+        return; // held by another player
+      } else if (obj.isOnTable !== false) {
+        dispatch({ type: 'UPDATE_OBJECT', payload: { id: item.id, updates: { isOnTable: false } } });
+      }
+    });
   };
 
   const visibleQuickTools = quickTools.filter((tool) => tool.visible);
@@ -247,6 +305,8 @@ export const TopLeftToolPanel: React.FC = () => {
           items={openFlyout === 'tokens' ? tokensFlyoutItems : effectsFlyoutItems}
           title={openFlyout === 'tokens' ? t('Tokens', language as Locale) : t('Effects', language as Locale)}
           onItemActivate={activateFlyoutItem}
+          onHideAll={openFlyout === 'effects' ? hideAllEffects : undefined}
+          hideAllTitle={t('Hide all effects', language as Locale)}
           onMouseEnter={clearCloseTimer}
           onMouseLeave={scheduleFlyoutClose}
         />

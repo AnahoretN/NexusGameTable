@@ -19,6 +19,7 @@ import { useActivePlayerId, useIsGM, useViewTransform, useHyperscaleLayers, useL
 import { useLocalSettings } from '../../hooks/useLocalSettings';
 import { useDragOverStore } from '../../store/dragOverState';
 import { addToCursorSlot, removeFromCursorSlot, isInCursorSlot } from '../../utils/cursorSlotTracker';
+import { sanitizeLayerSelection } from '../../utils/layerPermissions';
 import { executeClickAction as executeObjectClickAction } from '../../utils/objectActionHandlers';
 import { useToolSettings } from '../../contexts/ToolSettingsContext';
 
@@ -105,8 +106,32 @@ export const Tabletop: React.FC = () => {
   const activePlayerId = useActivePlayerId();
   const isGM = useIsGM();
   const hyperscaleLayers = useHyperscaleLayers();
-  const [selectedHyperscaleLayerIds] = useLayerSelection();
+  const [selectedHyperscaleLayerIds, setLayerSelection] = useLayerSelection();
   const language = useLanguage();
+
+  // Layer-permission snapshot for event handlers. Stable ref: memoized renderers
+  // (BoardWithResize etc.) hold old handler closures, so handlers must read the
+  // current layer access through this ref instead of captured props.
+  const layerAccessRef = useRef<{ selectedLayerIds: string[]; layers: any[]; isGM: boolean }>({
+    selectedLayerIds: selectedHyperscaleLayerIds,
+    layers: hyperscaleLayers,
+    isGM,
+  });
+  layerAccessRef.current = {
+    selectedLayerIds: selectedHyperscaleLayerIds,
+    layers: hyperscaleLayers,
+    isGM,
+  };
+
+  // 🔒 Players keep only layers with "Players can select" enabled selected:
+  // non-selectable layers are deselected by default and drop out of the
+  // selection whenever the GM changes settings or SYNC_STATE arrives.
+  useEffect(() => {
+    const sanitized = sanitizeLayerSelection(selectedHyperscaleLayerIds, hyperscaleLayers, isGM);
+    if (sanitized.length !== selectedHyperscaleLayerIds.length) {
+      setLayerSelection(sanitized);
+    }
+  }, [selectedHyperscaleLayerIds, hyperscaleLayers, isGM, setLayerSelection]);
 
   // === Positioning & View Transforms ===
   const {
@@ -311,6 +336,7 @@ export const Tabletop: React.FC = () => {
     gridSettingsRef,
     textSettingsRef,
     stateRef,
+    layerAccessRef,
   });
 
   const {
@@ -1086,10 +1112,9 @@ export const Tabletop: React.FC = () => {
           if (obj && (obj.type === ItemType.PANEL || obj.type === ItemType.WINDOW)) {
             override = false; // UI panels/windows always render above canvas drawings
           } else if (obj) {
-            const objLayer = hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
-            const objZ = (objLayer?.minZIndex ?? 3001) + (obj.zIndex ?? 0);
-            const drawLayer = hyperscaleLayers.find(l => l.id === 'drawings');
-            const drawZ = (drawLayer?.minZIndex ?? 6001) + (hit.zIndex ?? 0);
+            // zIndex is layer-absolute — no layerMinZ offset (see WORLD_Z_INDEX_MAX)
+            const objZ = obj.zIndex ?? 3001;
+            const drawZ = hit.zIndex ?? 6001;
             override = drawZ >= objZ;
           }
         }
@@ -1349,6 +1374,7 @@ export const Tabletop: React.FC = () => {
         isGM={isGM}
         activePlayerId={activePlayerId}
         pixelsPerVU={pixelsPerVU}
+        getLayerInverseScale={getLayerInverseScale}
         onContextMenu={handleContextMenu}
         onMouseDown={handleMouseDown}
         dispatch={dispatch}

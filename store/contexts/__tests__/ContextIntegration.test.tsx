@@ -277,7 +277,7 @@ describe('Context Integration Tests - Phase 6', () => {
           maxZIndex: 11000,
           color: '#CCCCCC',
           playerCanSelect: true,
-          playerCanView: true,
+          playerCanUseContextMenu: true,
           individualObjects: false,
           zoomEnabled: true,
           order: 10,

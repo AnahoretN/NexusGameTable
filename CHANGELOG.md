@@ -2,6 +2,40 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.3.7] - 2026-10-12
+
+### ✨ New Features
+
+#### 🗂️ Layer System Rework
+- **"Players can see in context menu" → "Players can use the context menu"**: the layer setting now decides whether players can open the context menu on objects of that layer at all — right-click acts like a click on empty space when off (Game Boards: off by default)
+- **"Players can select this layer" now defaults the layer to UNSELECTED** for players, and clicking it in the Layers panel does nothing (Game Boards: not selectable by default)
+- **An unselected layer is read-only**: no drag, no resize, no Delete / Clone / Lock / Pin in the context menu (works for panels, decks and piles too) — but clicks and drops (cards onto board cells) keep working
+- **"Affected by zoom" now actually works everywhere**: the layer settings lived in a dead copy of the state — a sync bridge (`LayersSyncBridge`) now feeds the live layer list to rendering/zoom/menus, and decks, card piles, pinned objects and effect templates all respect per-layer zoom (double-zoom on counters and dice action buttons fixed)
+
+#### 📐 Relative Positioning (new layer setting)
+- New **"Relative positioning"** toggle (requires Individual Objects; on by default for the Interface layer): on a player's first connect, the layer's horizontal positions are scaled by the guest/host **visible-world-width (aspect) ratio** — a squarer screen shows the same fraction-of-screen layout as the host; FHD vs 4K of the same aspect need no shift (the VU system already normalizes resolution)
+- Applied uniformly to world objects and panels; only at first connect — afterwards positions diverge freely per player
+
+#### 👥 Edit Player & Kick
+- The "Edit Player Name" window is now **"Edit Player"** and lets the host **remove a player** from the session
+- The removed (online) player gets a blocking "You have been removed from the game session" message; after OK their client stops reconnecting and stays offline **with a local copy of the game**
+- Re-joining via the invite link is allowed — the same player id (with their per-player panels/positions) comes back
+
+### 🛠️ Fixes
+
+- **Guest main menu no longer disappears on connect**: full state syncs used to drop the local menu and the recreation safety net could miss its guard window — the local menu is now preserved across syncs
+- **A deck placed on the Interface layer landed at (0,0)** for guests: broadcast now keeps positions for relative-positioning layers
+- **That deck also painted over the main menu**: object z-index is layer-absolute — renderers no longer add the layer base twice, and world objects are clamped below the panel layer (`WORLD_Z_INDEX_MAX`)
+- **Drag on an individual-objects layer snapped back**: cursor-slot drops stripped their own coordinates through the per-player filter — the drop position is now recorded via the per-player pipeline (affects tokens/cards on such layers too)
+- **Playing a card from the top of a deck, then dragging it, intermittently failed**: the drop echo animated the card from its (-999999) cursor-slot hide position, locking it for up to 3 s — all movement-animation registrations now ignore hide positions, and the play-top drop applies optimistically on the guest (card appears instantly)
+- Save migrations: new versioned chain (v9 layer-permission rework, v10 relative positioning) applied on top of every older save format
+- Locales updated (ru, uk, be, sr): reworked layer settings, relative positioning, kick flow
+
+### 🧪 Testing
+- **174 unit tests** across 14 files: layer permissions, relative-positioning math, save migrations v9/v10, REMOVE_PLAYER per-player cleanup, movement-animation -90000 guard
+
+---
+
 ## [0.3.6] - 2026-10-11
 
 ### 🧪 Testing

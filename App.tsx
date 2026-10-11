@@ -3,6 +3,7 @@ import { GameProvider } from './store/GameContext';
 import { PlayerProvider } from './store/contexts/PlayerContext';
 import { ViewTransformProvider, useViewTransform } from './store/contexts/ViewTransformContext';
 import { UIProvider } from './store/contexts/UIContext';
+import { LayersSyncBridge } from './store/contexts/LayersSyncBridge';
 import { LocalSettingsProvider, useLocalSettings } from './hooks/useLocalSettings.tsx';
 import { ToolSettingsProvider } from './contexts/ToolSettingsContext';
 import { memoryManager } from './utils';
@@ -193,6 +194,7 @@ const App: React.FC = () => {
           <UIProvider>
             <GameProvider>
               <PlayerProvider>
+                <LayersSyncBridge />
                 <ThemeApplier />
                 <PerformanceMonitor />
                 <SliderUpdater />

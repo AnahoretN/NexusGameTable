@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { Eye, EyeOff } from 'lucide-react';
 import { TokenShape } from '../../types';
 import { SvgTokenShape } from '../SvgTokenShape';
 
@@ -17,13 +18,21 @@ export interface ToolPanelFlyoutItem {
   // Effect preview (image url/hash in content)
   width?: number;
   height?: number;
+  // Effect toggle state
+  /** Effect is held in MY cursor slot (highlighted, Eye badge) */
+  active?: boolean;
+  /** Effect is held by ANOTHER player (dimmed, click no-op) */
+  disabled?: boolean;
 }
 
 interface ToolPanelFlyoutProps {
   anchorRect: DOMRect;
   items: ToolPanelFlyoutItem[];
   title: string;
-  onItemActivate: (item: ToolPanelFlyoutItem, clientX: number, clientY: number) => void;
+  onItemActivate: (item: ToolPanelFlyoutItem, clientX: number, clientY: number, shiftKey?: boolean) => void;
+  /** Effects flyout only: hide every effect (rendered as a small header button) */
+  onHideAll?: () => void;
+  hideAllTitle?: string;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 }
@@ -44,6 +53,8 @@ export const ToolPanelFlyout: React.FC<ToolPanelFlyoutProps> = ({
   items,
   title,
   onItemActivate,
+  onHideAll,
+  hideAllTitle,
   onMouseEnter,
   onMouseLeave,
 }) => {
@@ -89,16 +100,42 @@ export const ToolPanelFlyout: React.FC<ToolPanelFlyoutProps> = ({
       onMouseLeave={onMouseLeave}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="text-[10px] font-bold text-gray-400 uppercase mb-1.5 px-0.5">{title}</div>
+      <div className="flex items-center justify-between gap-2 mb-1.5 px-0.5">
+        <div className="text-[10px] font-bold text-gray-400 uppercase">{title}</div>
+        {onHideAll && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onHideAll();
+            }}
+            title={hideAllTitle}
+            className="flex items-center justify-center w-5 h-5 rounded bg-slate-700/80 border border-slate-500/60 text-gray-300 hover:text-white hover:border-purple-400/80 transition-colors"
+          >
+            <EyeOff size={11} />
+          </button>
+        )}
+      </div>
       <div className="grid grid-cols-3 gap-1.5">
         {items.map((item) => (
           <button
             key={item.id}
             data-flyout-item={item.id}
-            className="flex flex-col items-center justify-start gap-1 p-1.5 rounded-md bg-slate-800/70 border border-slate-600/60 hover:border-purple-400/80 hover:bg-slate-700/70 transition-colors"
-            title={item.name}
-            onClick={(e) => onItemActivate(item, e.clientX, e.clientY)}
+            disabled={item.disabled}
+            className={`relative flex flex-col items-center justify-start gap-1 p-1.5 rounded-md transition-colors ${
+              item.active
+                ? 'bg-purple-600/40 border border-purple-400/90'
+                : item.disabled
+                  ? 'opacity-40 cursor-not-allowed bg-slate-800/70 border border-slate-600/60'
+                  : 'bg-slate-800/70 border border-slate-600/60 hover:border-purple-400/80 hover:bg-slate-700/70'
+            }`}
+            title={item.disabled ? `${item.name} (held by another player)` : item.name}
+            onClick={(e) => !item.disabled && onItemActivate(item, e.clientX, e.clientY, e.shiftKey)}
           >
+            {item.active && (
+              <span className="absolute top-0.5 right-0.5 text-purple-300 pointer-events-none">
+                <Eye size={11} />
+              </span>
+            )}
             <div className="w-10 h-10 flex items-center justify-center pointer-events-none">
               {item.kind === 'token' ? (() => {
                 // Preserve the archetype's aspect ratio inside the 40px tile

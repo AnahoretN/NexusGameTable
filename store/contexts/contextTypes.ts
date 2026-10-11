@@ -101,6 +101,8 @@ export interface UIContextValue extends UIState {
   addHyperscaleLayer: (layer: HyperscaleLayer) => void;
   updateHyperscaleLayer: (layerId: string, updates: Partial<HyperscaleLayer>) => void;
   removeHyperscaleLayer: (layerId: string) => void;
+  /** Replace the whole layers list (used by the GameContext sync bridge). */
+  setHyperscaleLayers: (layers: HyperscaleLayer[]) => void;
 
   // Selected layers
   toggleLayerSelection: (layerId: string) => void;
@@ -124,6 +126,7 @@ export type UIAction =
   | { type: 'ADD_HYPERSCALE_LAYER'; payload: HyperscaleLayer }
   | { type: 'UPDATE_HYPERSCALE_LAYER'; payload: { layerId: string; updates: Partial<HyperscaleLayer> } }
   | { type: 'REMOVE_HYPERSCALE_LAYER'; payload: string }
+  | { type: 'SET_HYPERSCALE_LAYERS'; payload: HyperscaleLayer[] }
   | { type: 'TOGGLE_LAYER_SELECTION'; payload: string }
   | { type: 'SET_LAYER_SELECTION'; payload: string[] }
   | { type: 'SELECT_ALL_LAYERS' }
@@ -166,9 +169,10 @@ export const initialUIState: UIState = {
       minZIndex: 1,
       maxZIndex: 1000,
       color: '#3b82f6',
-      playerCanSelect: true,
-      playerCanView: true,
+      playerCanSelect: false,
+      playerCanUseContextMenu: false,
       individualObjects: false,
+      relativePositioning: false,
       zoomEnabled: true,
       order: 0,
     },
@@ -179,8 +183,9 @@ export const initialUIState: UIState = {
       maxZIndex: 3000,
       color: '#f59e0b',
       playerCanSelect: true,
-      playerCanView: true,
+      playerCanUseContextMenu: true,
       individualObjects: false,
+      relativePositioning: false,
       zoomEnabled: true,
       order: 1,
     },
@@ -191,8 +196,9 @@ export const initialUIState: UIState = {
       maxZIndex: 6000,
       color: '#10b981',
       playerCanSelect: true,
-      playerCanView: true,
+      playerCanUseContextMenu: true,
       individualObjects: false,
+      relativePositioning: false,
       zoomEnabled: true,
       order: 2,
     },
@@ -203,8 +209,9 @@ export const initialUIState: UIState = {
       maxZIndex: 7000,
       color: '#ec4899',
       playerCanSelect: true,
-      playerCanView: true,
+      playerCanUseContextMenu: true,
       individualObjects: false,
+      relativePositioning: false,
       zoomEnabled: true,
       order: 3,
     },
@@ -215,8 +222,9 @@ export const initialUIState: UIState = {
       maxZIndex: 10000,
       color: '#8b5cf6',
       playerCanSelect: true,
-      playerCanView: false,
+      playerCanUseContextMenu: true,
       individualObjects: true,
+      relativePositioning: true,
       zoomEnabled: false,
       order: 4,
     },

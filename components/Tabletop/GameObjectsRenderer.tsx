@@ -9,6 +9,7 @@ import { Tooltip } from '../Tooltip';
 import { PinnedIndicator } from '../PinnedIndicator';
 import { Lock, Unlock, RefreshCw, Trash2, Copy, Plus, Minus, ArrowUp, ChevronsUp, ChevronsDown, Eye, EyeOff, Pin, RotateCw } from 'lucide-react';
 import { TableObject, Board as BoardType, NexusBoard, NexusCellObject, Counter, DiceObject, EffectTemplate, TextObject, ItemType, TokenShape } from '../../types';
+import { WORLD_Z_INDEX_MAX } from '../../constants';
 import { TextObjectRendererMemo } from './TextObjectRenderer';
 import { TabletopRenderContext } from './types';
 import { TokenRenderer } from './TokenRenderer';
@@ -113,15 +114,12 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
       const isDraggingEffect = draggingId === obj.id;
       // 🔥 FIX: Don't add z-[100000] class - z-index is already set via globalZIndex prop
       const draggingClass = isDraggingEffect ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
-      const objLayer = obj.hyperscaleLayerId || 'tokens';
-
-      const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
-      const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
-      const isPermeable = hasSelectedLayers && !isLayerSelected;
 
       // For EFFECT_TEMPLATE, don't set pointerEvents in style - the component handles it internally
       // The component uses pointerEvents: 'none' on container and 'fill' on SVG polygon
-      const style: React.CSSProperties = isPermeable ? { pointerEvents: 'none' } : {};
+      // 🔒 Layer gating (move/delete/etc. on unselected layers) happens in the
+      // event handlers — objects stay clickable so drops onto them keep working.
+      const style: React.CSSProperties = {};
 
       map.set(obj.id, {
         // 🔧 Remote movement: glide via left/top transition + non-interactive
@@ -293,12 +291,11 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const gridW_px = v2p(board.gridWidth || board.gridSize || 50);
     const gridH_px = v2p(board.gridHeight || board.gridSize || 50);
     // 🔥 FIX: Don't check ownership - all players can interact with shared objects
+    // 🔒 Layer gating (drag/resize on unselected layers) happens in the event
+    // handlers via layerAccessRef — boards stay clickable so drops onto them
+    // (grid cells, nexus cells) keep working.
     const objLayer = obj.hyperscaleLayerId || 'none';
     const layerZoomScale = getLayerZoomScale(objLayer);
-
-    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
-    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
-    const isPermeable = hasSelectedLayers && !isLayerSelected;
 
     return (
       <Tooltip
@@ -308,7 +305,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
         scale={undefined}
       >
         <div
-          className={isPermeable ? '' : 'pointer-events-auto'}
+          className="pointer-events-auto"
           style={createPositionedStyle(
             v2p(obj.x),
             v2p(obj.y),
@@ -316,7 +313,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             v2p(resizingId === obj.id && liveResizeSizeRef.current ? liveResizeSizeRef.current.height : board.height),
             globalZIndex,
             objLayer,
-            { pointerEvents: isPermeable ? 'none' : 'auto', ...getLockedInSlotStyle(obj) },
+            { pointerEvents: 'auto', ...getLockedInSlotStyle(obj) },
             obj.id
           )}
         >
@@ -477,10 +474,6 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const draggingClass = draggingId === obj.id ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
     const objLayer = obj.hyperscaleLayerId || 'none';
 
-    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
-    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
-    const isPermeable = hasSelectedLayers && !isLayerSelected;
-
     // Counter dimensions in VU (will be converted to pixels by v2p)
     const counterWidth = Math.max(counter.width || 60, 100);
     const counterHeight = 50;
@@ -512,7 +505,6 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             objLayer,
             {
               transform: `rotate(${obj.rotation || 0}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''}`,
-              pointerEvents: isPermeable ? 'none' : 'auto',
               borderRadius: '5px',
               ...getLockedInSlotStyle(obj),
               ...getMovementExtraStyle(obj.id),
@@ -520,8 +512,10 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             obj.id
           )}
         >
-          {/* Counter content with scale compensation */}
-          <div className="flex items-center justify-between w-full" style={{ transform: 'scale(' + zoomMultiplier + ')' }}>
+          {/* Counter content with scale compensation (layer-aware: on
+              zoom-disabled layers the outer inverse scale already cancelled
+              zoom, re-scaling here would inflate the content again) */}
+          <div className="flex items-center justify-between w-full" style={{ transform: 'scale(' + getLayerZoomScale(objLayer) + ')' }}>
             <button
               className="p-1 hover:bg-slate-700 rounded"
               onMouseDown={(e) => e.stopPropagation()}
@@ -552,13 +546,6 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     // 🔥 FIX: Don't add z-[100000] class - z-index is already set via globalZIndex prop
     const draggingClass = isDragging ? 'cursor-grabbing' : (canDrag ? 'cursor-grab' : 'cursor-default');
     const objLayer = obj.hyperscaleLayerId || 'none';
-
-    const hasSelectedLayers = selectedHyperscaleLayerIds.length > 0;
-    const isLayerSelected = objLayer === 'none' || selectedHyperscaleLayerIds.includes(objLayer);
-    const isPermeable = hasSelectedLayers && !isLayerSelected;
-
-    // Get inverse scale for this layer (to compensate zoom)
- getLayerInverseScale(objLayer);
 
     // Detect explosive dice trigger (when explosive roll value exists)
     const isExplosiveTriggered = dice.isExplosive && dice.explosiveRollValue !== undefined;
@@ -617,7 +604,6 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
             objLayer,
             {
               transform: `rotate(${obj.rotation}deg)${getLayerInverseScale(objLayer) !== 1 ? ` scale(${getLayerInverseScale(objLayer)})` : ''} scale(${currentScale})`,
-              pointerEvents: isPermeable ? 'none' : 'auto',
               filter: glowColor ? `drop-shadow(0 0 8px ${glowColor}) drop-shadow(0 0 4px ${glowColor})` : undefined,
               transformOrigin: 'center center',
               overflow: 'visible',
@@ -758,10 +744,12 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
 
           {(obj as any).isPinnedToViewport && draggingId !== obj.id && <PinnedIndicator />}
 
-          {/* Action buttons - scale to compensate parent's inverseScale */}
+          {/* Action buttons - scale to compensate parent's inverseScale
+              (layer-aware: on zoom-disabled layers the parent's inverse scale
+              must NOT be re-compensated) */}
           <div
             className="absolute -bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 transition-opacity z-20 pointer-events-none group-hover:opacity-100"
-            style={{ transform: `translateX(-50%) scale(${zoomMultiplier})` }}
+            style={{ transform: `translateX(-50%) scale(${getLayerZoomScale(objLayer)})` }}
           >
             {(() => {
               const actionButtons = (obj as any).actionButtons || [];
@@ -964,6 +952,7 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
       <EffectTemplateRendererMemo
         obj={obj as EffectTemplate}
         pixelsPerVU={pixelsPerVU}
+        layerInverseScale={getLayerInverseScale((obj as EffectTemplate).hyperscaleLayerId || 'tokens')}
         isDragging={styleData.isDragging}
         onMouseDown={handlers.onMouseDown}
         onContextMenu={handlers.onContextMenu}
@@ -1012,9 +1001,15 @@ export const GameObjectsRenderer = memo((props: GameObjectsRendererProps) => {
     const layer = hyperscaleLayers.find(l => l.id === (obj.hyperscaleLayerId || 'tokens'));
     const layerMinZ = layer?.minZIndex ?? 3001;
     const isDragging = draggingId === obj.id;
-    // 🔥 FIX: Use smaller z-index jump to reduce visual impact
-    // Instead of jumping to 999999, use layerMinZ + 10000 which is still above normal objects
-    const globalZIndex = isDragging ? layerMinZ + 10000 : layerMinZ + (obj.zIndex ?? 0);
+    // 🔥 FIX: obj.zIndex is already LAYER-ABSOLUTE (allocator returns values in
+    // minZIndex..maxZIndex) — adding layerMinZ again pushed interface-layer
+    // objects to ~18000, above the z-[9900] main-menu container. The drag boost
+    // raises above same-layer objects; everything is clamped below the fixed
+    // panel containers (WORLD_Z_INDEX_MAX).
+    const globalZIndex = Math.min(
+      isDragging ? (obj.zIndex ?? layerMinZ) + 10000 : (obj.zIndex ?? layerMinZ),
+      WORLD_Z_INDEX_MAX
+    );
 
     if (obj.type === ItemType.BOARD) {
       return renderBoard(obj, globalZIndex);
