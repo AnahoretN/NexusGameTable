@@ -802,10 +802,21 @@ export function useTrysteroConnection(
 
       logger.log(`[P2P][Trystero] Reconnect attempt ${st.attempts}/${GUEST_RECONNECT_MAX_ATTEMPTS}`);
       try {
-        // Tear down the stale room before rejoining (fresh peer connections)
+        // Tear down the stale room before rejoining (fresh peer connections).
+        // ⚠️ Trystero's leave() is ASYNC (sends the leave signal, waits ~100ms,
+        // then destroys the peers). Fire-and-forget here made the very next
+        // joinRoom(sameId) collide with the old room's teardown — the new
+        // room's shared peers were killed by "User-Initiated Abort: Close
+        // called" and attempt 1 ALWAYS timed out (15s blind), so a host F5
+        // left host and guest playing separately for 20s+ per reconnect.
         const oldRoom = roomRef.current;
         if (oldRoom) {
-          try { oldRoom.leave(); } catch { /* ignore */ }
+          try {
+            await Promise.race([
+              oldRoom.leave(),
+              new Promise(resolve => setTimeout(resolve, 1500)), // don't let a hung leave stall the loop
+            ]);
+          } catch { /* ignore */ }
           if (roomRef.current === oldRoom) roomRef.current = null;
         }
         liveConnections.length = 0;
