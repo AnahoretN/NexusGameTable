@@ -561,5 +561,7 @@
   "Default font size": "Подразумевана величина фонта",
   "Drawings and Text": "Цртежи и текст",
   "Text Appearance": "Изглед текста",
-  "Border Color": "Боја ивице"
+  "Border Color": "Боја ивице",
+  "Reconnecting to host…": "Поновно повезивање са домаћином…",
+  "The connection to the host was lost. The game will continue automatically once the host is back.": "Веза са домаћином је изгубљена. Игра ће се наставити аутоматски када се домаћин врати."
 }

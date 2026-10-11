@@ -371,6 +371,28 @@ export function usePeerConnection(
   // Signalling server timeout - disconnect after this time of inactivity
   const SIGNALLING_TIMEOUT_MS = 120000; // 2 minutes
 
+  // 🔥 RECONNECT MODAL: the host announces its own unload (F5 / tab close) so
+  // every guest flips to 'reconnecting' and shows the blocking reconnect
+  // modal immediately (see SessionResumeBanner).
+  useEffect(() => {
+    if (!isHost) return;
+    const notifyGuests = () => {
+      connectionsRef.current.forEach(conn => {
+        try {
+          if (conn.open) conn.send({ type: 'HOST_RELOADING' });
+        } catch {
+          // channel may already be dead — nothing to do
+        }
+      });
+    };
+    window.addEventListener('pagehide', notifyGuests);
+    window.addEventListener('beforeunload', notifyGuests);
+    return () => {
+      window.removeEventListener('pagehide', notifyGuests);
+      window.removeEventListener('beforeunload', notifyGuests);
+    };
+  }, [isHost]);
+
   // Central Network Data Handler — delegates to the shared session protocol
   const protocolHandlerRef = useRef<(data: any, senderConn: any) => void>(() => {});
   // 🔥 RESUME: fired by the protocol when a full SYNC_STATE is applied — the
@@ -402,6 +424,15 @@ export function usePeerConnection(
     onSessionEstablished,
   });
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
+    // 🔥 RECONNECT MODAL: the host announced its own reload (F5) — flip the
+    // guest to 'reconnecting' at once so the blocking reconnect modal shows
+    // (see SessionResumeBanner). onSessionEstablished flips it back once the
+    // host's SYNC_STATE lands. PeerJS has no room-level self-healing, so the
+    // HOST_PING watchdog would otherwise stay silent for up to 45s.
+    if (data?.type === 'HOST_RELOADING') {
+      setConnectionStatus('reconnecting');
+      return;
+    }
     protocolHandlerRef.current(data, senderConn);
   }, []);
 

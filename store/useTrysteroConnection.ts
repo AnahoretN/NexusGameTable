@@ -310,6 +310,27 @@ export function useTrysteroConnection(
   // ============================================================================
 
   const protocolHandlerRef = useRef<(data: any, senderConn: any) => void>(() => {});
+
+  // 🔥 RECONNECT MODAL: the host announces its own unload (F5 / tab close) so
+  // every guest flips to 'reconnecting' and shows the blocking reconnect
+  // modal at once — instead of freezing silently until the transport-level
+  // reconnect happens (or the HOST_PING watchdog fires 45s later).
+  useEffect(() => {
+    if (!isHost) return;
+    const notifyGuests = () => {
+      try {
+        sendRef.current?.({ type: 'HOST_RELOADING' });
+      } catch {
+        // channel may already be dead — nothing to do
+      }
+    };
+    window.addEventListener('pagehide', notifyGuests);
+    window.addEventListener('beforeunload', notifyGuests);
+    return () => {
+      window.removeEventListener('pagehide', notifyGuests);
+      window.removeEventListener('beforeunload', notifyGuests);
+    };
+  }, [isHost]);
   // 🔥 RESUME: fired by the protocol when a full SYNC_STATE is applied — the
   // guest session is (re)established. Persist the descriptor, stop reconnecting.
   const onSessionEstablished = useCallback(() => {
@@ -342,6 +363,18 @@ export function useTrysteroConnection(
   const handleNetworkData = useCallback((data: any, peerId: string) => {
     if (data?.type === 'SYNC_STATE') {
       receivedSyncRef.current = true;
+    }
+    // 🔥 RECONNECT MODAL: the host announced its own reload (F5). Trystero
+    // often self-heals the room within a second when the host comes back, so
+    // without this the guest froze silently with no indication. Flip to
+    // 'reconnecting' immediately — the SessionResumeBanner shows the blocking
+    // modal, and onSessionEstablished (host's SYNC_STATE lands) flips the
+    // status back to 'connected' and the game continues.
+    if (!isHost && data?.type === 'HOST_RELOADING') {
+      hostPeerIdRef.current = peerId;
+      lastHostPingRef.current = Date.now();
+      setConnectionStatus('reconnecting');
+      return;
     }
     // 🔥 RESUME: liveness tracking (guest side). The host broadcasts HOST_PING
     // every 10s; any game-protocol traffic from a peer also proves it is alive.
@@ -551,7 +584,11 @@ export function useTrysteroConnection(
       resetP2PLoading();
       updateP2PLoadingStep('connect', 'loading', 'Joining room...');
     }
-    setConnectionStatus('connecting');
+    // 🔥 RECONNECT MODAL: a rejoin attempt keeps 'reconnecting' for its whole
+    // duration (waitForPeer included) so the blocking reconnect modal stays
+    // up until the session is really re-established. 'connecting' remains
+    // reserved for the INITIAL join (which shows the join modal instead).
+    setConnectionStatus(rejoin ? 'reconnecting' : 'connecting');
 
     const config = {
       appId: 'nexus-game-table',
@@ -562,6 +599,15 @@ export function useTrysteroConnection(
       const room = joinRoom(config, roomIdToJoin, {
         onJoinError: (details) => {
           logger.error('[P2P][Trystero] Room join error:', details);
+          // 🔥 RECONNECT MODAL: a rejoin can race with the swarm self-heal —
+          // the host came back and SYNC_STATE already landed (which reset the
+          // reconnect loop via onSessionEstablished). If we've received sync
+          // from the host, the session IS alive: a stale failed attempt must
+          // not leave the guest stuck in 'disconnected' with a dead loop.
+          if (rejoin && receivedSyncRef.current) {
+            setConnectionStatus('connected');
+            return;
+          }
           setConnectionStatus('disconnected');
           updateP2PLoadingStep('connect', 'error', 'Failed to join room (tracker error)');
         },
@@ -604,7 +650,15 @@ export function useTrysteroConnection(
       // 'connecting', and tracker discovery can legitimately take 10+s.
       // Messages sent before the host is discovered are lost either way, but
       // this avoids an extra silent window AFTER the peer is reachable.
-      setConnectionStatus('connected');
+      // 🔥 RECONNECT MODAL: a REJOIN keeps 'reconnecting' instead — flipping
+      // to 'connected' here hid the whole rejoin window from the UI (the
+      // reconnect modal never showed during host F5 recovery), and the modal
+      // blocks guest input anyway, so nothing is lost to the dispatch gate.
+      // onSessionEstablished flips the status to 'connected' when the host's
+      // SYNC_STATE lands and the session is really re-established.
+      if (!rejoin) {
+        setConnectionStatus('connected');
+      }
 
       // Wait until a peer actually joins the room. Tracker discovery can take
       // a while (slow/remote wss trackers) — a HELO sent into an empty room is
@@ -624,6 +678,12 @@ export function useTrysteroConnection(
       if (!found) {
         logger.error(`[P2P][Trystero] No peers discovered within ${rejoin ? 15 : 80}s${rejoin ? ' — reconnect attempt failed' : ' — aborting join'}`);
         if (rejoin) {
+          // 🔥 RECONNECT MODAL: same self-heal race as the join-error path —
+          // if sync from the host is already flowing, the session is alive.
+          if (receivedSyncRef.current) {
+            setConnectionStatus('connected');
+            return;
+          }
           setConnectionStatus('reconnecting');
           return; // the reconnect loop schedules the next attempt
         }

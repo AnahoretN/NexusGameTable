@@ -262,23 +262,34 @@ export const CursorSlotVisualization = (({
       // но не двигается за курсором"). The RAF effect cleans itself up when
       // the slot empties.
       // Detach elements immediately (visual cleanup)…
+      // 🔧 FIX (invisible cursor-slot item in prod): snapshot the CURRENT root
+      // generation and swap in a fresh map BEFORE the deferred unmount runs.
+      // The re-run effect (host echo → state.objects changed) registers NEW
+      // roots into rootRefsRef while the double-deferred unmount below is still
+      // pending. Iterating the live map unmounted the NEW generation too: in
+      // the prod bundle import('react-dom/client') resolves within a microtask,
+      // so the fresh render had already flushed and was then torn down — the
+      // guest held an invisible object ("объект исчезает"). In dev the network
+      // dynamic import rendered AFTER the deferred unmount, masking the race.
+      const staleRoots = new Map(rootRefsRef.current);
+      rootRefsRef.current = new Map();
       itemElementsRef.current.forEach(el => el.remove());
       itemElementsRef.current.clear();
-      // …and unmount the React roots DOUBLE-DEFERRED. root.unmount() internally
-      // calls flushSync, which synchronously renders the whole GameProvider
-      // while React is still finishing its own commit/effect phases — that
-      // nested render could discard pending game-state updates (a guest's
-      // menu move silently never applied).
+      // …and unmount the SNAPSHOT of React roots DOUBLE-DEFERRED.
+      // root.unmount() internally calls flushSync, which synchronously renders
+      // the whole GameProvider while React is still finishing its own
+      // commit/effect phases — that nested render could discard pending
+      // game-state updates (a guest's menu move silently never applied).
       setTimeout(() => {
         setTimeout(() => {
-          rootRefsRef.current.forEach(root => {
+          staleRoots.forEach(root => {
             try {
               root.unmount();
             } catch (e) {
               // Ignore unmount errors
             }
           });
-          rootRefsRef.current.clear();
+          staleRoots.clear();
         }, 0);
       }, 0);
     };

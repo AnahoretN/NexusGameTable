@@ -582,5 +582,7 @@
   "Show text button": "Показувати кнопку тексту",
   "Default font size": "Розмір шрифту за замовчуванням",
   "Drawings and Text": "Малюнки та текст",
-  "Text Appearance": "Зовнішній вигляд тексту"
+  "Text Appearance": "Зовнішній вигляд тексту",
+  "Reconnecting to host…": "Перепідключення до хоста…",
+  "The connection to the host was lost. The game will continue automatically once the host is back.": "З'єднання з хостом втрачено. Гра продовжиться автоматично, коли хост повернеться."
 }

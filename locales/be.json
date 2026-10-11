@@ -561,5 +561,7 @@
   "Default font size": "Памер шрыфту па змаўчанні",
   "Drawings and Text": "Малюнкі і тэкст",
   "Text Appearance": "Знешні выгляд тэксту",
-  "Border Color": "Колер абводкі"
+  "Border Color": "Колер абводкі",
+  "Reconnecting to host…": "Перападлучэнне да хоста…",
+  "The connection to the host was lost. The game will continue automatically once the host is back.": "Злучэнне з хостам страчана. Гульня працягнецца аўтаматычна, калі хост вернецца."
 }

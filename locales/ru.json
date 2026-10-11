@@ -584,5 +584,7 @@
   "Show text button": "Показывать кнопку текста",
   "Default font size": "Размер шрифта по умолчанию",
   "Drawings and Text": "Рисунки и текст",
-  "Text Appearance": "Внешний вид текста"
+  "Text Appearance": "Внешний вид текста",
+  "Reconnecting to host…": "Переподключение к хосту…",
+  "The connection to the host was lost. The game will continue automatically once the host is back.": "Соединение с хостом потеряно. Игра продолжится автоматически, когда хост вернётся."
 }
