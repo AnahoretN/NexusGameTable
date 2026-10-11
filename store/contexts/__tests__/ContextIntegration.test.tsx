@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { renderHook, act } from '@testing-library/react';
+import { vi } from 'vitest';
 import {
   PlayerProvider,
   usePlayers,
@@ -16,6 +17,50 @@ import {
   useUI,
   useGameContextAdapter
 } from '../index';
+
+// PlayerContext (and only it) is a bridge over GameContext - it reads
+// state.players / state.activePlayerId and dispatches player actions.
+// Mock GameContext with a mini-reducer so the bridge logic is testable
+// without mounting the full game session.
+const initialGameState = {
+  players: [{ id: 'gm', name: 'GM', color: '#e74c3c', isGM: true }],
+  activePlayerId: 'gm',
+  playerPermissions: undefined,
+};
+
+function mockGameReducer(state: any, action: any) {
+  switch (action.type) {
+    case 'ADD_PLAYER':
+      return { ...state, players: [...state.players, action.payload] };
+    case 'UPDATE_PLAYER':
+      return {
+        ...state,
+        players: state.players.map((p: any) =>
+          p.id === action.payload.id ? { ...p, ...action.payload.updates } : p
+        ),
+      };
+    case 'REMOVE_PLAYER':
+      return { ...state, players: state.players.filter((p: any) => p.id !== action.payload) };
+    case 'SET_ACTIVE_ID':
+      return { ...state, activePlayerId: action.payload };
+    case 'UPDATE_PLAYER_PERMISSIONS':
+      return { ...state, playerPermissions: action.payload };
+    default:
+      return state;
+  }
+}
+
+vi.mock('../../GameContext', () => ({
+  useGame: () => {
+    // useReducer lives inside the hook so each renderHook() call gets
+    // isolated state and act() triggers real re-renders through React.
+    const [state, dispatch] = React.useReducer(
+      mockGameReducer,
+      initialGameState
+    );
+    return { state, dispatch, isHost: true };
+  },
+}));
 
 // Test wrapper with all providers
 function createTestWrapper() {
@@ -340,11 +385,13 @@ describe('Context Integration Tests - Phase 6', () => {
         return usePlayers();
       }, { wrapper });
 
+      // Update UI context in its own provider tree (should not cause
+      // player context to re-render)
+      const { result: uiResult } = renderHook(() => useUI(), { wrapper });
+
       const initialRenderCount = renderCount;
 
-      // Update UI context (should not cause player context to re-render)
       act(() => {
-        const { result: uiResult } = renderHook(() => useUI(), { wrapper });
         uiResult.current.setLanguage('de');
       });
 

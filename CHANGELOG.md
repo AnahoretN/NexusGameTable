@@ -2,6 +2,28 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.3.6] - 2026-10-11
+
+### 🧪 Testing
+
+#### Test infrastructure (Vitest)
+- **Vitest 3 + Testing Library + jsdom** wired into `vite.config.ts`; run with `npm test` / `npm run test:watch` — **122 unit tests** across 9 files, ~2.5 s
+- Wire protocol (`store/session/protocol.ts`): PACKS_NEEDED repeat-guard, SYNC_STATE buffering & partial passthrough, cursor-slot pickup rebuild, POSITION_UPDATE cursor-freeze, HELO rejoin/connection-lock
+- Differential sync (`getPartialState`): payload mapping for id-less actions (FLIP_CARD, PLAY_TOP_CARD), deletion tombstones, diff-based additions/removals, cursor-slot flag-only sync
+- Game logic: main reducer branches (DRAW_CARD, PLAY_TOP_CARD + drop, SHUFFLE_DECK, FLIP_CARD, ADD_CARD_TO_PILE), pack import (`addPackToGameReducer`), direct P2P sync (token/character sliders), grid snapping & anchor-attached movement, coordinate conversions
+- Context layer: Player/ViewTransform/UI integration via a mocked `useGame` mini-reducer; Tabletop smoke tests
+
+### 🛠️ Fixes
+
+- **Cards no longer vanish when moved into another deck's pile**: ADD_CARD_TO_PILE early-returned after removing the card from the source deck, so it never reached the target pile
+- **Pack import dice-group collisions**: importing a pack whose dice groups / drawing layers collide with existing IDs silently duplicated them — IDs are now deduplicated across objects, dice groups and drawing layers
+
+### 🧹 Cleanup
+
+- Removed dead code: 8 unused reducers from `store/reducers/appReducers.ts` (GameContext implements its own) and 7 unused exports from `utils/coordinateUtils.ts` (only viewportToWorld/worldToViewport are wired)
+
+---
+
 ## [0.3.5] - 2026-10-11
 
 ### ✨ New Features

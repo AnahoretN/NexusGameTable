@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 // @ts-ignore - vite.config runs in Node.js context
 import { readFileSync } from 'fs';
@@ -23,5 +23,12 @@ export default defineConfig({
   build: {
     outDir: 'docs',
     emptyOutDir: true,
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './tests/setup.ts',
+    include: ['components/**/*.test.{ts,tsx}', 'store/**/*.test.{ts,tsx}', 'utils/**/*.test.{ts,tsx}', 'tests/**/*.test.{ts,tsx}'],
+    exclude: ['node_modules/**', 'docs/**'],
   },
 });

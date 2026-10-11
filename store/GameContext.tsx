@@ -171,7 +171,7 @@ function isMainMenuPanelObj(obj: any): boolean {
   return !!obj && obj.type === ItemType.PANEL && (obj as any).panelType === PanelType.MAIN_MENU;
 }
 
-const gameReducer = (state: GameState, action: Action): GameState => {
+export const gameReducer = (state: GameState, action: Action): GameState => {
   // 🔥 OPTIMIZED: Track changes for differential sync
   // Exclude SYNC_STATE to avoid loops
   // Exclude UPDATE_OBJECT with inCursorSlot=true to prevent local cursor slot state from syncing to host
@@ -4109,6 +4109,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         // Remove from previous deck's cardIds (but keep deckId unchanged - it belongs to original deck)
         let deckWithUpdatedCardIds: Deck = deck;
+        let objectsAfterRemoval: Record<string, TableObject> = state.objects;
         if (previousDeckId && previousDeckId !== deck.id) {
             // Card coming from a different deck - remove from that deck's cardIds
             const previousDeck = state.objects[previousDeckId] as Deck;
@@ -4122,7 +4123,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     ...p,
                     cardIds: p.cardIds.filter(id => id !== card.id)
                 }));
-                return { ...state, objects: { ...state.objects, [previousDeckId]: { ...updatedPreviousDeck, piles: updatedPreviousPiles } } };
+                // NOTE: no early return — the card must still be added to the
+                // target pile below (it used to be dropped on the floor here).
+                objectsAfterRemoval = { ...state.objects, [previousDeckId]: { ...updatedPreviousDeck, piles: updatedPreviousPiles } };
             }
         } else if (previousDeckId === deck.id && deck.cardIds.includes(card.id)) {
             // Card coming from same deck's cardIds (e.g., milling from deck to pile) - remove from deck.cardIds
@@ -4172,7 +4175,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
         return {
           ...state,
-          objects: { ...state.objects, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard },
+          objects: { ...objectsAfterRemoval, [deck.id]: updatedDeck, [action.payload.cardId]: updatedCard },
           undo: { ...state.undo, generalHistory: newGeneralHistory },
           lastModifiedBy: (action.payload as any).playerId || state.activePlayerId,
         };

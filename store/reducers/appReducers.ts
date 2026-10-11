@@ -1,40 +1,13 @@
 
 /**
- * Reducer functions for view transform and viewport actions
- * UPDATE_VIEW_TRANSFORM, SYNC_STATE, LOAD_GAME, etc.
+ * Reducer for ADD_PACK_TO_GAME: adds pack objects to the current game state
+ * without replacing existing objects, generating new IDs for conflicting
+ * objects and updating internal references.
+ *
+ * (The other reducers that used to live here were dead code — GameContext
+ * implements its own inline reducers — and were removed.)
  */
 
-export function updateViewTransformReducer(state: any, action: any): any {
-  if (action.type !== 'UPDATE_VIEW_TRANSFORM') return state;
-
-  return {
-    ...state,
-    viewTransform: action.payload
-  };
-}
-
-export function syncStateReducer(state: any, action: any): any {
-  if (action.type !== 'SYNC_STATE') return state;
-
-  return {
-    ...state,
-    ...action.payload
-  };
-}
-
-export function loadGameReducer(state: any, action: any): any {
-  if (action.type !== 'LOAD_GAME') return state;
-
-  return {
-    ...action.payload,
-    viewTransform: state.viewTransform // Preserve current view transform
-  };
-}
-
-/**
- * Add pack objects to current game state without replacing existing objects
- * Generates new IDs for conflicting objects and updates internal references
- */
 export function addPackToGameReducer(state: any, action: any): any {
   if (action.type !== 'ADD_PACK_TO_GAME') return state;
 
@@ -45,9 +18,21 @@ export function addPackToGameReducer(state: any, action: any): any {
   // Track ID mappings for conflicts (old ID -> new ID)
   const idMappings = new Map<string, string>();
 
+  // Every ID already claimed in the CURRENT game — objects, dice groups and
+  // drawing layers. One registry for all domains: a pack object/group/layer
+  // colliding with any existing ID gets a unique one. Pack-internal duplicates
+  // resolve naturally — the first claimant keeps the original, later ones are
+  // renamed (generateUniqueId adds every resolved ID to the registry).
+  const takenIds = new Set<string>([
+    ...Object.keys(existingObjects),
+    ...(state.diceGroups || []).map((g: any) => g.id),
+    ...((state.drawings?.layers || []) as any[]).map(l => l.id),
+  ]);
+
   // Helper to generate a unique ID
   const generateUniqueId = (originalId: string): string => {
-    if (!existingObjects[originalId]) {
+    if (!takenIds.has(originalId)) {
+      takenIds.add(originalId);
       return originalId; // No conflict, use original ID
     }
     // Generate new ID with suffix
@@ -56,7 +41,8 @@ export function addPackToGameReducer(state: any, action: any): any {
     do {
       newId = `${originalId}_pack${counter}`;
       counter++;
-    } while (existingObjects[newId] || packObjects[newId]);
+    } while (takenIds.has(newId));
+    takenIds.add(newId);
     return newId;
   };
 
@@ -130,7 +116,7 @@ export function addPackToGameReducer(state: any, action: any): any {
     mergedObjects[finalId] = updatedObj;
   }
 
-  // Merge dice groups from pack
+  // Merge dice groups from pack (IDs deduplicated against the shared registry)
   const existingDiceGroups = state.diceGroups || [];
   const packDiceGroups = packData.diceGroups || [];
   const mergedDiceGroups = [...existingDiceGroups];
@@ -194,53 +180,4 @@ function mergeHyperscaleLayers(existing: any[], packLayers: any[]): any[] {
   }
 
   return result;
-}
-
-export function setActiveIdReducer(state: any, action: any): any {
-  if (action.type !== 'SET_ACTIVE_ID') return state;
-
-  return {
-    ...state,
-    activePlayerId: action.payload.id
-  };
-}
-
-export function addPlayerReducer(state: any, action: any): any {
-  if (action.type !== 'ADD_PLAYER') return state;
-
-  return {
-    ...state,
-    players: [...state.players, action.payload.player]
-  };
-}
-
-export function removePlayerReducer(state: any, action: any): any {
-  if (action.type !== 'REMOVE_PLAYER') return state;
-
-  return {
-    ...state,
-    players: state.players.filter((p: any) => p.id !== action.payload.id)
-  };
-}
-
-export function updateHandCardOrderReducer(state: any, action: any): any {
-  if (action.type !== 'UPDATE_HAND_CARD_ORDER') return state;
-
-  return {
-    ...state,
-    players: state.players.map((p: any) =>
-      p.id === action.payload.playerId
-        ? { ...p, handCardOrder: action.payload.order }
-        : p
-    )
-  };
-}
-
-export function toggleConnectionsLockedReducer(state: any, action: any): any {
-  if (action.type !== 'TOGGLE_CONNECTIONS_LOCKED') return state;
-
-  return {
-    ...state,
-    connectionsLocked: !state.connectionsLocked
-  };
 }
