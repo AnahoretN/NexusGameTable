@@ -36,9 +36,24 @@ const cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let movementVersion = 0;
 const changeCallbacks = new Set<() => void>();
 
+// 🔧 FIX: notify subscribers ASYNCHRONOUSLY (coalesced). registerRemoteMovement
+// is called from the gameReducer — i.e. during React's render phase — and a
+// synchronous callback would setState inside useSyncExternalStore subscribers
+// (GameObjectsRenderer/TokenRenderer/...) while GameProvider is still
+// rendering: "Cannot update a component while rendering a different component".
+// The animation map itself is updated synchronously (renderers read it during
+// the render that applies the new position); only the notification moves to
+// the next macrotask.
+let notifyScheduled = false;
+
 function bumpVersion() {
   movementVersion++;
-  changeCallbacks.forEach(cb => cb());
+  if (notifyScheduled) return;
+  notifyScheduled = true;
+  setTimeout(() => {
+    notifyScheduled = false;
+    changeCallbacks.forEach(cb => cb());
+  }, 0);
 }
 
 export function subscribeToMovementChanges(callback: () => void): () => void {
