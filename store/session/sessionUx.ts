@@ -139,6 +139,19 @@ export function useSessionUx(localDispatch: React.Dispatch<Action>) {
     setRequiredPacks([]);
   }, [cancelHandshakeWatchdog]);
 
+  /**
+   * Prepare the guest UX for a rejoin attempt (runtime reconnect or auto-rejoin
+   * after reload). Clears the handshake guards so the incoming PACKS_NEEDED is
+   * processed fresh, and disables SYNC_STATE buffering — the guest already has
+   * its packs (images resolve by sha256 from IndexedDB), and nothing would call
+   * onPackLoaded on a rejoin (the join modal never shows), so buffering would
+   * deadlock the rejoin forever.
+   */
+  const armRejoin = useCallback(() => {
+    reset();
+    proceedWithoutPacks();
+  }, [reset, proceedWithoutPacks]);
+
   return {
     p2pLoadingSteps,
     p2pLoadingProgress,
@@ -150,6 +163,7 @@ export function useSessionUx(localDispatch: React.Dispatch<Action>) {
     armHandshakeWatchdog,
     cancelHandshakeWatchdog,
     reset,
+    armRejoin,
     packBuffer: {
       loadedPacksRef,
       bufferedStateRef,

@@ -2,6 +2,27 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.3.5] - 2026-10-11
+
+### ✨ New Features
+
+#### 🔄 Session Reconnection
+- **Host refresh no longer kills the session**: the host's invite identity (PeerJS peer id / Trystero room id) now persists, so after a page reload the host resumes with the **same invite link** and re-hosts the autosaved game; guests re-attach automatically
+- **Guest silent auto-rejoin**: a guest who refreshes (or reopens the page) rejoins in the background — no name modal — keeping their player id, name, color and role; the host's full state sync restores the table
+- **Runtime reconnect on host loss**: if the host connection drops mid-game, guests show a "Reconnecting to host…" pill and retry for up to 3 minutes (PeerJS connection close; Trystero via new 10 s `HOST_PING` heartbeat + 45 s silence watchdog)
+- **Worst-case recovery**: when the host is unreachable for good, the reconnect banner offers **"Load local backup"** — the guest's own 60-second autosave loads as an offline, locally playable game
+- Disconnect no longer removes players from the session (the player entry is kept so a returning guest keeps everything); explicit kick still removes
+- Rejoining guests with a changed name/color update the host's player list instead of being silently ignored
+- Host peer-id collisions after a quick refresh are retried with backoff before regenerating
+- Two tabs of the same browser can no longer both auto-resume (resume lock)
+
+### 🛠️ Fixes
+
+#### Cache clear
+- **"Clear cache" now actually clears everything**: the page reload no longer kills the async part of the wipe (IndexedDB AssetDB, Cache API, Service Workers) mid-flight — storage cleanup is fully awaited before reloading
+
+---
+
 ## [0.3.4] - 2026-10-09
 
 ### ✨ New Features

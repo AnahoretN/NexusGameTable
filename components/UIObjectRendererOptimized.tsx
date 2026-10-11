@@ -29,14 +29,15 @@ import { DEFAULT_POOL_WIDTH, DEFAULT_POOL_HEIGHT } from '../constants/pool';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { LocalSettings } from '../utils/localSettings';
 import { useLocalPanelSettings } from '../hooks/useLocalPanelSettings';
-import { hasSavedGameState, getSavedGameTimestamp, formatTimestamp } from '../utils/gameStorage';
+import { hasSavedGameState, getSavedGameTimestamp, formatTimestamp, clearAllData } from '../utils/gameStorage';
+import { resetAllTransports, clearSessionDescriptor } from '../store/session';
 import { t as translate, preloadTranslations, Locale } from '../utils/translations';
 import { vuToPixels } from '../utils/vuSystem';
 import { PanelResizeHandleMemo } from './PanelResizeHandle';
 
 // Get version from package.json via Vite env
 const APP_NAME = (import.meta as any).env?.APP_NAME || 'Nexus Game Table';
-const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.3.4';
+const APP_VERSION = (import.meta as any).env?.PACKAGE_VERSION || '0.3.5';
 
 // Support links
 const SUPPORT_LINKS = [
@@ -1708,9 +1709,16 @@ export const UIObjectRendererOptimized: React.FC<UIObjectRendererProps> = ({
                 <button
                   onClick={() => {
                     if (confirm(translate('Are you sure you want to clear all saved game data? This action cannot be undone.', language as Locale))) {
+                      // 🔧 FIX: fully await the storage wipe BEFORE reloading.
+                      // The old code dispatched + reloaded immediately — the
+                      // reload killed the ASYNC part of clearAllData (IndexedDB
+                      // AssetDB, Cache API, Service Workers) mid-flight, so
+                      // those survived and had to be cleared via the browser's
+                      // "delete site data".
+                      resetAllTransports();
+                      clearSessionDescriptor();
                       dispatch({ type: 'CLEAR_SAVED_STATE' });
-                      // Reload page to start fresh
-                      window.location.reload();
+                      clearAllData().finally(() => window.location.reload());
                     }
                   }}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors text-sm"

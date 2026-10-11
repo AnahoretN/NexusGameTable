@@ -22,8 +22,21 @@ export { findLocalFilePaths };
 
 const STORAGE_KEY = 'nexus-game-state';
 const STORAGE_KEY_COMPRESSED = 'nexus-game-state-compressed';
+// 🔥 RESUME: role-scoped keys — when host and guest run in the SAME browser
+// (two tabs/windows share localStorage), their 60s autosaves would otherwise
+// clobber each other and a host reload would restore the guest's save.
+const STORAGE_KEY_GUEST = 'nexus-game-state-guest';
+const STORAGE_KEY_GUEST_COMPRESSED = 'nexus-game-state-guest-compressed';
 const STORAGE_VERSION = 8; // Version with new objects and settings (diceGroups, access control, etc.)
 const USE_COMPRESSION = true; // Enable compression for localStorage
+
+export type SaveRole = 'host' | 'guest';
+
+function keysForRole(role: SaveRole): { key: string; keyCompressed: string } {
+  return role === 'guest'
+    ? { key: STORAGE_KEY_GUEST, keyCompressed: STORAGE_KEY_GUEST_COMPRESSED }
+    : { key: STORAGE_KEY, keyCompressed: STORAGE_KEY_COMPRESSED };
+}
 
 /**
  * Initialize image system (no-op in CAS system)
@@ -131,7 +144,7 @@ function decompressData(compressedString: string): string | null {
 /**
  * Safely set item in localStorage with quota check
  */
-function safeSetItem(key: string, value: string): boolean {
+function safeSetItem(key: string, value: string, keyCompressed: string, keyRaw: string): boolean {
   if (typeof window === 'undefined') return false;
 
   try {
@@ -142,9 +155,9 @@ function safeSetItem(key: string, value: string): boolean {
       logger.error(`[QUOTA] localStorage quota exceeded when setting key "${key}". Size: ${Math.round(value.length / 1024)}KB`);
 
       // Try to free up space by removing old versions
-      if (key === STORAGE_KEY && localStorage.getItem(STORAGE_KEY_COMPRESSED)) {
-        logger.log('[QUOTA] Removing old compressed version to free space');
-        localStorage.removeItem(STORAGE_KEY_COMPRESSED);
+      if (key === keyCompressed && localStorage.getItem(keyRaw)) {
+        logger.log('[QUOTA] Removing old uncompressed version to free space');
+        localStorage.removeItem(keyRaw);
         try {
           localStorage.setItem(key, value);
           return true;
@@ -153,9 +166,9 @@ function safeSetItem(key: string, value: string): boolean {
         }
       }
 
-      if (key === STORAGE_KEY_COMPRESSED && localStorage.getItem(STORAGE_KEY)) {
-        logger.log('[QUOTA] Removing old uncompressed version to free space');
-        localStorage.removeItem(STORAGE_KEY);
+      if (key === keyRaw && localStorage.getItem(keyCompressed)) {
+        logger.log('[QUOTA] Removing old compressed version to free space');
+        localStorage.removeItem(keyCompressed);
         try {
           localStorage.setItem(key, value);
           return true;
@@ -178,9 +191,10 @@ function safeSetItem(key: string, value: string): boolean {
  * - Images are stored in IndexedDB AssetDB
  * - Just save state as-is to localStorage
  */
-export const saveGameState = async (state: GameState): Promise<void> => {
+export const saveGameState = async (state: GameState, role: SaveRole = 'host'): Promise<void> => {
   if (typeof window === 'undefined') return;
 
+  const { key: roleKey, keyCompressed: roleKeyCompressed } = keysForRole(role);
   const objectsCount = Object.keys(state.objects).length;
 
   logger.debug(`[AUTOSAVE] saving game state (${objectsCount} objects)`);
@@ -239,16 +253,16 @@ export const saveGameState = async (state: GameState): Promise<void> => {
     let saved = false;
     if (USE_COMPRESSION && size > 1024) {
       const compressed = compressData(json);
-      if (safeSetItem(STORAGE_KEY_COMPRESSED, compressed)) {
-        localStorage.removeItem(STORAGE_KEY);
+      if (safeSetItem(roleKeyCompressed, compressed, roleKeyCompressed, roleKey)) {
+        localStorage.removeItem(roleKey);
         saved = true;
       }
     }
 
     // Fallback to uncompressed
     if (!saved) {
-      if (safeSetItem(STORAGE_KEY, json)) {
-        localStorage.removeItem(STORAGE_KEY_COMPRESSED);
+      if (safeSetItem(roleKey, json, roleKeyCompressed, roleKey)) {
+        localStorage.removeItem(roleKeyCompressed);
       } else {
         logger.error('[AUTOSAVE] Failed to save - quota exceeded');
       }
@@ -290,14 +304,18 @@ export const loadGameState = async (
 
   logger.debug('[LOAD] loading game state', { isGuest });
 
+  // 🔥 RESUME: read the role-scoped keys (see keysForRole) so a guest browser
+  // never loads a host save and vice versa.
+  const { key: roleKey, keyCompressed: roleKeyCompressed } = keysForRole(isGuest ? 'guest' : 'host');
+
   try {
     // Try compressed version first
-    let stored = localStorage.getItem(STORAGE_KEY_COMPRESSED);
+    let stored = localStorage.getItem(roleKeyCompressed);
     let isCompressed = !!stored;
 
     // If no compressed version, try uncompressed
     if (!stored) {
-      stored = localStorage.getItem(STORAGE_KEY);
+      stored = localStorage.getItem(roleKey);
     }
 
     if (!stored) {
@@ -321,7 +339,7 @@ export const loadGameState = async (
       const decompressed = decompressData(stored);
       if (!decompressed) {
         logger.warn('[LOAD] Failed to decompress, trying uncompressed');
-        stored = localStorage.getItem(STORAGE_KEY);
+        stored = localStorage.getItem(roleKey);
         if (stored) {
           jsonString = stored;
           isCompressed = false;
@@ -868,8 +886,9 @@ export const clearGameState = (): void => {
   if (typeof window === 'undefined') return;
 
   try {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(STORAGE_KEY_COMPRESSED);
+    // Clear both role-scoped key sets
+    [STORAGE_KEY, STORAGE_KEY_COMPRESSED, STORAGE_KEY_GUEST, STORAGE_KEY_GUEST_COMPRESSED]
+      .forEach(k => localStorage.removeItem(k));
   } catch (error) {
     logger.error('Failed to clear game state:', error);
   }
@@ -980,7 +999,12 @@ export const hasSavedGameState = (): boolean => {
   if (typeof window === 'undefined') return false;
 
   try {
-    return !!(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_COMPRESSED));
+    return !!(
+      localStorage.getItem(STORAGE_KEY) ||
+      localStorage.getItem(STORAGE_KEY_COMPRESSED) ||
+      localStorage.getItem(STORAGE_KEY_GUEST) ||
+      localStorage.getItem(STORAGE_KEY_GUEST_COMPRESSED)
+    );
   } catch (error) {
     return false;
   }
@@ -989,35 +1013,30 @@ export const hasSavedGameState = (): boolean => {
 export const getSavedGameTimestamp = (): number | null => {
   if (typeof window === 'undefined') return null;
 
-  try {
-    let stored = localStorage.getItem(STORAGE_KEY_COMPRESSED);
+  // Most recent timestamp across both role-scoped key sets
+  const candidates = [STORAGE_KEY_COMPRESSED, STORAGE_KEY, STORAGE_KEY_GUEST_COMPRESSED, STORAGE_KEY_GUEST]
+    .map(k => localStorage.getItem(k))
+    .filter((s): s is string => !!s);
 
-    if (!stored) {
-      stored = localStorage.getItem(STORAGE_KEY);
-    }
+  if (candidates.length === 0) return null;
 
-    if (!stored) return null;
-
-    let jsonString = stored;
-    if (stored !== localStorage.getItem(STORAGE_KEY) && localStorage.getItem(STORAGE_KEY_COMPRESSED) === stored) {
+  let newest: number | null = null;
+  for (const stored of candidates) {
+    try {
+      let jsonString = stored;
       const decompressed = decompressData(stored);
-      if (decompressed === null) {
-        const fallback = localStorage.getItem(STORAGE_KEY);
-        if (fallback) {
-          jsonString = fallback;
-        } else {
-          return null;
-        }
-      } else {
+      if (decompressed !== null) {
         jsonString = decompressed;
       }
+      const data: StoredGameState = JSON.parse(jsonString);
+      if (typeof data.timestamp === 'number' && (newest === null || data.timestamp > newest)) {
+        newest = data.timestamp;
+      }
+    } catch {
+      // Skip unparsable candidate
     }
-
-    const data: StoredGameState = JSON.parse(jsonString);
-    return data.timestamp;
-  } catch (error) {
-    return null;
   }
+  return newest;
 };
 
 export const formatTimestamp = (timestamp: number): string => {

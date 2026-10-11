@@ -10,6 +10,7 @@
  *   - trystero/iroh: derived from URL (?roomId / ?ticket) at mount
  */
 
+import { useCallback, useRef } from 'react';
 import { Action } from '../gameActions';
 import { usePeerConnection } from '../usePeerConnection';
 import { useIrohConnection } from '../useIrohConnection';
@@ -19,7 +20,7 @@ import type { ConnectionMethod } from '../../utils/localSettings';
 export interface UseGameSessionReturn {
   peerId: string | null;
   isHost: boolean;
-  connectionStatus: 'disconnected' | 'connecting' | 'connected';
+  connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
   waitingForPlayerName: { hostId: string } | null;
   setPlayerName: (name: string) => void;
   initializeHost: () => void;
@@ -31,6 +32,11 @@ export interface UseGameSessionReturn {
   onPackLoaded: (packName: string, hashes: string[]) => void;
   onJoinWithoutPacks: () => void;
   suggestedPlayerName: string;
+  // 🔥 RESUME: silent rejoin + reconnect retry (guest side; peerjs/trystero only)
+  resumeGuest: (inviteId: string, identity: { name: string; color: string }) => void;
+  retryGuestConnection: () => void;
+  /** Ref-based hook: invoked once when the reconnect loop gives up (UI shows backup restore). */
+  onReconnectFailedRef: React.MutableRefObject<(() => void) | null>;
   // Method-specific extras (null for other methods)
   nodeId: string | null;
   ticket: string | null;
@@ -110,6 +116,20 @@ export function useGameSession(
   const ticket = connectionMethod === 'iroh' ? irohConn.ticket : null;
   const roomId = connectionMethod === 'trystero' ? trysteroConn.roomId : null;
 
+  // 🔥 RESUME: only peerjs/trystero participate in reconnection — iroh/manual
+  // get inert no-ops.
+  const noopResume = useCallback(() => {}, []);
+  const noopFailedRef = useRef<(() => void) | null>(null);
+  const resumeGuest = connectionMethod === 'trystero' ? trysteroConn.resumeGuest
+    : connectionMethod === 'peerjs' ? peerJsConn.resumeGuest
+    : noopResume;
+  const retryGuestConnection = connectionMethod === 'trystero' ? trysteroConn.retryGuestConnection
+    : connectionMethod === 'peerjs' ? peerJsConn.retryGuestConnection
+    : noopResume;
+  const onReconnectFailedRef = connectionMethod === 'trystero' ? trysteroConn.onReconnectFailedRef
+    : connectionMethod === 'peerjs' ? peerJsConn.onReconnectFailedRef
+    : noopFailedRef;
+
   return {
     peerId,
     isHost,
@@ -125,6 +145,9 @@ export function useGameSession(
     onPackLoaded,
     onJoinWithoutPacks,
     suggestedPlayerName,
+    resumeGuest,
+    retryGuestConnection,
+    onReconnectFailedRef,
     nodeId,
     ticket,
     roomId,

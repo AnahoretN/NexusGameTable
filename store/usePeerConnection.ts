@@ -22,6 +22,18 @@ import {
   sendAcceptPush,
   notifyGuestDisconnected
 } from './session/protocol';
+import {
+  getHostInviteId,
+  regenerateHostPeerId,
+  writeHostDescriptor,
+  writeGuestDescriptor,
+  readSessionDescriptor,
+  isDescriptorFresh,
+  shouldRefreshGuestDescriptor,
+  readTabSession,
+  isTabSessionFresh,
+  rememberGuestIdentity,
+} from './session/sessionResume';
 
 // ============================================================================
 // 🔥 SINGLETON PATTERN: Persist P2P connection across HMR remounts
@@ -69,7 +81,7 @@ type TrysteroRoom = {
   getPeers: () => string[];
 };
 
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
 export interface WaitingForPlayerName {
   hostId: string;
@@ -102,6 +114,11 @@ export interface UsePeerConnectionReturn {
   onJoinWithoutPacks: () => void;
   // 🔥 NEW: Suggested player name for guests
   suggestedPlayerName: string;
+  // 🔥 RESUME: silent rejoin + reconnect retry (guest side)
+  resumeGuest: (inviteId: string, identity: { name: string; color: string }) => void;
+  retryGuestConnection: () => void;
+  /** Ref-based hook: invoked once when the reconnect loop gives up (UI shows backup restore). */
+  onReconnectFailedRef: React.MutableRefObject<(() => void) | null>;
 }
 
 /**
@@ -262,7 +279,19 @@ export function usePeerConnection(
     if (typeof window === 'undefined') return true;
     const params = new URLSearchParams(window.location.search);
     // Guest if hostId OR ticket exists (for Iroh mode), host otherwise
-    return !(params.has('hostId') || params.has('ticket'));
+    if (params.has('hostId') || params.has('ticket')) return false;
+    // 🔥 RESUME: THIS TAB's own record (sessionStorage) is the primary role
+    // source — the shared localStorage descriptor may belong to another tab's
+    // role (a guest tab in the same browser would misclassify a host reload).
+    const tab = readTabSession();
+    if (tab && isTabSessionFresh(tab) && tab.method === 'peerjs') {
+      return tab.role === 'host';
+    }
+    // Session resume fallback: a fresh guest descriptor (no URL invite) means
+    // we are a returning guest, not a host.
+    const d = readSessionDescriptor();
+    if (d && isDescriptorFresh(d) && d.role === 'guest' && d.method === 'peerjs') return false;
+    return true;
   };
 
   const [isHost, _setIsHost] = useState<boolean>(getInitialHostStatus());
@@ -282,6 +311,7 @@ export function usePeerConnection(
     setSuggestedPlayerName,
     updateStep: updateP2PLoadingStep,
     reset: resetP2PLoading,
+    armRejoin,
     packBuffer: {
       loadedPacksRef,
       expectedPacksCountRef,
@@ -290,6 +320,9 @@ export function usePeerConnection(
     },
   } = ux;
 
+  // 🔥 RESUME: Guest identity for this browser session — the color is generated
+  // ONCE (not per HELO) so a rejoining guest keeps the same color.
+  const identityRef = useRef<{ name: string; color: string } | null>(null);
 
   // 🔥 SINGLETON: Use module-level refs that persist across remounts
   // Local refs are just aliases to the singleton values
@@ -298,12 +331,24 @@ export function usePeerConnection(
   const hostConnectionRef = useRef<any>(p2pSingleton.hostConnection);
   const roomRef = useRef<TrysteroRoom | null>(p2pSingleton.room);
   const isIntentionalDisconnectRef = useRef(false); // Track intentional disconnect vs network error
- useRef({ attempts: 0, startTime: null as number | null }); // Guest reconnect state;
+  // 🔥 RESUME: transport loss ≠ session loss — set only by explicit teardown
+  // (beforeunload / CLEAR_SAVED_STATE). Connection close/error now schedules a
+  // guest reconnect loop instead of giving up.
+  const sessionIntentionallyLeftRef = useRef(false);
+  const guestReconnectStateRef = useRef({ attempts: 0, timer: null as ReturnType<typeof setTimeout> | null, active: false, startTime: null as number | null });
+  const reconnectingRef = useRef(false); // single-flight guard for startGuestReconnect
   const hostReconnectStateRef = useRef({ attempts: 0, startTime: null as number | null }); // Host reconnect state
   const signallingDisconnectedRef = useRef(false); // Track if we intentionally disconnected from signalling (optimization)
- useRef(0); // Track expected player count for signalling disconnect timing;
   const signallingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Timer for signalling disconnect
   const pendingPlayerNameRef = useRef<string | null>(null); // 🔥 FIX: Store player name for HELO after connection opens
+  const pendingPlayerColorRef = useRef<string | null>(null); // 🔥 RESUME: persisted color for rejoin HELOs
+  // 🔥 RESUME: hostId we most recently connected to (for the reconnect loop)
+  const lastHostIdRef = useRef<string | null>(null);
+  // 🔥 RESUME: hook for reconnect to report terminal failure to the UI
+  const onReconnectFailedRef = useRef<(() => void) | null>(null);
+  // Indirection so connection handlers can trigger the reconnect loop
+  // (defined after connectToHost) without declaration-order hazards.
+  const startGuestReconnectRef = useRef<(() => void) | null>(null);
 
   // 🔥 SYNC: Sync singleton with refs after updates
   const syncSingleton = useCallback(() => {
@@ -328,12 +373,33 @@ export function usePeerConnection(
 
   // Central Network Data Handler — delegates to the shared session protocol
   const protocolHandlerRef = useRef<(data: any, senderConn: any) => void>(() => {});
+  // 🔥 RESUME: fired by the protocol when a full SYNC_STATE is applied — the
+  // guest session is (re)established. Persist the descriptor and stop reconnecting.
+  const onSessionEstablished = useCallback(() => {
+    if (isHost) return;
+    const hostId = lastHostIdRef.current;
+    const identity = identityRef.current;
+    if (hostId && identity && (reconnectingRef.current || shouldRefreshGuestDescriptor(hostId))) {
+      writeGuestDescriptor('peerjs', hostId, {
+        playerId: getPlayerId(),
+        playerName: identity.name,
+        playerColor: identity.color,
+      });
+    }
+    if (reconnectingRef.current) {
+      logger.log('[P2P][PeerJS] Rejoin complete — session re-established');
+    }
+    reconnectingRef.current = false;
+    guestReconnectStateRef.current = { attempts: 0, timer: null, active: false, startTime: null };
+    setConnectionStatus('connected');
+  }, [isHost]);
   protocolHandlerRef.current = createProtocolHandler({
     localDispatch,
     stateRef,
     isHost,
     getConnections: () => connectionsRef.current,
     ux: sessionUxRef.current,
+    onSessionEstablished,
   });
   const handleNetworkData = useCallback((data: any, senderConn: any) => {
     protocolHandlerRef.current(data, senderConn);
@@ -449,10 +515,23 @@ export function usePeerConnection(
   }, []);
 
   // Connect to Host Logic (Guest Side)
-  const connectToHost = useCallback(async (hostId: string, playerName: string) => {
-    // 🔥 NEW: Reset and start loading progress
-    resetP2PLoading();
-    updateP2PLoadingStep('connect', 'loading', 'Connecting to signaling server...');
+  // 🔥 RESUME: `opts.rejoin` marks a reconnect/auto-rejoin attempt — no alerts
+  // (the reconnect loop reports failure), pack buffering stays disarmed, and
+  // the persisted identity (color) is reused.
+  const connectToHost = useCallback(async (hostId: string, playerName: string, opts?: { rejoin?: boolean }) => {
+    const rejoin = !!opts?.rejoin;
+    lastHostIdRef.current = hostId;
+
+    // 🔥 NEW: Reset and start loading progress. On a rejoin, armRejoin (instead
+    // of a plain reset) keeps SYNC_STATE buffering disabled — nothing would call
+    // onPackLoaded (the join modal never shows) and the rejoin would deadlock.
+    if (rejoin) {
+      armRejoin();
+      updateP2PLoadingStep('connect', 'loading', 'Reconnecting to host...');
+    } else {
+      resetP2PLoading();
+      updateP2PLoadingStep('connect', 'loading', 'Connecting to signaling server...');
+    }
 
     // ============================================================================
     // NO FALLBACK - Use only the selected connection method
@@ -506,8 +585,10 @@ export function usePeerConnection(
     }
 
     // All servers for selected method failed
-    alert(`Failed to connect using ${method.toUpperCase()}. Please check your network settings or try a different connection method.`);
-    setConnectionStatus('disconnected');
+    if (!rejoin) {
+      alert(`Failed to connect using ${method.toUpperCase()}. Please check your network settings or try a different connection method.`);
+    }
+    setConnectionStatus(rejoin ? 'reconnecting' : 'disconnected');
     setWaitingForPlayerName(null);
 
     // ============================================================================
@@ -592,8 +673,10 @@ export function usePeerConnection(
             `• Try a different connection method in settings`;
 
           // Show error message without fallback option
-          alert(errorMsg);
-          setConnectionStatus('disconnected');
+          if (!rejoin) {
+            alert(errorMsg);
+          }
+          setConnectionStatus(rejoin ? 'reconnecting' : 'disconnected');
           setWaitingForPlayerName(null);
         }
       }, CONNECTION_TIMEOUT);
@@ -619,15 +702,25 @@ export function usePeerConnection(
         const playerName = pendingPlayerNameRef.current;
         if (playerName) {
           const persistentPlayerId = getPlayerId();
+          // 🔥 RESUME: color is generated once per browser session and reused on
+          // every HELO so a rejoining guest keeps the same color.
+          const playerColor = pendingPlayerColorRef.current
+            || '#' + Math.floor(Math.random() * 16777215).toString(16);
+          pendingPlayerColorRef.current = playerColor;
+          identityRef.current = { name: playerName, color: playerColor };
+          rememberGuestIdentity(playerName, playerColor);
           const myPlayer: Player = {
             id: persistentPlayerId,
             name: playerName,
-            color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+            color: playerColor,
             isGM: false
           };
 
-          // Add ourselves locally
-          localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
+          // Add ourselves locally (host dedupes on its side via the player id).
+          // On a rejoin the player may still be in local state — don't duplicate.
+          if (!stateRef.current?.players?.some((p: Player) => p.id === myPlayer.id)) {
+            localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
+          }
           localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
 
           // Send HELO to host
@@ -642,6 +735,11 @@ export function usePeerConnection(
       conn.on('data', (data: any) => {
         if (data.type === 'CONNECTION_LOCKED') {
           logger.warn('[P2P][PeerJS] Host has locked new connections');
+          // 🔥 RESUME: stop the reconnect loop — the host refused us on purpose.
+          reconnectingRef.current = false;
+          const st = guestReconnectStateRef.current;
+          if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+          st.active = false;
           updateP2PLoadingStep('handshake', 'error', 'The host has locked new connections');
           alert("The host has locked new connections. Please contact the host to join.");
           setConnectionStatus('disconnected');
@@ -651,36 +749,40 @@ export function usePeerConnection(
         handleNetworkData(data, conn);
       });
 
-      conn.on('close', () => {
+      // 🔥 RESUME: transport loss ≠ session loss. Close/error now destroys the
+      // dead peer and starts the reconnect loop instead of killing the session.
+      const handleHostConnectionLost = (reason: string) => {
         if (connectionTimeoutId) {
           clearTimeout(connectionTimeoutId);
         }
         connectionCompleted = true;
 
-        logger.warn('[P2P][PeerJS] Host connection closed');
-        isIntentionalDisconnectRef.current = true;
+        logger.warn(`[P2P][PeerJS] Host connection lost (${reason})`);
         if (peer && !peer.destroyed) {
           peer.destroy();
         }
-        alert("Connection to Host lost");
-        setConnectionStatus('disconnected');
-        setWaitingForPlayerName(null);
+        // Null the dead peer out of the singleton so a reconnect attempt
+        // doesn't trip over it (HMR singleton persists across remounts).
+        if (p2pSingleton.peer === peer) {
+          p2pSingleton.peer = null;
+          p2pSingleton.hostConnection = null;
+          p2pSingleton.isInitialized = false;
+        }
+        if (sessionIntentionallyLeftRef.current) {
+          // Page unload / explicit teardown — do not schedule reconnects.
+          setConnectionStatus('disconnected');
+          return;
+        }
+        startGuestReconnectRef.current?.();
+      };
+
+      conn.on('close', () => {
+        handleHostConnectionLost('closed');
       });
 
       conn.on('error', (err) => {
-        if (connectionTimeoutId) {
-          clearTimeout(connectionTimeoutId);
-        }
-        connectionCompleted = true;
-
         logger.error('[P2P][PeerJS] Connection error to host:', err);
-        isIntentionalDisconnectRef.current = true;
-        if (peer && !peer.destroyed) {
-          peer.destroy();
-        }
-        alert("Failed to connect to host");
-        setConnectionStatus('disconnected');
-        setWaitingForPlayerName(null);
+        handleHostConnectionLost('error');
       });
 
       const originalEmit = conn.emit;
@@ -729,7 +831,7 @@ export function usePeerConnection(
         }
       });
     }
-  }, [localDispatch, handleNetworkData, setConnectionStatus, setWaitingForPlayerName, updateP2PLoadingStep, resetP2PLoading]);
+  }, [localDispatch, handleNetworkData, setConnectionStatus, setWaitingForPlayerName, updateP2PLoadingStep, resetP2PLoading, armRejoin, stateRef]);
 
   // Handler for when player submits their name via modal (joining a game)
   const setPlayerName = useCallback((name: string) => {
@@ -745,10 +847,17 @@ export function usePeerConnection(
     const hostConn = hostConnectionRef.current;
     if (hostConn && hostConn.open) {
       const persistentPlayerId = getPlayerId();
+      // 🔥 RESUME: reuse the session identity color if we already picked one
+      const playerColor = pendingPlayerColorRef.current
+        || '#' + Math.floor(Math.random() * 16777215).toString(16);
+      pendingPlayerColorRef.current = playerColor;
+      identityRef.current = { name: finalName, color: playerColor };
+      // 🔥 RESUME: remember for the next join's name prefill
+      rememberGuestIdentity(finalName, playerColor);
       const myPlayer: Player = {
         id: persistentPlayerId,
         name: finalName,
-        color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+        color: playerColor,
         isGM: false
       };
 
@@ -766,8 +875,96 @@ export function usePeerConnection(
     }
   }, [waitingForPlayerName, connectToHost, suggestedPlayerName, localDispatch, updateP2PLoadingStep]);
 
+  // ============================================================================
+  // 🔥 RESUME: GUEST RECONNECT LOOP — re-attach to the same host after a
+  // transport loss (network blip, host refresh). Each attempt reuses the
+  // persisted identity (nexus-player-id + name/color) and re-runs the normal
+  // handshake; the host's HELO dedupe keeps a single Player entry.
+  // ============================================================================
+
+  const GUEST_RECONNECT_INTERVAL_MS = 5000;
+  const GUEST_RECONNECT_MAX_ATTEMPTS = 12;
+  const GUEST_RECONNECT_MAX_MS = 3 * 60 * 1000; // 3-minute total budget
+
+  const startGuestReconnect = useCallback(() => {
+    if (reconnectingRef.current) return;
+    const hostId = lastHostIdRef.current;
+    const identity = identityRef.current;
+    if (!hostId || !identity) {
+      // Never fully joined — nothing to resume.
+      setConnectionStatus('disconnected');
+      return;
+    }
+
+    reconnectingRef.current = true;
+    guestReconnectStateRef.current = { attempts: 0, timer: null, active: true, startTime: null };
+    setConnectionStatus('reconnecting');
+    logger.log('[P2P][PeerJS] Guest reconnect loop started for host', hostId);
+
+    const attempt = async () => {
+      const st = guestReconnectStateRef.current;
+      if (!reconnectingRef.current) return; // re-established or stopped elsewhere
+
+      st.attempts++;
+      const elapsed = Date.now() - (st.startTime ?? (st.startTime = Date.now()));
+      if (st.attempts > GUEST_RECONNECT_MAX_ATTEMPTS || elapsed > GUEST_RECONNECT_MAX_MS) {
+        logger.error('[P2P][PeerJS] Guest reconnect gave up — host unreachable');
+        reconnectingRef.current = false;
+        st.active = false;
+        st.timer = null;
+        setConnectionStatus('disconnected');
+        onReconnectFailedRef.current?.();
+        return;
+      }
+
+      logger.log(`[P2P][PeerJS] Reconnect attempt ${st.attempts}/${GUEST_RECONNECT_MAX_ATTEMPTS}`);
+      pendingPlayerNameRef.current = identity.name;
+      pendingPlayerColorRef.current = identity.color;
+      try {
+        // Tear down any lingering peer from the previous attempt — its setup
+        // timers may still be running while this attempt dials afresh.
+        const oldPeer = peerRef.current;
+        if (oldPeer && !oldPeer.destroyed) {
+          try { oldPeer.destroy(); } catch { /* ignore */ }
+        }
+        if (p2pSingleton.peer === oldPeer) {
+          p2pSingleton.peer = null;
+          p2pSingleton.hostConnection = null;
+          p2pSingleton.isInitialized = false;
+        }
+        peerRef.current = null;
+        hostConnectionRef.current = null;
+        await connectToHost(hostId, identity.name, { rejoin: true });
+      } catch (e) {
+        logger.error('[P2P][PeerJS] Reconnect attempt threw:', e);
+      }
+
+      // onSessionEstablished (SYNC_STATE applied) flips reconnectingRef to
+      // false and restores 'connected' — only schedule the next attempt if
+      // we're still reconnecting.
+      if (reconnectingRef.current) {
+        st.timer = setTimeout(attempt, GUEST_RECONNECT_INTERVAL_MS);
+      }
+    };
+
+    attempt();
+  }, [connectToHost]);
+  startGuestReconnectRef.current = startGuestReconnect;
+
+  /** Manual retry after the reconnect loop gave up (banner button). */
+  const retryGuestConnection = useCallback(() => {
+    guestReconnectStateRef.current = { attempts: 0, timer: null, active: false, startTime: null };
+    reconnectingRef.current = false;
+    startGuestReconnect();
+  }, [startGuestReconnect]);
+
   // Initialize host peer on demand (when user clicks Invite button)
-  const initializeHost = useCallback(async () => {
+  // 🔥 RESUME: the host peer id persists (nexus-host-peer-id), so after a page
+  // refresh the host re-creates the SAME identity — old invite links keep
+  // working and guests can reconnect.
+  // (explicit return type: the unavailable-id retry references initializeHost
+  // recursively)
+  const initializeHost: () => Promise<void> = useCallback(async () => {
     // 🔥 SINGLETON: Restore from singleton if available (HMR remount)
     if (p2pSingleton.peer && !p2pSingleton.peer.destroyed) {
       peerRef.current = p2pSingleton.peer;
@@ -776,9 +973,10 @@ export function usePeerConnection(
       // Restore refs
       (window as any).__nexusPeer = peerRef.current;
 
-      // Update state
+      // Update state + descriptor (identity must survive a reload from here too)
       setPeerId(p2pSingleton.peer.id);
       setConnectionStatus('connected');
+      writeHostDescriptor('peerjs', p2pSingleton.peer.id);
 
       return;
     }
@@ -802,7 +1000,15 @@ export function usePeerConnection(
       return;
     }
 
-    const peer = new Peer(PEERJS_CONFIG);
+    // 🔥 RESUME: reuse the persisted host id so invite links survive reloads.
+    // On 'unavailable-id' (e.g. the previous tab's registration hasn't expired
+    // yet) retry the same id twice, then regenerate as a last resort.
+    const requestedId = getHostInviteId('peerjs') ?? regenerateHostPeerId();
+    let idRetryCount = 0;
+    const createPeer = (id: string | null): Peer =>
+      id ? new Peer(id, PEERJS_CONFIG) : new Peer(PEERJS_CONFIG);
+
+    const peer = createPeer(requestedId);
     peerRef.current = peer;
     // Store for diagnostic access
     (window as any).__nexusPeer = peer;
@@ -819,6 +1025,7 @@ export function usePeerConnection(
 
       setPeerId(id);
       setConnectionStatus('connected');
+      writeHostDescriptor('peerjs', id);
       syncSingleton(); // Sync to singleton after peer is open
     });
 
@@ -959,6 +1166,34 @@ export function usePeerConnection(
     peer.on('error', (err) => {
       logger.error('[P2P][PeerJS] Peer error:', err);
 
+      // 🔥 RESUME: the persisted host id is still registered on the signaling
+      // server (previous tab's registration not expired yet — normal right
+      // after a refresh). Retry the SAME id; after two failed retries assume
+      // the id is genuinely taken and regenerate.
+      if (err?.type === 'unavailable-id') {
+        idRetryCount++;
+        const retrySameId = idRetryCount <= 2;
+        const delay = idRetryCount === 1 ? 2000 : 5000;
+        logger.warn(`[P2P][PeerJS] Host id unavailable — ${retrySameId ? `retrying same id in ${delay}ms` : 'regenerating id'} (attempt ${idRetryCount})`);
+        if (!retrySameId) {
+          regenerateHostPeerId();
+        }
+        // Tear down the errored peer so the recursive initializeHost creates
+        // a fresh one with the (possibly regenerated) id.
+        if (peerRef.current === peer) {
+          peerRef.current = null;
+        }
+        if (p2pSingleton.peer === peer) {
+          p2pSingleton.peer = null;
+          p2pSingleton.isInitialized = false;
+        }
+        if (peer && !peer.destroyed) {
+          peer.destroy();
+        }
+        setTimeout(() => { initializeHost(); }, delay);
+        return;
+      }
+
       // 🔥 FIX: Handle all network-related errors, not just 'network' type
       // PeerJS emits various error types for connection issues:
       // - 'network': General network error
@@ -1087,6 +1322,12 @@ export function usePeerConnection(
   useEffect(() => {
     const cleanupPeer = () => {
       isIntentionalDisconnectRef.current = true;
+      // 🔥 RESUME: page unload / explicit teardown — never schedule reconnects
+      sessionIntentionallyLeftRef.current = true;
+      reconnectingRef.current = false;
+      const st = guestReconnectStateRef.current;
+      if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+      st.active = false;
 
       // Clear signalling disconnect timer
       if (signallingTimeoutRef.current) {
@@ -1183,6 +1424,15 @@ export function usePeerConnection(
     }
   }, [updateP2PLoadingStep, flushBufferedSyncState]);
 
+  // 🔥 RESUME: silent auto-rejoin entry point (no name modal). Reuses the
+  // persisted identity and dials the host directly.
+  const resumeGuest = useCallback((inviteId: string, identity: { name: string; color: string }) => {
+    identityRef.current = identity;
+    pendingPlayerNameRef.current = identity.name;
+    pendingPlayerColorRef.current = identity.color;
+    connectToHost(inviteId, identity.name, { rejoin: true });
+  }, [connectToHost]);
+
   return {
     peerId,
     isHost,
@@ -1202,6 +1452,10 @@ export function usePeerConnection(
     onJoinWithoutPacks,
     // 🔥 NEW: Suggested player name for guests
     suggestedPlayerName,
+    // 🔥 RESUME: reconnection surface
+    resumeGuest,
+    retryGuestConnection,
+    onReconnectFailedRef,
   };
 }
 

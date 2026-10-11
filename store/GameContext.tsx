@@ -13,6 +13,16 @@ import { Action } from './gameActions';
 import { createAuditLogEntry } from './auditLogger';
 import { useAutoSave } from './useAutoSave';
 import { useGameSession, resetAllTransports } from './session';
+import { useSessionResume } from './session/useSessionResume';
+import {
+  readSessionDescriptor,
+  isDescriptorFresh,
+  clearSessionDescriptor,
+  readTabSession,
+  isTabSessionFresh,
+  readRememberedIdentity,
+} from './session/sessionResume';
+import { SessionResumeBanner } from '../components/SessionResumeBanner';
 import { getConnectionSettings, ConnectionMethod } from '../utils/localSettings';
 import { isInCursorSlot, getOriginalPosition, removeFromCursorSlot } from '../utils/cursorSlotTracker';
 import { registerRemoteMovement } from '../utils/remoteMovementAnimator';
@@ -51,7 +61,7 @@ const GameContext = createContext<{
   dispatch: React.Dispatch<Action>;
   isHost: boolean;
   peerId: string | null;
-  connectionStatus: 'disconnected' | 'connecting' | 'connected';
+  connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
   waitingForPlayerName: { hostId: string } | null;
   setPlayerName: (name: string) => void;
   initializeHost: () => void;
@@ -6545,6 +6555,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         logger.warn('[GAME] Failed to disconnect transports:', e);
       }
 
+      // 🔥 RESUME: wipe the session descriptor — the next load must NOT
+      // auto-resume a wiped session.
+      clearSessionDescriptor();
+
       // Disconnect from Trystero connection (clear localStorage data)
       try {
         localStorage.removeItem('trystero-peer-id');
@@ -6962,6 +6976,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isLoadingSavedStateRef = useRef(false); // Track if async load is in progress (prevents race condition)
   // Manual P2P connection (PeerJS-compatible adapter for direct connection without PeerJS)
   const manualConnectionRef = useRef<any>(null);
+  // 🔥 RESUME: set when the guest gives up reconnecting and loads its local
+  // backup as an offline game — all subsequent actions apply locally only.
+  const offlineModeRef = useRef(false);
+  const [backupRestoreInProgress, setBackupRestoreInProgress] = useState(false);
+  // 🔥 RESUME: user dismissed the reconnect banner — this session is abandoned
+  const [resumeDismissed, setResumeDismissed] = useState(false);
   // Track which connection we've set up handlers for to prevent duplicates
   const manualConnectionSetupRef = useRef<string | null>(null);
   // Fix for image sync issue: Track image cache and pending state for manual P2P
@@ -7004,6 +7024,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Connection management - uses connection method from settings
   // Get connection method from settings, but auto-detect from URL params
+  // 🔥 RESUME: a fresh session descriptor wins over stale settings (but URL
+  // params still win over everything) — otherwise a reload would resolve to
+  // the settings' method and never resume the session.
+  const resumeActiveRef = useRef(false);
   const [connectionMethod, setConnectionMethodState] = useState<ConnectionMethod>(() => {
     const settings = getConnectionSettings();
     const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
@@ -7013,12 +7037,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (urlParams?.has('roomId')) return 'trystero';
     if (urlParams?.has('hostId')) return 'peerjs';
 
+    // 🔥 RESUME: THIS TAB's own record first (sessionStorage), then the shared
+    // descriptor — a host tab must not adopt a guest tab's method.
+    const tab = readTabSession();
+    if (tab && isTabSessionFresh(tab)) return tab.method;
+
+    const d = readSessionDescriptor();
+    if (d && isDescriptorFresh(d) && (d.method === 'peerjs' || d.method === 'trystero')) {
+      return d.method;
+    }
+
     return settings.connectionMethod || 'peerjs';
   });
 
   // Listen for settings changes
   useEffect(() => {
     const checkSettings = () => {
+      // 🔥 RESUME: a settings/storage change must not clobber the method
+      // mid-resume (transports already initialized with the descriptor's method)
+      if (resumeActiveRef.current) return;
       const settings = getConnectionSettings();
       const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
 
@@ -7027,7 +7064,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (urlParams?.has('ticket')) method = 'iroh';
       else if (urlParams?.has('roomId')) method = 'trystero';
       else if (urlParams?.has('hostId')) method = 'peerjs';
-      else method = settings.connectionMethod || 'peerjs';
+      else {
+        const tab = readTabSession();
+        if (tab && isTabSessionFresh(tab)) {
+          method = tab.method;
+        } else {
+          const d = readSessionDescriptor();
+          if (d && isDescriptorFresh(d) && (d.method === 'peerjs' || d.method === 'trystero')) {
+            method = d.method;
+          } else {
+            method = settings.connectionMethod || 'peerjs';
+          }
+        }
+      }
 
       setConnectionMethodState(method);
     };
@@ -7056,6 +7105,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // The ONE session hook: transports bring players in, one shared protocol
   // handles all gameplay sync (store/session/).
   const session = useGameSession(localDispatch, stateRef, connectionMethod);
+  // 🔥 RESUME: auto-resume orchestration (recreates host identity / re-attaches
+  // guest on page load). Must render before the init effect below so a
+  // resuming host/guest is classified before any state load decisions.
+  const resumeState = useSessionResume(session, connectionMethod);
+  resumeActiveRef.current = resumeState.phase === 'resuming';
   const {
     peerId,
     isHost,
@@ -7074,6 +7128,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     nodeId,
     ticket,
     roomId: sessionRoomId,
+    retryGuestConnection,
   } = session;
 
   // 🔥 NEW: Guest connection modal state
@@ -7136,8 +7191,46 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsModalClosed(true); // 🔥 FIX: This triggers re-render and updates guestConnectionModalOpen
   };
 
-  // Auto-save game state to localStorage
-  const { saveNow } = useAutoSave(state, initializedRef.current);
+  // 🔥 RESUME: worst-case host recovery — load the guest's own autosave
+  // (saved every 60s for guests too) as an OFFLINE game. No host takeover:
+  // the game just becomes locally playable again.
+  const loadGuestBackup = useCallback(async () => {
+    if (backupRestoreInProgress) return;
+    setBackupRestoreInProgress(true);
+    try {
+      await initAssetDB();
+      await autoMigrate();
+
+      const { state: savedState, localFiles } = await loadGameStateWithLocalFiles(true); // guest-scoped keys
+      if (!savedState || !savedState.objects || Object.keys(savedState.objects).length === 0) {
+        logger.warn('[RESUME] No local backup available to restore');
+        setBackupRestoreInProgress(false);
+        return;
+      }
+
+      if (localFiles.length > 0) {
+        // Route through the existing local-file restore dialog (same as host)
+        setPendingSavedState(savedState);
+        setPendingLocalFiles(localFiles);
+      } else {
+        loadSavedStateIntoGame(savedState);
+      }
+
+      // From now on every action applies locally (dispatch middleware)
+      offlineModeRef.current = true;
+      // The session is gone — don't try to resume it on the next reload
+      clearSessionDescriptor();
+      logger.log('[RESUME] Local backup restored — offline mode active');
+    } catch (e) {
+      logger.error('[RESUME] Failed to load local backup:', e);
+    } finally {
+      setBackupRestoreInProgress(false);
+    }
+  }, [backupRestoreInProgress]);
+
+  // Auto-save game state to localStorage (role-scoped keys — a host tab and a
+  // guest tab in the same browser must not overwrite each other's autosave)
+  const { saveNow } = useAutoSave(state, initializedRef.current, isHost ? 'host' : 'guest');
 
   // Store saveNow function in ref for access in reducer
   const saveNowRef = useRef(saveNow);
@@ -7617,6 +7710,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // State broadcast handled by useEffect to ensure updated state is sent
       } else {
           // Guest sends action to Host
+          // 🔥 RESUME: offline mode (guest loaded its local backup after host
+          // loss) — there is no host to forward to; apply everything locally,
+          // otherwise the restored game would be a dead UI.
+          if (offlineModeRef.current) {
+              localDispatch(action);
+              return;
+          }
           // Filter out local-only actions that should not be sent to host
           const localOnlyActions = [
               'UPDATE_VIEW_TRANSFORM',  // View transform is screen-specific
@@ -8340,7 +8440,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {/* 🔥 NEW: Unified Guest Connection Modal */}
       <GuestConnectionModal
         isOpen={guestConnectionModalOpen}
-        initialPlayerName={suggestedPlayerName || ''}
+        initialPlayerName={readRememberedIdentity()?.playerName || suggestedPlayerName || ''}
         onPlayerNameSubmit={setPlayerName}
         requiredPacks={requiredPacks}
         onPackLoaded={handlePackLoaded}
@@ -8351,6 +8451,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         canJoin={guestReadyToJoin}
         onJoin={handleJoinGame}
       />
+      {/* 🔥 RESUME: reconnection banner (silent rejoin status + host-unreachable recovery) */}
+      {!isHost && !offlineModeRef.current && !resumeDismissed && (
+        <SessionResumeBanner
+          phase={resumeState.phase}
+          connectionStatus={connectionStatus}
+          language={state.language}
+          backupInProgress={backupRestoreInProgress}
+          onRetry={() => retryGuestConnection()}
+          onLoadBackup={loadGuestBackup}
+          onDismiss={() => {
+            // User gave up on this session — don't auto-resume it next load
+            clearSessionDescriptor();
+            setResumeDismissed(true);
+          }}
+        />
+      )}
       {pendingLocalFiles && pendingSavedState && (
         <LocalFileRestoreDialog
           localFiles={pendingLocalFiles}

@@ -44,6 +44,12 @@ export interface ProtocolDeps {
   /** Live guest connections (for DIRECT_SYNC host relay) */
   getConnections: () => any[];
   ux: SessionUx;
+  /**
+   * Guest-side callback fired when a full SYNC_STATE has been applied — the
+   * session is (re)established. Transports use it to persist the guest resume
+   * descriptor and reset their reconnect counters.
+   */
+  onSessionEstablished?: () => void;
 }
 
 // ============================================================================
@@ -114,14 +120,18 @@ export function sendAcceptPush(
 
 /** Host-side cleanup when a guest connection drops. */
 export function notifyGuestDisconnected(
-  localDispatch: React.Dispatch<Action>,
+  _localDispatch: React.Dispatch<Action>,
   connectionsRef: { current: any[] },
   conn: any
 ): void {
   if (connectionsRef.current) {
     connectionsRef.current = connectionsRef.current.filter(c => c !== conn);
   }
-  localDispatch({ type: 'REMOVE_PLAYER', payload: { id: conn.peer } });
+  // NOTE: deliberately NO REMOVE_PLAYER here. Disconnect ≠ kick — the Player
+  // entry persists so a returning guest (same nexus-player-id) re-attaches and
+  // keeps its hand, permissions and settings. Explicit kicks go through
+  // REMOVE_PLAYER (PlayerContext), which uses the real Player.id.
+  logger.log('[P2P][Session] Guest connection dropped — player entry kept for rejoin');
 }
 
 // ============================================================================
@@ -129,7 +139,7 @@ export function notifyGuestDisconnected(
 // ============================================================================
 
 export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderConn: SenderConn) => void {
-  const { localDispatch, stateRef, isHost, getConnections, ux } = deps;
+  const { localDispatch, stateRef, isHost, getConnections, ux, onSessionEstablished } = deps;
   const {
     setSuggestedPlayerName,
     setRequiredPacks,
@@ -285,6 +295,10 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
       // Images will be loaded from packs by the guest
       updateStep('state', 'success', 'Game synchronized!');
 
+      // Session (re)established — transports persist the resume descriptor
+      // and reset their reconnect counters here.
+      if (onSessionEstablished) onSessionEstablished();
+
       // Check if game likely needs asset packs but host didn't register any
       if (receivedEmptyPacksRef.current && payload.usedPacks && Object.keys(payload.usedPacks).length === 0) {
         // Check if any objects have image content (sha256: hashes or URLs)
@@ -369,11 +383,17 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
       logger.log('[P2P][Session] HELO received — replying PACKS_NEEDED');
       senderConn.send(buildPacksNeeded(stateRef.current));
 
-      // Retry HELOs from an already-known player: skip the duplicate ADD_PLAYER
-      // (avoids re-render churn) but still re-send the full state below.
-      const knownPlayer = stateRef.current?.players?.some((p: Player) => p.id === newPlayer.id);
+      // Retry HELOs from an already-known player (rejoin): skip the duplicate
+      // ADD_PLAYER but update name/color if they changed, then re-send the
+      // full state below — the rejoining guest gets a fresh sync.
+      const knownPlayer = stateRef.current?.players?.find((p: Player) => p.id === newPlayer.id);
       if (!knownPlayer) {
         localDispatch({ type: 'ADD_PLAYER', payload: newPlayer });
+      } else if (knownPlayer.name !== newPlayer.name || knownPlayer.color !== newPlayer.color) {
+        localDispatch({
+          type: 'UPDATE_PLAYER',
+          payload: { id: newPlayer.id, name: newPlayer.name, color: newPlayer.color }
+        });
       }
 
       // Wait for state to update before sending SYNC_STATE

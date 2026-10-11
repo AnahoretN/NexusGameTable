@@ -26,12 +26,24 @@ import {
 } from './session/protocol';
 import { registerP2PConnections } from '../utils/directP2PSync';
 import { differentialSyncManager } from '../utils/webrtcOptimization';
+import {
+  getHostInviteId,
+  persistHostRoomId,
+  writeHostDescriptor,
+  writeGuestDescriptor,
+  readSessionDescriptor,
+  isDescriptorFresh,
+  shouldRefreshGuestDescriptor,
+  readTabSession,
+  isTabSessionFresh,
+  rememberGuestIdentity,
+} from './session/sessionResume';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
 export interface WaitingForPlayerName {
   roomId: string;
@@ -62,6 +74,11 @@ export interface UseTrysteroConnectionReturn {
   onJoinWithoutPacks: () => void;
   suggestedPlayerName: string;
   roomId: string | null; // Expose room ID for invite links
+  // 🔥 RESUME: silent rejoin + reconnect retry (guest side)
+  resumeGuest: (inviteId: string, identity: { name: string; color: string }) => void;
+  retryGuestConnection: () => void;
+  /** Ref-based hook: invoked once when the reconnect loop gives up (UI shows backup restore). */
+  onReconnectFailedRef: React.MutableRefObject<(() => void) | null>;
 }
 
 // Trystero room type
@@ -185,7 +202,18 @@ export function useTrysteroConnection(
   const [isHost, _setIsHost] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     const params = new URLSearchParams(window.location.search);
-    return !params.has('roomId');
+    if (params.has('roomId')) return false;
+    // 🔥 RESUME: THIS TAB's own record (sessionStorage) is the primary role
+    // source — the shared localStorage descriptor may belong to another tab.
+    const tab = readTabSession();
+    if (tab && isTabSessionFresh(tab) && tab.method === 'trystero') {
+      return tab.role === 'host';
+    }
+    // Session resume fallback: a fresh guest descriptor (no URL invite) means
+    // we are a returning guest, not a host.
+    const d = readSessionDescriptor();
+    if (d && isDescriptorFresh(d) && d.role === 'guest' && d.method === 'trystero') return false;
+    return true;
   });
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [waitingForPlayerName, setWaitingForName] = useState<WaitingForPlayerName | null>(null);
@@ -203,6 +231,7 @@ export function useTrysteroConnection(
     updateStep: updateP2PLoadingStep,
     armHandshakeWatchdog,
     reset: resetP2PLoading,
+    armRejoin,
     packBuffer: {
       loadedPacksRef,
       expectedPacksCountRef,
@@ -220,6 +249,25 @@ export function useTrysteroConnection(
 
   // Pending player name
   const pendingPlayerNameRef = useRef<string | null>(null);
+
+  // 🔥 RESUME: guest identity for this browser session — the color is generated
+  // ONCE (not per HELO) so a rejoining guest keeps the same color.
+  const identityRef = useRef<{ name: string; color: string } | null>(null);
+  // 🔥 RESUME: which room peer is the host (guest side, learned from traffic)
+  const hostPeerIdRef = useRef<string | null>(null);
+  const lastHostPingRef = useRef(0);
+  const hostPingWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hostPingBroadcasterRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 🔥 RESUME: reconnect loop state (guest side)
+  const reconnectStateRef = useRef({ attempts: 0, timer: null as ReturnType<typeof setTimeout> | null, active: false, startTime: null as number | null });
+  const reconnectingRef = useRef(false);
+  // Mirror of the roomId state for use inside stable callbacks
+  const roomIdStateRef = useRef<string | null>(null);
+  // Indirection so room callbacks can trigger the reconnect loop (defined
+  // after connectToHost) without declaration-order hazards.
+  const startGuestReconnectRef = useRef<(() => void) | null>(null);
+  // 🔥 RESUME: hook for reconnect to report terminal failure to the UI
+  const onReconnectFailedRef = useRef<(() => void) | null>(null);
 
   // Whether the guest has received at least one state sync from the host
   const receivedSyncRef = useRef(false);
@@ -255,23 +303,58 @@ export function useTrysteroConnection(
 
   // Room ID for Trystero
   const [roomId, setRoomId] = useState<string | null>(null);
+  roomIdStateRef.current = roomId;
 
   // ============================================================================
   // NETWORK DATA HANDLER — delegates to the shared session protocol
   // ============================================================================
 
   const protocolHandlerRef = useRef<(data: any, senderConn: any) => void>(() => {});
+  // 🔥 RESUME: fired by the protocol when a full SYNC_STATE is applied — the
+  // guest session is (re)established. Persist the descriptor, stop reconnecting.
+  const onSessionEstablished = useCallback(() => {
+    if (isHost) return;
+    const roomId = roomIdStateRef.current;
+    const identity = identityRef.current;
+    if (roomId && identity && (reconnectingRef.current || shouldRefreshGuestDescriptor(roomId))) {
+      writeGuestDescriptor('trystero', roomId, {
+        playerId: getPlayerId(),
+        playerName: identity.name,
+        playerColor: identity.color,
+      });
+    }
+    if (reconnectingRef.current) {
+      logger.log('[P2P][Trystero] Rejoin complete — session re-established');
+    }
+    reconnectingRef.current = false;
+    reconnectStateRef.current = { attempts: 0, timer: null, active: false, startTime: null };
+    setConnectionStatus('connected');
+  }, [isHost]);
   protocolHandlerRef.current = createProtocolHandler({
     localDispatch,
     stateRef,
     isHost,
     getConnections: () => connectionsRef.current,
     ux: sessionUxRef.current,
+    onSessionEstablished,
   });
 
   const handleNetworkData = useCallback((data: any, peerId: string) => {
     if (data?.type === 'SYNC_STATE') {
       receivedSyncRef.current = true;
+    }
+    // 🔥 RESUME: liveness tracking (guest side). The host broadcasts HOST_PING
+    // every 10s; any game-protocol traffic from a peer also proves it is alive.
+    // HOST_PING is intercepted here — it must not reach the protocol dispatcher
+    // (it would spam the RECV log every 10 seconds).
+    if (!isHost && peerId && (
+      data?.type === 'HOST_PING' ||
+      data?.type === 'SYNC_STATE' ||
+      data?.type === 'PACKS_NEEDED'
+    )) {
+      hostPeerIdRef.current = peerId;
+      lastHostPingRef.current = Date.now();
+      if (data?.type === 'HOST_PING') return;
     }
     // A locked host keeps rejecting this guest. Remember it so the HELO retry
     // loop stops (each retry pops another blocking alert) and surface the
@@ -279,6 +362,11 @@ export function useTrysteroConnection(
     // (setConnectionStatus('disconnected') + modal cleanup).
     if (data?.type === 'CONNECTION_LOCKED' && !isHost) {
       connectionLockedRef.current = true;
+      // 🔥 RESUME: stop the reconnect loop — the host refused us on purpose.
+      reconnectingRef.current = false;
+      const rst = reconnectStateRef.current;
+      if (rst.timer) { clearTimeout(rst.timer); rst.timer = null; }
+      rst.active = false;
       setConnectionStatus('disconnected');
       updateP2PLoadingStep('handshake', 'error', 'The host has locked new connections');
     }
@@ -329,8 +417,15 @@ export function useTrysteroConnection(
     setConnectionStatus('connecting');
     liveConnections.length = 0; // fresh list for the new room
 
-    // Generate a random room ID
-    const newRoomId = `nexus-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // 🔥 RESUME: reuse the persisted room id so the invite link (?roomId=)
+    // keeps working after a host refresh and guests can re-attach. Trystero
+    // rooms are implicit — rejoining a stale id always succeeds. The id lives
+    // in a dedicated key (not the shared descriptor): a guest tab in the same
+    // browser overwrites the descriptor, the host must keep its own room id.
+    const newRoomId = getHostInviteId('trystero')
+      ?? `nexus-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    persistHostRoomId(newRoomId);
+    writeHostDescriptor('trystero', newRoomId);
     setRoomId(newRoomId);
 
     const config = {
@@ -422,17 +517,40 @@ export function useTrysteroConnection(
 
     setConnectionStatus('connected');
     updateP2PLoadingStep('connect', 'success', 'Room created: ' + newRoomId.slice(0, 20) + '...');
+
+    // 🔥 RESUME: HOST_PING heartbeat — a room-only transport gives the guest no
+    // close event when the host tab dies, so guests detect host loss via this
+    // ping going silent (watchdog on the guest side, see startGuestReconnect).
+    if (hostPingBroadcasterRef.current) clearInterval(hostPingBroadcasterRef.current);
+    hostPingBroadcasterRef.current = setInterval(() => {
+      if (roomRef.current && sendRef.current) {
+        try {
+          sendRef.current({ type: 'HOST_PING' });
+        } catch (e) {
+          logger.warn('[P2P][Trystero] HOST_PING send failed:', e);
+        }
+      }
+    }, 10000);
   }, [updateP2PLoadingStep, handleNetworkData, localDispatch, stateRef, reconcile]);
 
   // ============================================================================
   // CONNECT TO HOST (GUEST)
   // ============================================================================
 
-  const connectToHost = useCallback(async (roomIdToJoin: string, playerName: string) => {
-    logger.log('[P2P][Trystero] init guest — joining room:', roomIdToJoin);
+  const connectToHost = useCallback(async (roomIdToJoin: string, playerName: string, opts?: { rejoin?: boolean }) => {
+    const rejoin = !!opts?.rejoin;
+    logger.log('[P2P][Trystero] init guest — joining room:', roomIdToJoin, rejoin ? '(rejoin)' : '');
 
-    resetP2PLoading();
-    updateP2PLoadingStep('connect', 'loading', 'Joining room...');
+    // 🔥 RESUME: on a rejoin, armRejoin (instead of a plain reset) keeps
+    // SYNC_STATE buffering disabled — nothing would call onPackLoaded (the join
+    // modal never shows) and the rejoin would deadlock.
+    if (rejoin) {
+      armRejoin();
+      updateP2PLoadingStep('connect', 'loading', 'Reconnecting to host room...');
+    } else {
+      resetP2PLoading();
+      updateP2PLoadingStep('connect', 'loading', 'Joining room...');
+    }
     setConnectionStatus('connecting');
 
     const config = {
@@ -491,17 +609,24 @@ export function useTrysteroConnection(
       // Wait until a peer actually joins the room. Tracker discovery can take
       // a while (slow/remote wss trackers) — a HELO sent into an empty room is
       // simply lost, leaving the guest with no game state.
+      // 🔥 RESUME: a rejoin attempt waits only 15s per attempt — when the host
+      // is really there, discovery is fast; when it's gone, the reconnect loop
+      // cycles instead of hanging 80s per attempt.
       updateP2PLoadingStep('connect', 'loading', 'Waiting for peers via trackers...');
       const discoveryStart = Date.now();
       // Keep the user informed — a slow tracker can take well over 20s
-      const slowTrackerTimer = setTimeout(() => {
+      const slowTrackerTimer = rejoin ? null : setTimeout(() => {
         updateP2PLoadingStep('connect', 'loading',
           'Still looking for the host via trackers (this can take up to 80 seconds)...');
       }, 15000);
-      const found = await waitForPeer(room, 80000);
-      clearTimeout(slowTrackerTimer);
+      const found = await waitForPeer(room, rejoin ? 15000 : 80000);
+      if (slowTrackerTimer) clearTimeout(slowTrackerTimer);
       if (!found) {
-        logger.error('[P2P][Trystero] No peers discovered within 80s — aborting join');
+        logger.error(`[P2P][Trystero] No peers discovered within ${rejoin ? 15 : 80}s${rejoin ? ' — reconnect attempt failed' : ' — aborting join'}`);
+        if (rejoin) {
+          setConnectionStatus('reconnecting');
+          return; // the reconnect loop schedules the next attempt
+        }
         setConnectionStatus('disconnected');
         updateP2PLoadingStep('connect', 'error',
           'Could not find the host via trackers. Make sure the host window is open and the game is hosted, then press "Retry connection".');
@@ -521,17 +646,55 @@ export function useTrysteroConnection(
         handleNetworkData(data, peerId);
       });
 
+      // 🔥 RESUME: guest-side host-loss detection. Trystero gives no close
+      // event for a silently dead host tab — combine onPeerLeave (host tracked
+      // via HOST_PING / SYNC_STATE senders) with a ping watchdog.
+      room.onPeerLeave((leftPeerId: string) => {
+        if (leftPeerId === hostPeerIdRef.current && !isHost) {
+          logger.warn('[P2P][Trystero] Host peer left the room — scheduling reconnect');
+          startGuestReconnectRef.current?.();
+        }
+        // Also drop the leaving peer from the broadcast list (host side keeps
+        // its own registration from initializeHost).
+        const idx = connectionsRef.current.findIndex(c => c.peerId === leftPeerId);
+        if (idx !== -1) connectionsRef.current.splice(idx, 1);
+      });
+      if (hostPingWatchdogRef.current) clearInterval(hostPingWatchdogRef.current);
+      hostPingWatchdogRef.current = setInterval(() => {
+        if (isHost || reconnectingRef.current) return;
+        // Only judge liveness once the session was actually established
+        if (!receivedSyncRef.current || !hostPeerIdRef.current) return;
+        if (roomRef.current !== room) {
+          if (hostPingWatchdogRef.current) clearInterval(hostPingWatchdogRef.current);
+          return;
+        }
+        if (Date.now() - lastHostPingRef.current > 45000) {
+          logger.warn('[P2P][Trystero] No HOST_PING from host for 45s — scheduling reconnect');
+          startGuestReconnectRef.current?.();
+        }
+      }, 15000);
+
       // Send HELO to room
+      // 🔥 RESUME: color is generated once per browser session and reused on
+      // every HELO so a rejoining guest keeps the same color.
+      const playerColor = identityRef.current?.color
+        ?? '#' + Math.floor(Math.random() * 16777215).toString(16);
+      identityRef.current = { name: playerName, color: playerColor };
+      // 🔥 RESUME: remember for the next join's name prefill
+      rememberGuestIdentity(playerName, playerColor);
       const myPlayer: Player = {
         id: getPlayerId(),
         name: playerName,
-        color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+        color: playerColor,
         isGM: false
       };
 
       send({ type: 'HELO', payload: myPlayer });
       logger.log('[P2P][Trystero] HELO sent');
-      localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
+      // On a rejoin the player may still be in local state — don't duplicate.
+      if (!stateRef.current?.players?.some((p: Player) => p.id === myPlayer.id)) {
+        localDispatch({ type: 'ADD_PLAYER', payload: myPlayer });
+      }
       localDispatch({ type: 'SET_ACTIVE_ID', payload: myPlayer.id });
 
       // Retry HELO until the host's state sync arrives — the first reply can
@@ -541,13 +704,17 @@ export function useTrysteroConnection(
       // Handshake watchdog: if the host's PACKS_NEEDED never arrives (lost
       // backup push, dead host tab), fail loudly instead of hanging forever.
       // connectionLockedRef also stops the retry interval below.
-      armHandshakeWatchdog(() => {
-        logger.error('[P2P][Trystero] Handshake timeout — no PACKS_NEEDED from host in 30s');
-        connectionLockedRef.current = true;
-        setConnectionStatus('disconnected');
-        updateP2PLoadingStep('handshake', 'error',
-          'Host is not responding. The host may have closed the game — press "Retry connection".');
-      });
+      // 🔥 RESUME: skipped on a rejoin — the reconnect loop is the watchdog
+      // there (each failed attempt cycles and retries).
+      if (!rejoin) {
+        armHandshakeWatchdog(() => {
+          logger.error('[P2P][Trystero] Handshake timeout — no PACKS_NEEDED from host in 30s');
+          connectionLockedRef.current = true;
+          setConnectionStatus('disconnected');
+          updateP2PLoadingStep('handshake', 'error',
+            'Host is not responding. The host may have closed the game — press "Retry connection".');
+        });
+      }
       let heloRetries = 0;
       const heloTimer = setInterval(() => {
         if (
@@ -575,7 +742,7 @@ export function useTrysteroConnection(
       setConnectionStatus('disconnected');
       updateP2PLoadingStep('connect', 'error', 'Failed to connect');
     }
-  }, [updateP2PLoadingStep, resetP2PLoading, handleNetworkData, localDispatch, armHandshakeWatchdog]);
+  }, [updateP2PLoadingStep, resetP2PLoading, handleNetworkData, localDispatch, armHandshakeWatchdog, armRejoin, stateRef]);
 
   // ============================================================================
   // SET PLAYER NAME
@@ -591,6 +758,89 @@ export function useTrysteroConnection(
     connectToHost(waitingForPlayerName.roomId, finalName);
     setWaitingForName(null);
   }, [waitingForPlayerName, suggestedPlayerName, connectToHost]);
+
+  // ============================================================================
+  // 🔥 RESUME: GUEST RECONNECT LOOP — re-attach to the same room after host
+  // loss (host refresh / network blip). Each attempt reuses the persisted
+  // identity; the host's HELO dedupe keeps a single Player entry.
+  // ============================================================================
+
+  const GUEST_RECONNECT_INTERVAL_MS = 5000;
+  const GUEST_RECONNECT_MAX_ATTEMPTS = 12;
+  const GUEST_RECONNECT_MAX_MS = 3 * 60 * 1000; // 3-minute total budget
+
+  const startGuestReconnect = useCallback(() => {
+    if (reconnectingRef.current) return;
+    const roomIdToJoin = roomIdStateRef.current;
+    const identity = identityRef.current;
+    if (!roomIdToJoin || !identity) {
+      // Never fully joined — nothing to resume.
+      setConnectionStatus('disconnected');
+      return;
+    }
+
+    reconnectingRef.current = true;
+    reconnectStateRef.current = { attempts: 0, timer: null, active: true, startTime: null };
+    setConnectionStatus('reconnecting');
+    logger.log('[P2P][Trystero] Guest reconnect loop started for room', roomIdToJoin);
+
+    const attempt = async () => {
+      const st = reconnectStateRef.current;
+      if (!reconnectingRef.current) return; // re-established or stopped elsewhere
+
+      st.attempts++;
+      const elapsed = Date.now() - (st.startTime ?? (st.startTime = Date.now()));
+      if (st.attempts > GUEST_RECONNECT_MAX_ATTEMPTS || elapsed > GUEST_RECONNECT_MAX_MS) {
+        logger.error('[P2P][Trystero] Guest reconnect gave up — host unreachable');
+        reconnectingRef.current = false;
+        st.active = false;
+        st.timer = null;
+        setConnectionStatus('disconnected');
+        onReconnectFailedRef.current?.();
+        return;
+      }
+
+      logger.log(`[P2P][Trystero] Reconnect attempt ${st.attempts}/${GUEST_RECONNECT_MAX_ATTEMPTS}`);
+      try {
+        // Tear down the stale room before rejoining (fresh peer connections)
+        const oldRoom = roomRef.current;
+        if (oldRoom) {
+          try { oldRoom.leave(); } catch { /* ignore */ }
+          if (roomRef.current === oldRoom) roomRef.current = null;
+        }
+        liveConnections.length = 0;
+        hostConnectionRef.current = null;
+        sendRef.current = null;
+
+        await connectToHost(roomIdToJoin, identity.name, { rejoin: true });
+      } catch (e) {
+        logger.error('[P2P][Trystero] Reconnect attempt threw:', e);
+      }
+
+      // onSessionEstablished (SYNC_STATE applied) flips reconnectingRef to
+      // false and restores 'connected' — only schedule the next attempt if
+      // we're still reconnecting.
+      if (reconnectingRef.current) {
+        st.timer = setTimeout(attempt, GUEST_RECONNECT_INTERVAL_MS);
+      }
+    };
+
+    attempt();
+  }, [connectToHost]);
+  startGuestReconnectRef.current = startGuestReconnect;
+
+  /** Manual retry after the reconnect loop gave up (banner button). */
+  const retryGuestConnection = useCallback(() => {
+    reconnectStateRef.current = { attempts: 0, timer: null, active: false, startTime: null };
+    reconnectingRef.current = false;
+    startGuestReconnect();
+  }, [startGuestReconnect]);
+
+  /** 🔥 RESUME: silent auto-rejoin entry point (no name modal). */
+  const resumeGuest = useCallback((inviteId: string, identity: { name: string; color: string }) => {
+    identityRef.current = identity;
+    connectToHost(inviteId, identity.name, { rejoin: true });
+  }, [connectToHost]);
 
   // ============================================================================
   // ON PACK LOADED
@@ -650,6 +900,19 @@ export function useTrysteroConnection(
         clearInterval(reconcileTimerRef.current);
         reconcileTimerRef.current = null;
       }
+      // 🔥 RESUME: stop heartbeats, watchdogs and any pending reconnects
+      if (hostPingBroadcasterRef.current) {
+        clearInterval(hostPingBroadcasterRef.current);
+        hostPingBroadcasterRef.current = null;
+      }
+      if (hostPingWatchdogRef.current) {
+        clearInterval(hostPingWatchdogRef.current);
+        hostPingWatchdogRef.current = null;
+      }
+      reconnectingRef.current = false;
+      const rst = reconnectStateRef.current;
+      if (rst.timer) { clearTimeout(rst.timer); rst.timer = null; }
+      rst.active = false;
       const room = roomRef.current;
       if (room) {
         room.leave();
@@ -684,5 +947,9 @@ export function useTrysteroConnection(
     onJoinWithoutPacks,
     suggestedPlayerName,
     roomId,
+    // 🔥 RESUME: reconnection surface
+    resumeGuest,
+    retryGuestConnection,
+    onReconnectFailedRef,
   };
 }
