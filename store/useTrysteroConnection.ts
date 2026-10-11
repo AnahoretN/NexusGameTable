@@ -285,6 +285,11 @@ export function useTrysteroConnection(
   // Interval keeping the connection list in sync with the room's peer set
   const reconcileTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // 🔥 RECONNECT FIX: the room instance the reconnect loop just left. A
+  // follow-up joinRoom(sameId) may return this still-occupied zombie until
+  // trystero's async leave() releases it — see connectToHost's poll loop.
+  const lastLeftRoomRef = useRef<TrysteroRoom | null>(null);
+
   const reconcile = useCallback(() => {
     const room = roomRef.current;
     if (!room) return;
@@ -371,8 +376,9 @@ export function useTrysteroConnection(
     // modal, and onSessionEstablished (host's SYNC_STATE lands) flips the
     // status back to 'connected' and the game continues.
     if (!isHost && data?.type === 'HOST_RELOADING') {
-      hostPeerIdRef.current = peerId;
-      lastHostPingRef.current = Date.now();
+      // Note: lastHostPingRef is deliberately NOT refreshed here — the HOST_PING
+      // watchdog must keep counting from the last REAL traffic so it kicks in
+      // if the host never comes back.
       setConnectionStatus('reconnecting');
       return;
     }
@@ -596,22 +602,67 @@ export function useTrysteroConnection(
     };
 
     try {
-      const room = joinRoom(config, roomIdToJoin, {
-        onJoinError: (details) => {
-          logger.error('[P2P][Trystero] Room join error:', details);
-          // 🔥 RECONNECT MODAL: a rejoin can race with the swarm self-heal —
-          // the host came back and SYNC_STATE already landed (which reset the
-          // reconnect loop via onSessionEstablished). If we've received sync
-          // from the host, the session IS alive: a stale failed attempt must
-          // not leave the guest stuck in 'disconnected' with a dead loop.
-          if (rejoin && receivedSyncRef.current) {
+      // 🔥 RECONNECT FIX: trystero's joinRoom returns the STILL-OCCUPIED
+      // (leaving) room instance when rejoining the same id — `occupiedRooms`
+      // is vacated only at the very END of the async leave(). Joining that
+      // zombie produced "Room join error" plus a full 15s blind window per
+      // attempt (the user-visible "modal went away but sync was dead" bug).
+      // Poll until a FRESH room instance appears (the old leave finished).
+      let room: TrysteroRoom | null = null;
+      let joinError = false;
+      const joinDeadline = Date.now() + 8000;
+      while (!room && !joinError && Date.now() < joinDeadline) {
+        room = await new Promise<TrysteroRoom | null>((resolve) => {
+          let done = false;
+          const r = joinRoom(config, roomIdToJoin, {
+            onJoinError: (details) => {
+              logger.error('[P2P][Trystero] Room join error:', details);
+              joinError = true;
+              if (!done) {
+                done = true;
+                resolve(null);
+              }
+            },
+          }) as unknown as TrysteroRoom;
+          if (r !== lastLeftRoomRef.current) {
+            if (!done) {
+              done = true;
+              resolve(r);
+            }
+          } else {
+            // Still the leaving zombie — its async leave hasn't released the
+            // room slot yet. Wait a beat and poll again.
+            setTimeout(() => {
+              if (!done) {
+                done = true;
+                resolve(null);
+              }
+            }, 200);
+          }
+        });
+        if (!room && !joinError) await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      if (!room || joinError) {
+        logger.error('[P2P][Trystero] Could not obtain a fresh room for join');
+        if (rejoin) {
+          // 🔥 RECONNECT MODAL: a rejoin attempt can race with the swarm
+          // self-heal — the host came back and SYNC_STATE already landed,
+          // which reset the reconnect loop via onSessionEstablished. A stale
+          // attempt failing after that must not flip the guest to
+          // 'disconnected' with the loop dead: the session IS alive.
+          if (!reconnectingRef.current) {
             setConnectionStatus('connected');
             return;
           }
-          setConnectionStatus('disconnected');
-          updateP2PLoadingStep('connect', 'error', 'Failed to join room (tracker error)');
-        },
-      }) as unknown as TrysteroRoom;
+          setConnectionStatus('reconnecting');
+          return; // the reconnect loop schedules the next attempt
+        }
+        setConnectionStatus('disconnected');
+        updateP2PLoadingStep('connect', 'error', 'Failed to join room (tracker error)');
+        return;
+      }
+      lastLeftRoomRef.current = null;
       roomRef.current = room;
       setRoomId(roomIdToJoin);
       if (trysteroDbg) trysteroDbg.room = room;
@@ -679,8 +730,10 @@ export function useTrysteroConnection(
         logger.error(`[P2P][Trystero] No peers discovered within ${rejoin ? 15 : 80}s${rejoin ? ' — reconnect attempt failed' : ' — aborting join'}`);
         if (rejoin) {
           // 🔥 RECONNECT MODAL: same self-heal race as the join-error path —
-          // if sync from the host is already flowing, the session is alive.
-          if (receivedSyncRef.current) {
+          // if the reconnect loop was reset (onSessionEstablished ran, SYNC_STATE
+          // applied), the session is alive and this stale attempt must not
+          // flip the guest to 'disconnected'.
+          if (!reconnectingRef.current) {
             setConnectionStatus('connected');
             return;
           }
@@ -871,10 +924,11 @@ export function useTrysteroConnection(
         // left host and guest playing separately for 20s+ per reconnect.
         const oldRoom = roomRef.current;
         if (oldRoom) {
+          lastLeftRoomRef.current = oldRoom;
           try {
             await Promise.race([
               oldRoom.leave(),
-              new Promise(resolve => setTimeout(resolve, 1500)), // don't let a hung leave stall the loop
+              new Promise(resolve => setTimeout(resolve, 3000)), // don't let a hung leave stall the loop
             ]);
           } catch { /* ignore */ }
           if (roomRef.current === oldRoom) roomRef.current = null;
