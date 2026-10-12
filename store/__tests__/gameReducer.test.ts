@@ -355,3 +355,38 @@ describe('gameReducer — DROP_FROM_CURSOR_SLOT movement-animation guard', () =>
     expect(registerRemoteMovement).toHaveBeenCalledWith('c1', 100, 100, 2000, 2000);
   });
 });
+
+describe('gameReducer — SYNC_STATE players preservation', () => {
+  test('a payload WITHOUT players keeps the current players (GM personas intact)', () => {
+    const state = {
+      ...initialState,
+      players: [
+        { id: 'gm', name: 'Game Master', color: '#FF0000', isGM: true },
+        { id: 'gm-player', name: 'GM Player', color: '#FF0000', isGM: false },
+        { id: 'player-1', name: 'Guest', color: '#00FF00', isGM: false },
+      ],
+    } as any;
+
+    // Sparse payload — exactly what loadSavedStateIntoGame dispatches
+    const next = gameReducer(state, {
+      type: 'SYNC_STATE',
+      payload: { drawings: { layers: [] } },
+    } as any);
+
+    expect(next.players.map(p => p.id)).toEqual(['gm', 'gm-player', 'player-1']);
+  });
+
+  test('GM personas are repaired when an incoming players list lacks them', () => {
+    const state = { ...initialState } as any;
+
+    const next = gameReducer(state, {
+      type: 'SYNC_STATE',
+      payload: { players: [{ id: 'player-1', name: 'Guest', color: '#00FF00', isGM: false }] },
+    } as any);
+
+    const ids = next.players.map(p => p.id);
+    expect(ids).toContain('gm');
+    expect(ids).toContain('gm-player');
+    expect(ids).toContain('player-1');
+  });
+});

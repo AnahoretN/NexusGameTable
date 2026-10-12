@@ -3,7 +3,7 @@
  * Extracted from Tabletop.tsx for better modularity and performance
  */
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useSyncExternalStore } from 'react';
 import {
   TableObject,
   ItemType,
@@ -18,6 +18,7 @@ import {
 } from '../../types';
 import { intersectsPlayableArea } from '../../utils/viewportConstraints';
 import { subscribeToCursorSlotChanges } from '../../utils/cursorSlotTracker';
+import { isRemoteMovementActive, subscribeToMovementChanges, getMovementVersion } from '../../utils/remoteMovementAnimator';
 
 /**
  * IDs of objects that must be hidden while the board/cell they are snapped to
@@ -94,6 +95,12 @@ export const useObjectFilters = (
     [state.objects, cursorSlotVersion]
   );
 
+  // 🔧 Merge-flight animation (card → deck): the tableObjects filter keeps a
+  // merging card rendered while its animation is active — subscribe to the
+  // animator so the filter re-runs when the flight starts and ends (the end
+  // bump is what makes the card disappear).
+  const movementVersion = useSyncExternalStore(subscribeToMovementChanges, getMovementVersion);
+
   // All table objects (convert from object record to array)
   const tableObjects = useMemo(() => {
 
@@ -125,12 +132,19 @@ export const useObjectFilters = (
       }
 
       // Exclude cards that are in deck (location: DECK), in hand (location: HAND), or in pile (location: PILE)
+      // 🔧 EXCEPTION: a card that just merged INTO a deck keeps rendering while
+      // its merge flight animation is active — it glides to the deck position
+      // and fades out there (see registerRemoteMovement fadeOut). Once the
+      // animation timer expires, the version bump re-runs this filter and the
+      // card disappears.
       if (obj.type === ItemType.CARD) {
         const card = obj as CardType;
         if (card.location === CardLocation.DECK ||
             card.location === CardLocation.HAND ||
             card.location === CardLocation.PILE) {
-          return false;
+          if (!(card.location === CardLocation.DECK && isRemoteMovementActive(card.id))) {
+            return false;
+          }
         }
       }
 
@@ -155,7 +169,7 @@ export const useObjectFilters = (
 
       return true;
     });
-  }, [state.objects, cursorSlotVersion, hiddenFollowObjectIds]);
+  }, [state.objects, cursorSlotVersion, hiddenFollowObjectIds, movementVersion]);
 
   // Visible table objects (viewport culling would be applied here with viewport bounds)
   const visibleTableObjects = useMemo(() => {

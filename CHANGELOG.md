@@ -2,6 +2,29 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.3.8] - 2026-10-12
+
+### ✨ New Features
+
+#### 🃏 Card-into-Deck Merge Animation
+- **Dropping a card into a deck now animates for everyone**: remote players see the card glide from its position to the deck and fade out right at the deck ("slides under and vanishes") — previously the card just teleported away
+- Works symmetrically in both directions (host→guests via the sync merge, guest→host via the reducers), and for "Return to deck" / "Return to deck top" context-menu actions too
+- The flying card is non-interactive; regular moves are unaffected (no fade)
+
+### 🛠️ Fixes
+
+- **"GM Player" no longer disappears after the host reloads the page**: loading a save dispatched a state sync without a players list, which collapsed the players to just the active player and wiped the GM personas (the guest connection was a red herring — the loss happened at host page load and surfaced later)
+- The GM personas (`gm`, `gm-player`) are now guaranteed to exist wherever the players list is wholesale-replaced, and saves whose list is already broken are repaired on load
+- `REMOVE_PLAYER` no longer crashes on saves that predate the per-player position/panel maps
+
+### 🔒 Hardening
+- A host now ignores incoming `SYNC_STATE` and `HELO` messages — a second host tab or a misbehaving sender can no longer stomp the host's state
+
+### 🧪 Testing
+- **180 unit tests** across 15 files: movement-animator fade-out flights, SYNC_STATE players preservation & GM-persona repair
+
+---
+
 ## [0.3.7] - 2026-10-12
 
 ### ✨ New Features

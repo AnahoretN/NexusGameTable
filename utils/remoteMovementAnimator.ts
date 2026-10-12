@@ -25,11 +25,16 @@ const MAX_DURATION = 3;
 interface MovementEntry {
   durationSec: number;
   startedAt: number;
+  /** 🔧 Merge flights (card → deck): fade the object out during the last part of the flight. */
+  fadeOut?: boolean;
+  fading?: boolean;
+  fadeDurationSec?: number;
 }
 
 const movementAnimations = new Map<string, MovementEntry>();
 
 const cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const fadeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 // Version counter + subscribers so React components can re-render when an
 // animation starts/ends (to restore pointer events).
@@ -74,7 +79,8 @@ export function registerRemoteMovement(
   fromX: number,
   fromY: number,
   toX: number,
-  toY: number
+  toY: number,
+  opts?: { fadeOut?: boolean }
 ): void {
   if (fromX === undefined || fromY === undefined || toX === undefined || toY === undefined) return;
   const distance = Math.hypot(toX - fromX, toY - fromY);
@@ -84,13 +90,38 @@ export function registerRemoteMovement(
 
   const prevTimer = cleanupTimers.get(id);
   if (prevTimer) clearTimeout(prevTimer);
+  const prevFadeTimer = fadeTimers.get(id);
+  if (prevFadeTimer) clearTimeout(prevFadeTimer);
 
-  movementAnimations.set(id, { durationSec, startedAt: performance.now() });
+  movementAnimations.set(id, {
+    durationSec,
+    startedAt: performance.now(),
+    fadeOut: opts?.fadeOut === true,
+    fading: false,
+  });
   bumpVersion();
+
+  // 🔧 Merge flights: fade the object out during the last part of the flight
+  // (a mid-flight re-render with opacity:0 + an opacity transition does the fade)
+  if (opts?.fadeOut) {
+    const fadeStartSec = Math.max(durationSec - 0.3, durationSec * 0.5);
+    const fadeTimer = setTimeout(() => {
+      fadeTimers.delete(id);
+      const entry = movementAnimations.get(id);
+      if (!entry) return;
+      const elapsedSec = (performance.now() - entry.startedAt) / 1000;
+      entry.fading = true;
+      entry.fadeDurationSec = Math.max(0.1, entry.durationSec - elapsedSec);
+      bumpVersion();
+    }, fadeStartSec * 1000);
+    fadeTimers.set(id, fadeTimer);
+  }
 
   const timer = setTimeout(() => {
     movementAnimations.delete(id);
     cleanupTimers.delete(id);
+    const fadeTimer = fadeTimers.get(id);
+    if (fadeTimer) { clearTimeout(fadeTimer); fadeTimers.delete(id); }
     bumpVersion();
   }, durationSec * 1000);
   cleanupTimers.set(id, timer);
@@ -103,13 +134,21 @@ export function isRemoteMovementActive(id: string): boolean {
 
 /**
  * Extra CSS for a rendering object: glides via left/top transition and is
- * non-interactive while the animation is active.
+ * non-interactive while the animation is active. Merge flights (fadeOut) also
+ * fade the object out during the last part of the flight.
  */
 export function getMovementExtraStyle(id: string, additionalTransition?: string): CSSProperties | undefined {
   const entry = movementAnimations.get(id);
   if (!entry) return undefined;
-  return {
-    transition: `left ${entry.durationSec}s linear, top ${entry.durationSec}s linear${additionalTransition ? `, ${additionalTransition}` : ''}`,
+  let transition = `left ${entry.durationSec}s linear, top ${entry.durationSec}s linear`;
+  if (additionalTransition) transition += `, ${additionalTransition}`;
+  const style: CSSProperties = {
+    transition,
     pointerEvents: 'none',
-  } as React.CSSProperties;
+  } as CSSProperties;
+  if (entry.fading) {
+    style.transition = `${transition}, opacity ${entry.fadeDurationSec}s linear`;
+    style.opacity = 0;
+  }
+  return style;
 }

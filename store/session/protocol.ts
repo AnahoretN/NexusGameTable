@@ -278,6 +278,9 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
 
     } else if (data.type === 'SYNC_STATE') {
       // Received full state update (Guest receives from Host)
+      // 🔧 Hardening: a HOST must never apply a SYNC_STATE — a second host tab
+      // or a misbehaving sender would otherwise stomp the host's whole state.
+      if (deps.isHost) return;
       // Check if data is compressed
       const isCompressed = data.compressed === true;
       const payload = isCompressed
@@ -378,6 +381,9 @@ export function createProtocolHandler(deps: ProtocolDeps): (data: any, senderCon
       });
     } else if (data.type === 'HELO') {
       // Host received new player info
+      // 🔧 Hardening: only the HOST processes joins — a guest receiving another
+      // guest's HELO must not answer with its own state (pseudo-hosting).
+      if (!deps.isHost) return;
       const newPlayer = data.payload;
 
       // Connection lock enforcement (parity with the PeerJS host accept path):

@@ -7,7 +7,7 @@ import { LocalFileRestoreDialog } from '../components/LocalFileRestoreDialog';
 import { generateUUID } from '../utils/uuid';
 import { loadGameStateWithLocalFiles, processUploadedLocalFiles, clearAllData, LocalFileInfo } from '../utils/gameStorage';
 import { loadLocalSettings, saveLocalSettings, calculateMainMenuPosition } from '../utils/localSettings';
-import { createStandardDeck } from './gameConstants';
+import { createStandardDeck, GM_COLOR } from './gameConstants';
 import { GameState, ViewTransform, initialState, PlayerPanelSettings } from './gameState';
 import { Action } from './gameActions';
 import { createAuditLogEntry } from './auditLogger';
@@ -170,6 +170,23 @@ function collectMoveCompanions(
  */
 function isMainMenuPanelObj(obj: any): boolean {
   return !!obj && obj.type === ItemType.PANEL && (obj as any).panelType === PanelType.MAIN_MENU;
+}
+
+/**
+ * 🔧 The GM personas ('gm' = Game Master, 'gm-player' = the host's player
+ * mode) must ALWAYS exist: loads used to wipe them (a sparse SYNC_STATE from
+ * a save replaced the whole players list), after which the GM could no longer
+ * switch to player mode. Repair the list wherever it is wholesale-replaced.
+ */
+function ensureGmPlayers(players: Player[]): Player[] {
+  const out = [...players];
+  if (!out.some(p => p.id === 'gm')) {
+    out.unshift({ id: 'gm', name: 'Game Master', color: GM_COLOR, isGM: true });
+  }
+  if (!out.some(p => p.id === 'gm-player')) {
+    out.push({ id: 'gm-player', name: 'GM Player', color: GM_COLOR, isGM: false });
+  }
+  return out;
 }
 
 export const gameReducer = (state: GameState, action: Action): GameState => {
@@ -353,7 +370,12 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
         // When guest receives SYNC_STATE before HELO is processed by host,
         // the incoming players array doesn't contain the guest. We need to
         // ensure the local player (with currentActiveId) is not removed.
-        const incomingPlayers = action.payload.players || [];
+        // 🔧 FIX: a payload WITHOUT a players key (e.g. the sparse SYNC_STATE
+        // dispatched by save loads) must keep the CURRENT list — treating it
+        // as [] collapsed the players to just the active player and wiped the
+        // GM personas.
+        const hasPlayersInPayload = action.payload.players !== undefined;
+        const incomingPlayers: Player[] = hasPlayersInPayload ? action.payload.players! : state.players;
         const localPlayer = state.players.find(p => p.id === currentActiveId);
 
         let finalPlayers = incomingPlayers;
@@ -361,6 +383,7 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
           // Local player not in incoming players - preserve them
           finalPlayers = [...incomingPlayers, localPlayer];
         }
+        finalPlayers = ensureGmPlayers(finalPlayers);
 
         // Check if this is a reconnection to the same session
         // If session ID matches, restore local panel settings; otherwise use host's settings
@@ -558,7 +581,14 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
                   // when the drop echo lands (e.g. play-top drops).
                   if (pre && pre.x !== undefined && pre.x > -90000 && obj.x > -90000 &&
                       (pre.x !== obj.x || pre.y !== obj.y)) {
-                    registerRemoteMovement(id, pre.x, pre.y, obj.x, obj.y);
+                    // 🔧 Merge flight: a card that just moved INTO a deck glides
+                    // to the deck position and fades out there (covers the
+                    // cursor-slot drop and the "return to deck" menu actions —
+                    // all flip location to DECK).
+                    const isDeckMerge = obj.type === ItemType.CARD &&
+                      (obj as Card).location === CardLocation.DECK &&
+                      pre.location !== CardLocation.DECK;
+                    registerRemoteMovement(id, pre.x, pre.y, obj.x, obj.y, { fadeOut: isDeckMerge });
                   }
                 });
 
@@ -1028,7 +1058,9 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
         }
 
         // CRITICAL: Ensure players array is never undefined
-        const finalPlayers = mergedPlayers.length > 0 ? mergedPlayers : state.players;
+        // 🔧 And always contains the GM personas (older broken saves may lack
+        // 'gm-player' — see ensureGmPlayers)
+        const finalPlayers = ensureGmPlayers(mergedPlayers.length > 0 ? mergedPlayers : state.players);
 
         // CRITICAL: Ensure playerPanelSettings exists (may be missing in old saves)
         const playerPanelSettings = action.payload.playerPanelSettings || {};
@@ -1120,8 +1152,8 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
         const { [action.payload.id]: removedStatus, ...remainingStatus } = guestPackStatus;
         // 🔧 Kicked/removed player: drop their per-player data too (positions
         // and panel settings are keyed by playerId and are useless afterwards)
-        const { [action.payload.id]: _removedPositions, ...remainingPositions } = state.playerObjectPositions;
-        const { [action.payload.id]: _removedPanels, ...remainingPanels } = state.playerPanelSettings;
+        const { [action.payload.id]: _removedPositions, ...remainingPositions } = state.playerObjectPositions ?? {};
+        const { [action.payload.id]: _removedPanels, ...remainingPanels } = state.playerPanelSettings ?? {};
         return {
             ...state,
             players: state.players.filter(p => p.id !== action.payload.id),
@@ -3783,6 +3815,13 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
         if (!card || !card.deckId || !state.objects[card.deckId]) return state;
         const deck = state.objects[card.deckId] as Deck;
 
+        // 🔧 Remote merge animation (host view of a guest's "return to deck")
+        if (card.x !== undefined && card.y !== undefined &&
+            card.x > -90000 && card.y > -90000 &&
+            (Math.abs(card.x - deck.x) > 20 || Math.abs(card.y - deck.y) > 20)) {
+          registerRemoteMovement(card.id, card.x, card.y, deck.x ?? 0, deck.y ?? 0, { fadeOut: true });
+        }
+
         // Add to general history (max 25)
         const historyEntry: GeneralHistoryEntry = {
             type: 'card-returned-to-deck',
@@ -3822,6 +3861,13 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
         const card = state.objects[action.payload.cardId] as Card;
         const deck = state.objects[action.payload.deckId] as Deck;
         if (!card || !deck || deck.type !== ItemType.DECK) return state;
+
+        // 🔧 Remote merge animation (host view of a guest's "return to deck top")
+        if (card.x !== undefined && card.y !== undefined &&
+            card.x > -90000 && card.y > -90000 &&
+            (Math.abs(card.x - deck.x) > 20 || Math.abs(card.y - deck.y) > 20)) {
+          registerRemoteMovement(card.id, card.x, card.y, deck.x ?? 0, deck.y ?? 0, { fadeOut: true });
+        }
 
         // Capture state for undo before making changes
         const fromDeckId = card.deckId || deck.id;
@@ -4081,6 +4127,17 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
         }
 
         const toCardIds = [...deck.cardIds];
+
+        // 🔧 Remote merge animation: when a GUEST drops a card into a deck, the
+        // host's own copy jumps from the held/origin position straight into the
+        // deck (no SYNC_STATE merge runs host-side) — animate the flight with a
+        // fade-out, same as the receiving clients' merge detection. The -90000
+        // guard skips the holder's own hide position.
+        if (card.x !== undefined && card.y !== undefined &&
+            card.x > -90000 && card.y > -90000 &&
+            (Math.abs(card.x - deck.x) > 20 || Math.abs(card.y - deck.y) > 20)) {
+          registerRemoteMovement(card.id, card.x, card.y, deck.x ?? 0, deck.y ?? 0, { fadeOut: true });
+        }
 
         // Add card to the beginning of the deck (top position)
         // Use updatedState instead of state to include previous deck changes
