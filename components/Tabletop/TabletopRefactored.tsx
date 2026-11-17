@@ -773,6 +773,10 @@ export const Tabletop: React.FC = () => {
           baseImageHeight: effect.baseImageHeight,
           showWidthMarker: effect.showWidthMarker ?? true,
           proportionalScaling: effect.proportionalScaling ?? false,
+          // Display-angle wedge: without these the cursor-slot clone renders
+          // the effect fully unclipped while it's being dragged
+          displayAngleEnabled: effect.displayAngleEnabled,
+          displayAngle: effect.displayAngle,
           x: 0,
           y: 0,
           rotation: effect.rotation || 0,

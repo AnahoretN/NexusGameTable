@@ -2227,6 +2227,51 @@ setGridDebugInfo(null);
                         </button>
                       </div>
 
+                      {/* Display Angle Toggle + value */}
+                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 col-span-2">
+                        <label className="text-xs text-gray-400 flex items-center gap-1" title={t({ en: 'Show only the part of the effect between two adjustable rays from its center', ru: 'Показывать только часть эффекта между двумя настраиваемыми лучами из его центра', be: 'Паказваць толькі частку эфекту паміж двымі настроівальнымі прамянямі з яго цэнтра', uk: 'Показувати лише частину ефекту між двома налаштовуваними променями з його центру', sr: 'Приказивати само део ефекта између два подесива зрака из његовог центра' })}>
+                          <Target size={12} />
+                          {t({ en: 'Display Angle', ru: 'Угол отображения', be: 'Вугал адлюстравання', uk: 'Кут відображення', sr: 'Угао приказивања' })}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="1"
+                            max="360"
+                            step="1"
+                            disabled={!(data as EffectTemplate).displayAngleEnabled}
+                            value={Math.round((data as EffectTemplate).displayAngle ?? 90)}
+                            onChange={e => {
+                              const v = Number(e.target.value);
+                              if (isFinite(v) && v >= 1 && v <= 360) {
+                                update('displayAngle', v);
+                                // 🔧 Apply immediately — see the ruler-unit select
+                                dispatch?.({
+                                  type: 'UPDATE_OBJECT',
+                                  payload: { id: data.id, updates: { displayAngle: v } }
+                                });
+                              }
+                            }}
+                            className="w-16 bg-slate-900 border border-slate-700 rounded p-1 text-white text-sm text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
+                          <span className="text-xs text-gray-400">°</span>
+                          <button
+                            onClick={() => {
+                              const newValue = !((data as EffectTemplate).displayAngleEnabled ?? false);
+                              update('displayAngleEnabled', newValue);
+                              // 🔧 Apply immediately — see the ruler-unit select
+                              dispatch?.({
+                                type: 'UPDATE_OBJECT',
+                                payload: { id: data.id, updates: { displayAngleEnabled: newValue } }
+                              });
+                            }}
+                            className={`w-10 h-5 rounded-full transition-colors ${(data as EffectTemplate).displayAngleEnabled ?? false ? 'bg-green-600' : 'bg-slate-700'}`}
+                          >
+                            <div className={`w-4 h-4 bg-white rounded-full transition-transform ${(data as EffectTemplate).displayAngleEnabled ?? false ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                          </button>
+                        </div>
+                      </div>
+
                       {/* Player Control Toggle */}
                       <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 col-span-2">
                         <label className="text-xs text-gray-400 flex items-center gap-1">

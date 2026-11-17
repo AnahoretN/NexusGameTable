@@ -44,6 +44,8 @@ import {
   createFireExplosionEffect,
   createLightningConeEffect,
   createFogEffect,
+  createFireSweepEffect,
+  createWindSweepEffect,
   } from '../utils/objectFactories';
 
 // Get icon component for object type
@@ -1043,6 +1045,8 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width: _width 
         { name: t({ en: 'Lightning Cone Effect', ru: 'Конус молнии', be: 'Конус маланкі', uk: 'Конус блискавки', sr: 'Конус муње' }), type: 'LIGHTNING_CONE_EFFECT' },
         { name: t({ en: 'Fire Explosion Effect', ru: 'Огненный взрыв', be: 'Агністы выбух', uk: 'Вогняний вибух', sr: 'Ватрена експлозија' }), type: 'FIRE_EXPLOSION_EFFECT' },
         { name: t({ en: 'Fog Effect', ru: 'Эффект тумана', be: 'Эфект туману', uk: 'Ефект туману', sr: 'Ефекат магле' }), type: 'FOG_EFFECT' },
+        { name: t({ en: 'Fire Sweep Effect', ru: 'Огненный взмах', be: 'Агністы мах', uk: 'Вогняний мах', sr: 'Ватрени замах' }), type: 'FIRE_SWEEP_EFFECT' },
+        { name: t({ en: 'Wind Sweep Effect', ru: 'Воздушный взмах', be: 'Паветраны мах', uk: 'Повітряний мах', sr: 'Ваздушни замах' }), type: 'WIND_SWEEP_EFFECT' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.EFFECT_TEMPLATE
     },
@@ -2316,6 +2320,16 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       }
       case 'FOG_EFFECT': {
         const effect = createFogEffect({ x: worldCoords.x, y: worldCoords.y, name: item.name, pixelsPerVU });
+        dispatch({ type: 'ADD_OBJECT', payload: effect });
+        break;
+      }
+      case 'FIRE_SWEEP_EFFECT': {
+        const effect = createFireSweepEffect({ x: worldCoords.x, y: worldCoords.y, name: item.name, pixelsPerVU });
+        dispatch({ type: 'ADD_OBJECT', payload: effect });
+        break;
+      }
+      case 'WIND_SWEEP_EFFECT': {
+        const effect = createWindSweepEffect({ x: worldCoords.x, y: worldCoords.y, name: item.name, pixelsPerVU });
         dispatch({ type: 'ADD_OBJECT', payload: effect });
         break;
       }

@@ -11,6 +11,7 @@ import { getCardShapeStyles } from '../utils/shapeUtils';
 import { getTokenWithAppliedState } from '../hooks/useTokenWithState';
 import { useImageUrl } from '../hooks';
 import { getAssetURL, assetCache } from '../utils/assets';
+import { buildWedgeClipPolygon, clampDisplayAngle } from '../utils/effectDisplayAngle';
 
 // Global image cache for Effect Templates to prevent reloading
 const effectImageCache = new Map<string, HTMLImageElement>();
@@ -701,6 +702,18 @@ const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTem
   const safeWidth = Math.max(width, 1);
   const safeHeight = Math.max(height, 1);
 
+  // 🔧 Display-angle wedge clip: the cursor-slot preview must look exactly
+  // like the effect on the table — clipped to the wedge when the setting is on
+  const wedgeClipPolygon = (item.displayAngleEnabled ?? false)
+    ? buildWedgeClipPolygon(
+        safeWidth,
+        safeHeight,
+        (pivot.x / 100) * safeWidth,
+        (pivot.y / 100) * safeHeight,
+        clampDisplayAngle(item.displayAngle)
+      )
+    : null;
+
   // Preload image when component mounts
   useEffect(() => {
     if (effectImageUrl) {
@@ -772,6 +785,7 @@ const CursorSlotEffectTemplate: React.FC<CursorSlotItemProps & { item: EffectTem
             display: 'block',
             backgroundColor: 'transparent',
             transition: 'opacity 0.05s ease-out',
+            ...(wedgeClipPolygon ? { clipPath: wedgeClipPolygon } : {}),
           }}
           draggable={false}
           onLoad={() => setIsImageReady(true)}

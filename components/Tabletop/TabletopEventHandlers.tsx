@@ -470,6 +470,10 @@ const addToCursorSlotLocal = (
       pivot: effect.pivot,
       rotation: effect.rotation || 0,
       rotationMarkerDistance: effect.rotationMarkerDistance,
+      // Display-angle wedge: without these the cursor-slot clone renders the
+      // effect fully unclipped while it's being dragged
+      displayAngleEnabled: effect.displayAngleEnabled,
+      displayAngle: effect.displayAngle,
       opacity: effect.opacity,
       locked: effect.locked,
       x: 0,  // ❌ Сбрасываем координаты в слоте курсора

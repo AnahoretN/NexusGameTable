@@ -551,6 +551,12 @@ interface EffectVisualDefaults {
   content: string;
   width: number;
   height: number;
+  /** Non-center pivot override (percent of image dimensions). */
+  pivot?: { x: number; y: number };
+  /** Fixed rotation-marker distance in VU (default: height / 2). */
+  rotationMarkerDistance?: number;
+  /** Extra EffectTemplate fields merged into the created object. */
+  extraProps?: Partial<EffectTemplate>;
 }
 
 // Image aspect ratios (2026-11 refresh):
@@ -559,6 +565,9 @@ interface EffectVisualDefaults {
 const CONE_WIDTH_PER_HEIGHT = 457 / 1117;
 const CONE_HEIGHT = 350;
 const RADIAL_SIZE = 300;
+// Sweep art shares the 770×770 radial canvas; sized a bit larger so the
+// default 45° wedge of the arc has a useful on-table footprint
+const SWEEP_SIZE = 350;
 
 const FIRE_CONE_DEFAULTS: EffectVisualDefaults = {
   name: 'Fire Cone Effect',
@@ -586,6 +595,39 @@ const FOG_DEFAULTS: EffectVisualDefaults = {
   content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1794900813/FogEffect_mzg561.webp',
   width: RADIAL_SIZE,
   height: RADIAL_SIZE,
+};
+
+// Fire Sweep: fire arc on a 770×770 transparent canvas. The arc's center
+// (the pivot) sits at ≈50%/55% of the canvas, its outer radius at ≈53% —
+// measured from the artwork's crescent tips and apex.
+const FIRE_SWEEP_DEFAULTS: EffectVisualDefaults = {
+  name: 'Fire Sweep Effect',
+  content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1794907147/FireSweepEffect_ubmdtg.webp',
+  width: SWEEP_SIZE,
+  height: SWEEP_SIZE,
+  pivot: { x: 50, y: 55 },
+  // Angle markers ride the mid-band of the arc (band ≈ 26–53% of canvas)
+  rotationMarkerDistance: Math.round(SWEEP_SIZE * 0.4),
+  // Sweep is defined by its wedge: display angle on by default (90°)
+  extraProps: {
+    displayAngleEnabled: true,
+    displayAngle: 90,
+  },
+};
+
+// Wind Sweep shares the fire sweep's canvas layout (770×770 fire arc redrawn
+// as wind): same pivot and band geometry
+const WIND_SWEEP_DEFAULTS: EffectVisualDefaults = {
+  name: 'Wind Sweep Effect',
+  content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1794941406/WindSweepEffect_apaf3e.webp',
+  width: SWEEP_SIZE,
+  height: SWEEP_SIZE,
+  pivot: { x: 50, y: 55 },
+  rotationMarkerDistance: Math.round(SWEEP_SIZE * 0.4),
+  extraProps: {
+    displayAngleEnabled: true,
+    displayAngle: 90,
+  },
 };
 
 /**
@@ -626,26 +668,28 @@ function createRadialEffectTemplate(params: BaseObjectParams & { pixelsPerVU?: n
   const { x = 0, y = 0, id = generateUUID(), name = defaults.name, pixelsPerVU = 1, ...rest } = params;
   const effectWidth = defaults.width;
   const effectHeight = defaults.height;
+  const pivot = defaults.pivot ?? { x: 50, y: 50 };
 
   return {
     id,
     type: ItemType.EFFECT_TEMPLATE,
     name,
-    x: x - (effectWidth / 2 / pixelsPerVU), // Center to top-left (pivot at 50%, 50%)
-    y: y - (effectHeight / 2 / pixelsPerVU), // Center to top-left (pivot at 50%, 50%)
+    x: x - (effectWidth / 2 / pixelsPerVU), // Center to top-left (approximate for the pivot above)
+    y: y - (effectHeight / 2 / pixelsPerVU), // Center to top-left (approximate for the pivot above)
     rotation: rest.rotation ?? 0,
     width: effectWidth,
     height: effectHeight,
     content: defaults.content,
     isOnTable: rest.isOnTable ?? true,
     locked: rest.locked ?? false,
-    pivot: { x: 50, y: 50 },
-    rotationMarkerDistance: defaults.height / 2,
+    pivot,
+    rotationMarkerDistance: defaults.rotationMarkerDistance ?? defaults.height / 2,
     proportionalScaling: true,
     actionButtons: ['lock', 'delete'],
     hyperscaleLayerId: 'boards',
     zIndex: 15,
     opacity: 85,
+    ...defaults.extraProps,
     ...rest,
   };
 }
@@ -667,6 +711,23 @@ export function createFogEffect(params: BaseObjectParams & { pixelsPerVU?: numbe
 }
 
 /**
+ * Create a Fire Sweep effect — a radial arc template rendered through the
+ * "display angle" wedge clip (enabled by default at 45°, upper portion).
+ * The (x, y) point corresponds to the pivot point (center of the arc).
+ */
+export function createFireSweepEffect(params: BaseObjectParams & { pixelsPerVU?: number } = {}): EffectTemplate {
+  return createRadialEffectTemplate(params, FIRE_SWEEP_DEFAULTS);
+}
+
+/**
+ * Create a Wind Sweep effect — same sweep template as the fire sweep
+ * (arc + display-angle wedge on by default at 90°).
+ */
+export function createWindSweepEffect(params: BaseObjectParams & { pixelsPerVU?: number } = {}): EffectTemplate {
+  return createRadialEffectTemplate(params, WIND_SWEEP_DEFAULTS);
+}
+
+/**
  * Create any effect template by name — routes to the matching preset factory.
  * Used by the universal createObject switch (and anything spawning effects
  * from a name alone, e.g. saved games / pool panels).
@@ -675,6 +736,9 @@ export function createEffectTemplateByName(params: BaseObjectParams & { pixelsPe
   const name = params.name ?? '';
   if (name.includes('Lightning')) return createLightningConeEffect(params);
   if (name.includes('Fog')) return createFogEffect(params);
+  // "Wind Sweep" must be checked before the generic "Sweep" fallback
+  if (name.includes('Wind')) return createWindSweepEffect(params);
+  if (name.includes('Sweep')) return createFireSweepEffect(params);
   if (name.includes('Cone')) return createFireConeEffect(params);
   return createFireExplosionEffect(params);
 }

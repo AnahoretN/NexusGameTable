@@ -662,6 +662,14 @@ export interface EffectTemplate extends GameItem {
   rulerUnit?: EffectRulerUnit;
   // VU per one step of this effect's ruler (used when rulerUnit === 'customStep')
   rulerCustomStep?: number;
+  // Wedge clipping ("display angle"): when enabled, the effect image is only
+  // rendered inside a wedge between two rays emanating from the pivot, with
+  // two draggable markers at the ray ends (default: false)
+  displayAngleEnabled?: boolean;
+  // Total wedge angle in degrees (default: 90). The wedge is symmetric around
+  // the effect's local "up" direction (the rotation-marker direction) and
+  // rotates together with the effect.
+  displayAngle?: number;
 }
 
 // Text label object - transparent object containing editable text (text tool)

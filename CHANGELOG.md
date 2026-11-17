@@ -2,6 +2,18 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [Unreleased]
+
+### ✨ New Features
+
+#### 🎆 Effect Templates: "Display Angle" + Fire Sweep effect
+- **New effect setting "Display Angle"** (effect settings tab): when enabled, the effect is only rendered inside a wedge between two rays extending from the effect's pivot — two orange markers appear at the ray ends; dragging either marker widens or narrows the wedge (it stays symmetric around the effect's "up" direction and rotates with the effect). Default angle is 90° with the upper portion visible. The setting also gets a numeric degree input in the modal (applied live, like the ruler-unit controls). Fully open (360°) disables the clipping entirely. The cursor-slot preview (dragging the effect from the flyout) applies the same clip
+- **New effect template type "Sweep"** — **Fire Sweep Effect** and **Wind Sweep Effect**: fire/wind arcs rendered through the display-angle wedge (enabled by default at 90°). Pivot sits at the arc's center (≈50%/55% of the canvas), angle markers ride the arc's mid-band, proportional scaling on (width marker hidden). Added to the Create menu's Effect Templates section; routed by name in `createEffectTemplateByName` (saved games / pool panels)
+- Effect markers (pivot / rotation / width / display-angle) now have an invisible hit zone ~15% larger than the visible marker — much easier to grab mid-drag
+- Wedge geometry lives in `utils/effectDisplayAngle.ts` (arc-sampled CSS `polygon()` clip, mouse-angle → half-angle math with saturation instead of wrap-around so the wedge never snaps open↔closed); covered by unit tests along with the sweep factory defaults (suite now at 203 tests)
+
+---
+
 ## [0.3.9] - 2026-11-17
 
 ### ✨ New Features

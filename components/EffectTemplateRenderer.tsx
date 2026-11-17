@@ -13,6 +13,12 @@ import { useImageUrl } from '../hooks';
 import { getAssetURL } from '../utils/assets';
 import { cancelRemoteMovement } from '../utils/remoteMovementAnimator';
 import { markLocalInteraction } from '../utils/localInteractionTracker';
+import {
+  DEFAULT_DISPLAY_ANGLE,
+  buildWedgeClipPolygon,
+  clampDisplayAngle,
+  halfAngleFromLocalMouseAngle,
+} from '../utils/effectDisplayAngle';
 
 // Global image cache for Effect Templates to prevent reloading
 const effectImageCache = new Map<string, HTMLImageElement>();
@@ -140,6 +146,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const [isDraggingPivot, setIsDraggingPivot] = useState(false);
   const [isDraggingRotation, setIsDraggingRotation] = useState(false);
   const [isDraggingWidth, setIsDraggingWidth] = useState(false);
+  const [isDraggingAngle, setIsDraggingAngle] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const initialWidthRef = useRef<number>(obj.width ?? 100);
   const initialRotationRef = useRef<number>(obj.rotation ?? 0);
@@ -150,6 +157,10 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const pivotDragStateRef = useRef<{ rotation: number; width: number; height: number; markerDistance: number; initialObj?: { x: number; y: number } } | null>(null);
   const rotationDragStateRef = useRef<{ initialHeight: number; initialWidth: number; initialDistance: number; pivotWorldX: number; pivotWorldY: number } | null>(null);
   const widthDragStateRef = useRef<{ initialWidth: number; initialDistance: number; pivotWorldX: number; pivotWorldY: number } | null>(null);
+  // Display-angle wedge drag: which ray is being dragged (+1 / -1) and the
+  // last committed half-angle (dead zone freezes to it instead of flipping)
+  const angleDragStateRef = useRef<{ side: 1 | -1; pivotWorldX: number; pivotWorldY: number } | null>(null);
+  const lastHalfAngleRef = useRef<number>((obj.displayAngle ?? DEFAULT_DISPLAY_ANGLE) / 2);
 
   // Get current language for step text formatting
   const language = useLanguage();
@@ -751,6 +762,129 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     };
   }, [isDraggingWidth, obj.id, obj.pivot, obj.height, obj.rotation, dispatch, pixelsPerVU]);
 
+  // Handle display-angle marker drag start (side: +1 clockwise ray, -1 the other)
+  const handleAngleMarkerMouseDown = useCallback((e: React.MouseEvent, side: 1 | -1) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!isGM && !(obj.playerControlEnabled ?? false)) {
+      return;
+    }
+
+    const element = containerRef.current;
+    if (!element) return;
+
+    // 🔧 Grabbing a handle cancels any in-flight glide (see pivot handler)
+    cancelRemoteMovement(obj.id);
+    // 🔧 Sync guard (see pivot handler)
+    markLocalInteraction(obj.id);
+
+    // Capture the element rect at drag start for consistent coordinate calculations
+    dragStartRectRef.current = element.getBoundingClientRect();
+
+    const pivot = obj.pivot || { x: 50, y: 50 };
+    const currentWidth = obj.width ?? 100;
+    const currentHeight = obj.height ?? 100;
+
+    angleDragStateRef.current = {
+      side,
+      pivotWorldX: obj.x + (pivot.x / 100) * currentWidth,
+      pivotWorldY: obj.y + (pivot.y / 100) * currentHeight,
+    };
+    lastHalfAngleRef.current = clampDisplayAngle(obj.displayAngle) / 2;
+
+    setIsDraggingAngle(true);
+  }, [isGM, obj.id, obj.x, obj.y, obj.width, obj.height, obj.pivot, obj.displayAngle, obj.playerControlEnabled]);
+
+  // Handle display-angle marker dragging (both rays stay symmetric around the center)
+  useEffect(() => {
+    if (!isDraggingAngle) return;
+    if (!angleDragStateRef.current) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dispatch) return;
+
+      // Validate mouse coordinates
+      if (!isFinite(e.clientX) || !isFinite(e.clientY)) {
+        return;
+      }
+
+      // Use SAVED rect from drag start for consistent coordinate calculations
+      const rect = dragStartRectRef.current;
+      if (!rect) return;
+
+      const pivot = obj.pivot || { x: 50, y: 50 };
+      const rotation = obj.rotation ?? 0;
+      const { side } = angleDragStateRef.current!;
+
+      // Pivot position in pixels (using saved rect)
+      const pivotPixelX = (pivot.x / 100) * rect.width;
+      const pivotPixelY = (pivot.y / 100) * rect.height;
+
+      // Mouse position relative to pivot
+      const dx = e.clientX - rect.left - pivotPixelX;
+      const dy = e.clientY - rect.top - pivotPixelY;
+
+      // 🔧 Dead zone around the pivot (same rationale as the rotation drag):
+      // near the pivot atan2 is meaningless and the ray would spin wildly.
+      // Inside the zone the angle freezes to the last committed value.
+      const markerDistancePx = (obj.rotationMarkerDistance ?? obj.height ?? 200) * pixelsPerVU;
+      const DEAD_ZONE_PX = Math.max(24, markerDistancePx * 0.1);
+      if (Math.hypot(dx, dy) < DEAD_ZONE_PX) {
+        return;
+      }
+
+      // Screen angle of the mouse → object-local (subtract the object rotation)
+      const screenAngleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+      const localAngleDeg = screenAngleDeg - rotation;
+
+      const half = halfAngleFromLocalMouseAngle(localAngleDeg, side);
+      lastHalfAngleRef.current = half;
+      const newDisplayAngle = clampDisplayAngle(half * 2);
+      if (newDisplayAngle === clampDisplayAngle(obj.displayAngle)) {
+        return;
+      }
+
+      markLocalInteraction(obj.id);
+      dispatch({
+        type: 'UPDATE_OBJECT',
+        // 🔧 Continuous local interaction — on the ACTION ROOT, see the
+        // rotation-marker dispatch
+        _suppressMovementAnimation: true,
+        payload: {
+          id: obj.id,
+          updates: { displayAngle: newDisplayAngle }
+        }
+      } as any);
+    };
+
+    const handleMouseUp = () => {
+      angleDragStateRef.current = null;
+      dragStartRectRef.current = null;
+      setIsDraggingAngle(false);
+    };
+
+    const cleanup = () => {
+      angleDragStateRef.current = null;
+      dragStartRectRef.current = null;
+      setIsDraggingAngle(false);
+    };
+
+    // Use window for mousemove to catch events even when cursor leaves the viewport
+    window.addEventListener('mousemove', handleMouseMove, { passive: false });
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('pointercancel', cleanup);
+    window.addEventListener('blur', cleanup);
+    document.addEventListener('mouseleave', cleanup);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('pointercancel', cleanup);
+      window.removeEventListener('blur', cleanup);
+      document.removeEventListener('mouseleave', cleanup);
+    };
+  }, [isDraggingAngle, obj.id, obj.pivot, obj.rotation, obj.displayAngle, obj.height, obj.rotationMarkerDistance, dispatch, pixelsPerVU]);
+
   // Calculate dimensions and pivot (with fallback to prevent zero-size rendering)
   // Also protect against NaN/Infinity which can cause rendering issues
   const safeWidth = isFinite(obj.width) ? obj.width : 100;
@@ -834,6 +968,20 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
   // Image container style
 
+  // 🔧 Invisible hit zone ~15% larger than the visible marker: grabbing a
+  // small marker mid-drag is fiddly. Rendered as a transparent child of the
+  // marker — events on it bubble to the marker's onMouseDown, and cursor is
+  // inherited from the parent.
+  const markerHitZoneStyle = (visibleSizePx: number): React.CSSProperties => ({
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: visibleSizePx * 1.15,
+    height: visibleSizePx * 1.15,
+    transform: 'translate(-50%, -50%)',
+    borderRadius: '50%',
+  });
+
   // Hide pivot marker when dragging the object (but not when dragging the pivot itself)
   // Show to GM always, or to players when playerControlEnabled is true
   const canControlEffect = isGM || (obj.playerControlEnabled ?? false);
@@ -868,6 +1016,38 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const widthMarkerDistance = (obj.width / 2) * pixelsPerVU;
   const widthMarkerX = pivotPixelX + widthMarkerDistance * Math.cos(widthAngleRad);
   const widthMarkerY = pivotPixelY + widthMarkerDistance * Math.sin(widthAngleRad);
+
+  // Display angle ("wedge") clipping: the image is only rendered between two
+  // rays from the pivot, with draggable markers at their ends. The clip works
+  // in the rotated wrapper's LOCAL frame (pivot at its natural spot, rays at
+  // local -90° ± half), so it follows the object rotation for free.
+  const displayAngleEnabled = obj.displayAngleEnabled ?? false;
+  const displayAngle = clampDisplayAngle(obj.displayAngle);
+  const wedgeClipPolygon = useMemo(
+    () =>
+      displayAngleEnabled
+        ? buildWedgeClipPolygon(
+            objWidth,
+            objHeight,
+            (pivot.x / 100) * objWidth,
+            (pivot.y / 100) * objHeight,
+            displayAngle
+          )
+        : null,
+    [displayAngleEnabled, objWidth, objHeight, pivot.x, pivot.y, displayAngle]
+  );
+
+  // Wedge marker positions (container frame): same distance as the rotation
+  // marker, at container angles (rotation - 90 ± half)
+  const shouldShowAngleMarkers = shouldShowRotationControls && displayAngleEnabled;
+  const halfAngleRad = (displayAngle / 2) * (Math.PI / 180);
+  const centerRayRad = ((rotation - 90) * Math.PI) / 180;
+  const angleMarker1Rad = centerRayRad - halfAngleRad;
+  const angleMarker2Rad = centerRayRad + halfAngleRad;
+  const angleMarker1X = pivotPixelX + markerDistance * Math.cos(angleMarker1Rad);
+  const angleMarker1Y = pivotPixelY + markerDistance * Math.sin(angleMarker1Rad);
+  const angleMarker2X = pivotPixelX + markerDistance * Math.cos(angleMarker2Rad);
+  const angleMarker2Y = pivotPixelY + markerDistance * Math.sin(angleMarker2Rad);
 
   // Ruler label units: what number is written on the effect's rulers
   // - 'vu' (default): raw VU value + ruler-step suffix when the ruler tool
@@ -950,6 +1130,9 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
             pointerEvents: 'none',
             userSelect: 'none',
             backgroundColor: 'transparent',
+            // Display-angle wedge clip (local frame of the rotated wrapper —
+            // null / undefined when the setting is off or the wedge is full)
+            ...(wedgeClipPolygon ? { clipPath: wedgeClipPolygon } : {}),
           }}
           draggable={false}
         />
@@ -1006,7 +1189,9 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
             cursor: canControlEffect ? 'move' : 'default',
           }}
           title={canControlEffect ? "Drag to move pivot point" : "Pivot point (GM only)"}
-        />
+        >
+          <span style={markerHitZoneStyle(16)} />
+        </div>
       )}
 
       {/* Rotation controls: ruler line and marker (visible when editing) */}
@@ -1090,6 +1275,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
                 transform: 'translate(-50%, -50%)',
               }}
             />
+            <span style={markerHitZoneStyle(14)} />
           </div>
         </>
       )}
@@ -1175,7 +1361,91 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
                 transform: 'translate(-50%, -50%)',
               }}
             />
+            <span style={markerHitZoneStyle(14)} />
           </div>
+        </>
+      )}
+
+      {/* Display-angle controls: the two wedge rays and their end markers */}
+      {shouldShowAngleMarkers && (
+        <>
+          {/* SVG for ray lines + angle label */}
+          <svg
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+              zIndex: 99997,
+              overflow: 'visible',
+            }}
+          >
+            {/* Ray lines - dashed */}
+            <line
+              x1={`${pivot.x}%`}
+              y1={`${pivot.y}%`}
+              x2={angleMarker1X}
+              y2={angleMarker1Y}
+              stroke="rgba(249, 115, 22, 0.9)"
+              strokeWidth="2"
+              strokeDasharray="4,4"
+            />
+            <line
+              x1={`${pivot.x}%`}
+              y1={`${pivot.y}%`}
+              x2={angleMarker2X}
+              y2={angleMarker2Y}
+              stroke="rgba(249, 115, 22, 0.9)"
+              strokeWidth="2"
+              strokeDasharray="4,4"
+            />
+
+            {/* Angle label between the rays */}
+            <text
+              x={pivotPixelX + markerDistance * 0.7 * Math.cos(centerRayRad)}
+              y={pivotPixelY + markerDistance * 0.7 * Math.sin(centerRayRad)}
+              textAnchor="middle"
+              fill="rgba(255, 255, 255, 1)"
+              fontSize="12"
+              fontWeight="bold"
+              style={{
+                textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                pointerEvents: 'none',
+              }}
+            >
+              {Math.round(displayAngle)}°
+            </text>
+          </svg>
+
+          {/* Round wedge markers at the ray ends */}
+          {[{ side: 1 as const, x: angleMarker2X, y: angleMarker2Y }, { side: -1 as const, x: angleMarker1X, y: angleMarker1Y }].map(({ side, x, y }) => (
+            <div
+              key={side}
+              data-angle-marker={side}
+              onMouseDown={(e) => handleAngleMarkerMouseDown(e, side)}
+              style={{
+                position: 'absolute',
+                left: x,
+                top: y,
+                width: '12px',
+                height: '12px',
+                transform: 'translate(-50%, -50%)',
+                borderRadius: '50%',
+                backgroundColor: isDraggingAngle ? 'rgba(249, 115, 22, 1)' : 'rgba(249, 115, 22, 0.9)',
+                border: '2px solid white',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
+                pointerEvents: 'auto',
+                zIndex: 10,
+                transition: isDraggingAngle ? 'none' : 'transform 0.1s, background-color 0.2s',
+                cursor: canControlEffect ? 'crosshair' : 'default',
+              }}
+              title={canControlEffect ? "Drag to adjust the display angle" : "Display angle control (GM only)"}
+            >
+              <span style={markerHitZoneStyle(12)} />
+            </div>
+          ))}
         </>
       )}
 
@@ -1239,6 +1509,8 @@ export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProp
     (prevProps.obj as EffectTemplate).proportionalScaling === (nextProps.obj as EffectTemplate).proportionalScaling &&
     (prevProps.obj as EffectTemplate).rulerUnit === (nextProps.obj as EffectTemplate).rulerUnit &&
     (prevProps.obj as EffectTemplate).rulerCustomStep === (nextProps.obj as EffectTemplate).rulerCustomStep &&
+    (prevProps.obj as EffectTemplate).displayAngleEnabled === (nextProps.obj as EffectTemplate).displayAngleEnabled &&
+    (prevProps.obj as EffectTemplate).displayAngle === (nextProps.obj as EffectTemplate).displayAngle &&
     (prevProps.obj as any).inCursorSlot === (nextProps.obj as any).inCursorSlot &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
     prevProps.layerInverseScale === nextProps.layerInverseScale &&
