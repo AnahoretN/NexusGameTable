@@ -2118,6 +2118,71 @@ setGridDebugInfo(null);
                       </div>
                     </div>
 
+                    {/* Ruler label unit */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">
+                        {t({ en: 'Unit of Measurement', ru: 'Единица измерения', be: 'Адзінка вымярэння', uk: 'Одиниця вимірювання', sr: 'Јединица мере' })}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={(data as EffectTemplate).rulerUnit ?? 'vu'}
+                          onChange={e => {
+                            const newUnit = e.target.value;
+                            // 🔧 Selecting "Custom Step" seeds the number field:
+                            // the input only DISPLAYS a default (5) — the object
+                            // field stays undefined until the user types, and the
+                            // renderer's VU fallback would kick in. Write the
+                            // default along with the unit so the mode works
+                            // without touching the input.
+                            const seedCustomStep = newUnit === 'customStep'
+                              && !((data as EffectTemplate).rulerCustomStep ?? 0);
+                            update('rulerUnit', newUnit);
+                            if (seedCustomStep) update('rulerCustomStep', 5);
+                            // 🔧 Apply IMMEDIATELY (like the dice-group controls):
+                            // the modal otherwise persists only on Save, and a
+                            // visual ruler-label toggle is expected to act live
+                            dispatch?.({
+                              type: 'UPDATE_OBJECT',
+                              payload: {
+                                id: data.id,
+                                updates: seedCustomStep
+                                  ? { rulerUnit: newUnit, rulerCustomStep: 5 }
+                                  : { rulerUnit: newUnit }
+                              }
+                            });
+                          }}
+                          className="w-3/4 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm"
+                          title={t({ en: 'Numbers written on the rulers of this effect', ru: 'Числа, которые пишутся на линейках данного эффекта', be: 'Лікі, якія пішуцца на лінейках дадзенага эфекту', uk: 'Числа, які пишуться на лінійках даного ефекту', sr: 'Бројеви који се пишу на лењирима датог ефекта' })}
+                        >
+                          <option value="vu">{t({ en: 'VU (Virtual Units)', ru: 'VU (виртуальные единицы)', be: 'VU (віртуальныя адзінкі)', uk: 'VU (віртуальні одиниці)', sr: 'VU (виртуелне јединице)' })}</option>
+                          <option value="rulerStep">{t({ en: 'Ruler Step', ru: 'Шаг линейки', be: 'Крок лінейкі', uk: 'Крок лінійки', sr: 'Корак лењира' })}</option>
+                          <option value="customStep">{t({ en: 'Custom Step', ru: 'Настраиваемый шаг', be: 'Падрымляльны крок', uk: 'Керованы крок', sr: 'Подесиви корак' })}</option>
+                          <option value="none">{t({ en: 'Off', ru: 'Отключить', be: 'Адключыць', uk: 'Вимкнути', sr: 'Искључи' })}</option>
+                        </select>
+                        {/* Custom step value (VU per step) — locked unless Custom Step is selected */}
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          disabled={((data as EffectTemplate).rulerUnit ?? 'vu') !== 'customStep'}
+                          value={roundToHundredths((data as EffectTemplate).rulerCustomStep ?? 5)}
+                          onChange={e => {
+                            const v = Number(e.target.value);
+                            if (isFinite(v) && v > 0) {
+                              update('rulerCustomStep', v);
+                              // 🔧 Apply immediately — see the select above
+                              dispatch?.({
+                                type: 'UPDATE_OBJECT',
+                                payload: { id: data.id, updates: { rulerCustomStep: v } }
+                              });
+                            }
+                          }}
+                          className="flex-1 bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={t({ en: 'VU per one step of this effect\'s ruler', ru: 'VU в одном шаге линейки данного эффекта', be: 'VU у адным кроку лінейкі дадзенага эфекту', uk: 'VU в одному кроці лінійки даного ефекту', sr: 'VU у једном кораку лењира датог ефекта' })}
+                        />
+                      </div>
+                    </div>
+
                     {/* Effect Template Options */}
                     <div className="grid grid-cols-2 gap-2 mt-3">
                       {/* Show Width Marker Toggle */}

@@ -133,6 +133,22 @@ export function isRemoteMovementActive(id: string): boolean {
 }
 
 /**
+ * 🔧 Cancel an in-flight glide immediately. Called when the user grabs a
+ * drag handle of a still-animating object: the drag anchors itself to the
+ * CURRENT rect — a mid-flight rect would offset the whole drag geometry
+ * (the object would jump as soon as the handle moved).
+ */
+export function cancelRemoteMovement(id: string): void {
+  if (!movementAnimations.has(id)) return;
+  movementAnimations.delete(id);
+  const cleanupTimer = cleanupTimers.get(id);
+  if (cleanupTimer) { clearTimeout(cleanupTimer); cleanupTimers.delete(id); }
+  const fadeTimer = fadeTimers.get(id);
+  if (fadeTimer) { clearTimeout(fadeTimer); fadeTimers.delete(id); }
+  bumpVersion();
+}
+
+/**
  * Extra CSS for a rendering object: glides via left/top transition and is
  * non-interactive while the animation is active. Merge flights (fadeOut) also
  * fade the object out during the last part of the flight.

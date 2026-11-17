@@ -11,6 +11,8 @@ import { generateHitboxFromImage } from '../utils/imageAnalysis';
 import { useLanguage } from '../store/contexts';
 import { useImageUrl } from '../hooks';
 import { getAssetURL } from '../utils/assets';
+import { cancelRemoteMovement } from '../utils/remoteMovementAnimator';
+import { markLocalInteraction } from '../utils/localInteractionTracker';
 
 // Global image cache for Effect Templates to prevent reloading
 const effectImageCache = new Map<string, HTMLImageElement>();
@@ -141,6 +143,9 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const initialWidthRef = useRef<number>(obj.width ?? 100);
   const initialRotationRef = useRef<number>(obj.rotation ?? 0);
+  // Last committed rotation during a marker drag — the dead zone freezes
+  // rotation to this value instead of letting atan2 flip it by ~180°
+  const lastRotationRef = useRef<number>(obj.rotation ?? 0);
   const rotationMarkerWorldPosRef = useRef<{ x: number; y: number } | null>(null);
   const pivotDragStateRef = useRef<{ rotation: number; width: number; height: number; markerDistance: number; initialObj?: { x: number; y: number } } | null>(null);
   const rotationDragStateRef = useRef<{ initialHeight: number; initialWidth: number; initialDistance: number; pivotWorldX: number; pivotWorldY: number } | null>(null);
@@ -216,6 +221,13 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
     const element = containerRef.current;
     if (!element) return;
+
+    // 🔧 Grabbing a handle cancels any in-flight glide: the drag anchors to
+    // the CURRENT rect — a mid-flight rect would offset the whole drag
+    cancelRemoteMovement(obj.id);
+    // 🔧 Sync guard: incoming host snapshots must not stomp this object's
+    // geometry while the local drag is in progress
+    markLocalInteraction(obj.id);
 
     // Capture the element rect at drag start for consistent coordinate calculations
     dragStartRectRef.current = element.getBoundingClientRect();
@@ -322,6 +334,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
       // Update ONLY the pivot position and rotationMarkerDistance
       // Don't change height, width, or object position
+      markLocalInteraction(obj.id);
       dispatch({
         type: 'UPDATE_OBJECT',
         payload: {
@@ -375,6 +388,12 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     const element = containerRef.current;
     if (!element) return;
 
+    // 🔧 Grabbing a handle cancels any in-flight glide: the drag anchors to
+    // the CURRENT rect — a mid-flight rect would offset the whole drag
+    cancelRemoteMovement(obj.id);
+    // 🔧 Sync guard (see pivot handler)
+    markLocalInteraction(obj.id);
+
     // Capture the element rect at drag start for consistent coordinate calculations
     dragStartRectRef.current = element.getBoundingClientRect();
 
@@ -382,6 +401,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     const currentWidth = obj.width ?? 100;
     const currentHeight = obj.height ?? 100;
     const rotation = obj.rotation ?? 0;
+    lastRotationRef.current = rotation;
 
     // Use object dimensions in pixels for consistency
     const objWidth = currentWidth * pixelsPerVU;
@@ -450,12 +470,25 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       const dx = e.clientX - rect.left - pivotPixelX;
       const dy = e.clientY - rect.top - pivotPixelY;
 
-      // Calculate new rotation angle (add 90 degrees to compensate for -90 offset)
-      const angleRad = Math.atan2(dy, dx);
-      let newRotation = (angleRad * 180) / Math.PI + 90;
-
       // Calculate current distance from pivot to mouse (in pixels, then VU)
       const currentDistance = Math.sqrt(dx * dx + dy * dy);
+
+      // 🔧 Dead zone around the pivot: while the mouse is near/over it, atan2
+      // flips rotation by ~180° and the effect (and its rotation marker)
+      // mirrors vertically — seen as the rotation point "jumping up/down".
+      // Inside the zone the rotation freezes to the last committed value;
+      // only the size keeps updating.
+      const DEAD_ZONE_PX = Math.max(24, initialDistance * 0.1);
+      let newRotation: number;
+      if (currentDistance < DEAD_ZONE_PX) {
+        newRotation = lastRotationRef.current;
+      } else {
+        // Calculate new rotation angle (add 90 degrees to compensate for -90 offset)
+        const angleRad = Math.atan2(dy, dx);
+        newRotation = (angleRad * 180) / Math.PI + 90;
+        lastRotationRef.current = newRotation;
+      }
+
       const distanceRatio = currentDistance / initialDistance;
 
       // Constrain distance ratio to prevent extreme sizes (0.1x to 10x)
@@ -493,8 +526,17 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       newObjX = Math.max(-100000, Math.min(100000, newObjX));
       newObjY = Math.max(-100000, Math.min(100000, newObjY));
 
+      markLocalInteraction(obj.id);
       dispatch({
         type: 'UPDATE_OBJECT',
+        // 🔧 Continuous local interaction: never let the >20 VU remote-jump
+        // guard turn a fast resize frame into a glide animation (the effect
+        // body would lag behind its instantly-positioned drag markers).
+        // Also opts the guest dispatcher into an optimistic local apply.
+        // ⚠️ The flag lives on the ACTION ROOT — the reducer guard and the
+        // guest dispatcher read `(action as any)._suppressMovementAnimation`;
+        // putting it in the payload silently does nothing.
+        _suppressMovementAnimation: true,
         payload: {
           id: obj.id,
           updates: {
@@ -506,7 +548,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
             y: newObjY
           }
         }
-      });
+      } as any);
     };
 
     const handleMouseUp = () => {
@@ -547,6 +589,11 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
     const element = containerRef.current;
     if (!element) return;
+
+    // 🔧 Grabbing a handle cancels any in-flight glide (see pivot handler)
+    cancelRemoteMovement(obj.id);
+    // 🔧 Sync guard (see pivot handler)
+    markLocalInteraction(obj.id);
 
     // Capture the element rect at drag start for consistent coordinate calculations
     dragStartRectRef.current = element.getBoundingClientRect();
@@ -659,8 +706,12 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       newObjX = Math.max(-100000, Math.min(100000, newObjX));
       newObjY = Math.max(-100000, Math.min(100000, newObjY));
 
+      markLocalInteraction(obj.id);
       dispatch({
         type: 'UPDATE_OBJECT',
+        // 🔧 Continuous local interaction — on the ACTION ROOT, see the
+        // rotation-marker dispatch
+        _suppressMovementAnimation: true,
         payload: {
           id: obj.id,
           updates: {
@@ -669,7 +720,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
             y: newObjY
           }
         }
-      });
+      } as any);
     };
 
     const handleMouseUp = () => {
@@ -818,24 +869,51 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const widthMarkerX = pivotPixelX + widthMarkerDistance * Math.cos(widthAngleRad);
   const widthMarkerY = pivotPixelY + widthMarkerDistance * Math.sin(widthAngleRad);
 
-  // Calculate length in VU for display (height = length of the template)
-  // Calculate length in VU for display (use rotationMarkerDistance if available)
-  const lengthVU = (obj.rotationMarkerDistance ?? obj.height ?? 100).toFixed(1);
-  // Calculate step count if ruler step is enabled
+  // Ruler label units: what number is written on the effect's rulers
+  // - 'vu' (default): raw VU value + ruler-step suffix when the ruler tool
+  //   has a step configured
+  // - 'rulerStep': the value expressed in ruler-tool steps
+  // - 'customStep': the value expressed in this effect's own steps
+  //   (rulerCustomStep VU per step)
+  // - 'none': no numbers at all
   const lengthValue = obj.rotationMarkerDistance ?? obj.height ?? 100;
-  const stepCount = rulerStep > 0 ? (lengthValue / rulerStep).toFixed(1) : null;
-  // Format step text in parentheses with space: ru = " (5ш)", en = " (5.0st)"
+  // Width ruler shows distance from pivot to width marker (half of total width)
+  const widthValue = (obj.width ?? 100) / 2;
+  const rulerUnit = (obj as EffectTemplate).rulerUnit ?? 'vu';
+  const customStep = ((obj as EffectTemplate).rulerCustomStep ?? 0) > 0
+    ? (obj as EffectTemplate).rulerCustomStep!
+    : null;
+  const fmt = (v: number) => v.toFixed(1);
+  // Step suffix in 'vu' mode: ru = " (5ш)", en = " (5.0st)"
+  const stepCount = rulerStep > 0 ? fmt(lengthValue / rulerStep) : null;
   const stepText = stepCount !== null
     ? (isRussianLanguage ? ` (${stepCount}ш)` : ` (${stepCount}st)`)
     : '';
-  // Width ruler shows distance from pivot to width marker (half of total width)
-  const widthValue = (obj.width ?? 100) / 2;
-  const widthVU = widthValue.toFixed(1);
-  // Calculate step count for width ruler
-  const widthStepCount = rulerStep > 0 ? (widthValue / rulerStep).toFixed(1) : null;
+  const widthStepCount = rulerStep > 0 ? fmt(widthValue / rulerStep) : null;
   const widthStepText = widthStepCount !== null
     ? (isRussianLanguage ? ` (${widthStepCount}ш)` : ` (${widthStepCount}st)`)
     : '';
+  // Step-based units fall back to VU display when their step size is unknown
+  // (no ruler step configured / custom step not entered yet)
+  let lengthLabel: string | null;
+  let widthLabel: string | null;
+  switch (rulerUnit) {
+    case 'none':
+      lengthLabel = null;
+      widthLabel = null;
+      break;
+    case 'rulerStep':
+      lengthLabel = rulerStep > 0 ? fmt(lengthValue / rulerStep) : fmt(lengthValue);
+      widthLabel = rulerStep > 0 ? fmt(widthValue / rulerStep) : fmt(widthValue);
+      break;
+    case 'customStep':
+      lengthLabel = customStep ? fmt(lengthValue / customStep) : fmt(lengthValue);
+      widthLabel = customStep ? fmt(widthValue / customStep) : fmt(widthValue);
+      break;
+    default: // 'vu'
+      lengthLabel = `${fmt(lengthValue)}${stepText}`;
+      widthLabel = `${fmt(widthValue)}${widthStepText}`;
+  }
 
   return (
     <div
@@ -959,20 +1037,22 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
             />
 
             {/* Length label */}
-            <text
-              x={(markerPixelX + (pivot.x / 100) * objWidth) / 2}
-              y={(markerPixelY + (pivot.y / 100) * objHeight) / 2 - 10}
-              textAnchor="middle"
-              fill="rgba(255, 255, 255, 1)"
-              fontSize="12"
-              fontWeight="bold"
-              style={{
-                textShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                pointerEvents: 'none',
-              }}
-            >
-              {lengthVU}{stepText}
-            </text>
+            {lengthLabel !== null && (
+              <text
+                x={(markerPixelX + (pivot.x / 100) * objWidth) / 2}
+                y={(markerPixelY + (pivot.y / 100) * objHeight) / 2 - 10}
+                textAnchor="middle"
+                fill="rgba(255, 255, 255, 1)"
+                fontSize="12"
+                fontWeight="bold"
+                style={{
+                  textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                  pointerEvents: 'none',
+                }}
+              >
+                {lengthLabel}
+              </text>
+            )}
           </svg>
 
           {/* Square rotation marker at the end */}
@@ -1042,20 +1122,22 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
             />
 
             {/* Width label */}
-            <text
-              x={(widthMarkerX + pivotPixelX) / 2}
-              y={(widthMarkerY + pivotPixelY) / 2 - 10}
-              textAnchor="middle"
-              fill="rgba(255, 255, 255, 1)"
-              fontSize="12"
-              fontWeight="bold"
-              style={{
-                textShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                pointerEvents: 'none',
-              }}
-            >
-              {widthVU}{widthStepText}
-            </text>
+            {widthLabel !== null && (
+              <text
+                x={(widthMarkerX + pivotPixelX) / 2}
+                y={(widthMarkerY + pivotPixelY) / 2 - 10}
+                textAnchor="middle"
+                fill="rgba(255, 255, 255, 1)"
+                fontSize="12"
+                fontWeight="bold"
+                style={{
+                  textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                  pointerEvents: 'none',
+                }}
+              >
+                {widthLabel}
+              </text>
+            )}
           </svg>
 
           {/* Square width marker at the end */}
@@ -1155,6 +1237,8 @@ export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProp
     prevProps.obj.content === nextProps.obj.content &&
     (prevProps.obj as EffectTemplate).showWidthMarker === (nextProps.obj as EffectTemplate).showWidthMarker &&
     (prevProps.obj as EffectTemplate).proportionalScaling === (nextProps.obj as EffectTemplate).proportionalScaling &&
+    (prevProps.obj as EffectTemplate).rulerUnit === (nextProps.obj as EffectTemplate).rulerUnit &&
+    (prevProps.obj as EffectTemplate).rulerCustomStep === (nextProps.obj as EffectTemplate).rulerCustomStep &&
     (prevProps.obj as any).inCursorSlot === (nextProps.obj as any).inCursorSlot &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
     prevProps.layerInverseScale === nextProps.layerInverseScale &&

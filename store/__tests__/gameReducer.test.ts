@@ -22,6 +22,17 @@ vi.mock('../../utils/logger', () => ({
 
 vi.mock('../../utils/remoteMovementAnimator', () => ({
   registerRemoteMovement: vi.fn(),
+  cancelRemoteMovement: vi.fn(),
+}));
+
+const { isLocallyInteracted } = vi.hoisted(() => ({
+  isLocallyInteracted: vi.fn(() => false),
+}));
+
+vi.mock('../../utils/localInteractionTracker', () => ({
+  markLocalInteraction: vi.fn(),
+  clearLocalInteraction: vi.fn(),
+  isLocallyInteracted: (id: string) => isLocallyInteracted(id),
 }));
 
 // --- fixtures ---
@@ -388,5 +399,166 @@ describe('gameReducer — SYNC_STATE players preservation', () => {
     expect(ids).toContain('gm');
     expect(ids).toContain('gm-player');
     expect(ids).toContain('player-1');
+  });
+});
+
+describe('gameReducer — SYNC_STATE local-interaction guard', () => {
+  const makeEffect = (overrides: Record<string, any> = {}) => ({
+    id: 'fx1',
+    type: 'EFFECT_TEMPLATE',
+    name: 'Fire Cone Effect',
+    x: 500,
+    y: 400,
+    width: 143,
+    height: 350,
+    rotation: 0,
+    zIndex: 15,
+    pivot: { x: 50, y: 100 },
+    rotationMarkerDistance: 350,
+    isOnTable: true,
+    ...overrides,
+  });
+
+  const partialSync = (objects: Record<string, any>) => ({
+    type: 'SYNC_STATE',
+    payload: { objects, _isPartial: true },
+  } as any);
+
+  test('a stale host snapshot does NOT stomp the geometry of an object being locally dragged', () => {
+    const localEffect = makeEffect({ x: 500, y: 100, height: 650, rotationMarkerDistance: 650, rotation: 15 });
+    const state = makeState({ fx1: localEffect }) as any;
+    isLocallyInteracted.mockImplementation((id: string) => id === 'fx1');
+
+    // Host snapshot lags behind: old position/height
+    const next = gameReducer(state, partialSync({
+      fx1: makeEffect({ x: 500, y: 400, height: 350, rotationMarkerDistance: 350, rotation: 0, opacity: 42 }),
+    }));
+
+    const merged = next.objects['fx1'];
+    // Geometry preserved from the local (newer) copy...
+    expect(merged.x).toBe(500);
+    expect(merged.y).toBe(100);
+    expect(merged.height).toBe(650);
+    expect(merged.rotation).toBe(15);
+    expect(merged.rotationMarkerDistance).toBe(650);
+    // ...non-geometry fields still sync from the host
+    expect(merged.opacity).toBe(42);
+    isLocallyInteracted.mockImplementation(() => false);
+  });
+
+  test('a stale snapshot applies normally once the interaction window expired', () => {
+    const localEffect = makeEffect();
+    const state = makeState({ fx1: localEffect }) as any;
+    isLocallyInteracted.mockImplementation(() => false);
+
+    const next = gameReducer(state, partialSync({
+      fx1: makeEffect({ y: 400, height: 350 }),
+    }));
+
+    expect(next.objects['fx1'].height).toBe(350);
+    expect(next.objects['fx1'].y).toBe(400);
+  });
+
+  test('no movement glide is registered for an object being locally dragged', () => {
+    (registerRemoteMovement as any).mockClear();
+    const localEffect = makeEffect({ x: 500, y: 100, height: 650 });
+    const state = makeState({ fx1: localEffect }) as any;
+    isLocallyInteracted.mockImplementation((id: string) => id === 'fx1');
+
+    gameReducer(state, partialSync({
+      fx1: makeEffect({ y: 400, height: 350 }),
+    }));
+
+    expect(registerRemoteMovement).not.toHaveBeenCalled();
+    isLocallyInteracted.mockImplementation(() => false);
+  });
+
+  test('a full (non-partial) sync keeps the local geometry of an interacted object', () => {
+    const localEffect = makeEffect({ y: 100, height: 650 });
+    const state = makeState({ fx1: localEffect, other: makeCard({ id: 'other' }) }) as any;
+    isLocallyInteracted.mockImplementation((id: string) => id === 'fx1');
+
+    const next = gameReducer(state, {
+      type: 'SYNC_STATE',
+      payload: {
+        objects: {
+          fx1: makeEffect({ y: 400, height: 350 }),
+          other: makeCard({ id: 'other', x: 999 }),
+        },
+      },
+    } as any);
+
+    expect(next.objects['fx1'].y).toBe(100);
+    expect(next.objects['fx1'].height).toBe(650);
+    expect(next.objects['other'].x).toBe(999);
+    isLocallyInteracted.mockImplementation(() => false);
+  });
+});
+
+describe('gameReducer — UPDATE_OBJECT _suppressMovementAnimation flag', () => {
+  const makeEffect = (overrides: Record<string, any> = {}) => ({
+    id: 'fx1',
+    type: 'EFFECT_TEMPLATE',
+    name: 'Fire Cone Effect',
+    x: 500,
+    y: 400,
+    width: 143,
+    height: 350,
+    rotation: 0,
+    zIndex: 15,
+    pivot: { x: 50, y: 100 },
+    rotationMarkerDistance: 350,
+    isOnTable: true,
+    ...overrides,
+  });
+
+  test('a >20 VU jump WITH the flag does not register a glide (fast local resize frame)', () => {
+    (registerRemoteMovement as any).mockClear();
+    const state = makeState({ fx1: makeEffect() }) as any;
+
+    // ⚠️ The flag MUST be on the ACTION ROOT — the reducer reads it there.
+    // (A past regression put it inside payload, the guard never saw it, and
+    // every fast resize frame started a glide → vertical position jumps.)
+    gameReducer(state, {
+      type: 'UPDATE_OBJECT',
+      _suppressMovementAnimation: true,
+      payload: {
+        id: 'fx1',
+        updates: { x: 500, y: 100, height: 650, rotationMarkerDistance: 650 },
+      },
+    } as any);
+
+    expect(registerRemoteMovement).not.toHaveBeenCalled();
+  });
+
+  test('a >20 VU jump WITHOUT the flag still registers a glide (real remote move)', () => {
+    (registerRemoteMovement as any).mockClear();
+    const state = makeState({ fx1: makeEffect() }) as any;
+
+    gameReducer(state, {
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: 'fx1',
+        updates: { x: 500, y: 100, height: 650, rotationMarkerDistance: 650 },
+      },
+    } as any);
+
+    expect(registerRemoteMovement).toHaveBeenCalledWith('fx1', 500, 400, 500, 100);
+  });
+
+  test('a flag placed inside payload (legacy mistake) does NOT suppress the glide', () => {
+    (registerRemoteMovement as any).mockClear();
+    const state = makeState({ fx1: makeEffect() }) as any;
+
+    gameReducer(state, {
+      type: 'UPDATE_OBJECT',
+      payload: {
+        id: 'fx1',
+        _suppressMovementAnimation: true,
+        updates: { x: 500, y: 100, height: 650, rotationMarkerDistance: 650 },
+      },
+    } as any);
+
+    expect(registerRemoteMovement).toHaveBeenCalled();
   });
 });

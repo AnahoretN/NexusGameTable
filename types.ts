@@ -626,6 +626,15 @@ export interface Drawing extends GameItem {
 
 // Effect Template - area-of-effect visualization templates for wargames
 // Used for explosions, cones, lines, and other spell/ability effects
+// What number is written on the effect's ruler labels
+// - 'vu': the raw VU value (default; a ruler-step suffix is appended when the
+//   ruler tool's step is enabled)
+// - 'rulerStep': the length in ruler-tool steps (value / rulerStep); falls
+//   back to VU display when the ruler step is not set
+// - 'customStep': the length in this effect's own steps (value / rulerCustomStep)
+// - 'none': no numbers on this effect's rulers at all
+export type EffectRulerUnit = 'vu' | 'rulerStep' | 'customStep' | 'none';
+
 export interface EffectTemplate extends GameItem {
   type: ItemType.EFFECT_TEMPLATE;
   // Pivot point in percentage of image dimensions (0-100)
@@ -649,6 +658,10 @@ export interface EffectTemplate extends GameItem {
   proportionalScaling?: boolean;
   // Allow all players (including guests) to control the effect's dimensions and rotation
   playerControlEnabled?: boolean;
+  // Unit of the numbers shown on this effect's ruler labels (default: 'vu')
+  rulerUnit?: EffectRulerUnit;
+  // VU per one step of this effect's ruler (used when rulerUnit === 'customStep')
+  rulerCustomStep?: number;
 }
 
 // Text label object - transparent object containing editable text (text tool)

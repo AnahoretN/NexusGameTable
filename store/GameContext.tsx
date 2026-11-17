@@ -27,6 +27,7 @@ import { RemovedPlayerModal } from '../components/RemovedPlayerModal';
 import { getConnectionSettings, ConnectionMethod } from '../utils/localSettings';
 import { isInCursorSlot, getOriginalPosition, removeFromCursorSlot } from '../utils/cursorSlotTracker';
 import { registerRemoteMovement } from '../utils/remoteMovementAnimator';
+import { isLocallyInteracted } from '../utils/localInteractionTracker';
 import {
   initAssetDB,
   autoMigrate,
@@ -484,6 +485,28 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
                     return;
                   }
 
+                  // 🔧 Local interaction guard: the user is continuously dragging
+                  // this object right now (e.g. an effect marker resize — those
+                  // happen in place, not via the cursor slot). The host's
+                  // throttled snapshot lags the local state; applying it would
+                  // drag the object backwards and forwards (position "jumps"
+                  // that get worse the faster you drag). Preserve the local
+                  // geometry, take only non-geometry fields from the host.
+                  const interactedLocal = isLocallyInteracted(id) ? state.objects[id] : undefined;
+                  if (interactedLocal) {
+                    finalObjects[id] = {
+                      ...obj,
+                      x: interactedLocal.x,
+                      y: interactedLocal.y,
+                      rotation: interactedLocal.rotation ?? obj.rotation,
+                      width: interactedLocal.width ?? obj.width,
+                      height: interactedLocal.height ?? obj.height,
+                      pivot: (interactedLocal as any).pivot ?? (obj as any).pivot,
+                      rotationMarkerDistance: (interactedLocal as any).rotationMarkerDistance ?? (obj as any).rotationMarkerDistance,
+                    } as TableObject;
+                    return;
+                  }
+
                   // 🔧 Individual Objects layers: ALL objects on them have per-player
                   // local coordinates. Merge rule:
                   //   - non-position properties (content, counters, character data...)
@@ -574,6 +597,10 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
                   if ((obj as any)._deleted) return;
                   if (obj.type === ItemType.PANEL && (obj as PanelObject).panelType === PanelType.MAIN_MENU) return;
                   if (isObjectIndividual(obj, state.hyperscaleLayers)) return;
+                  // 🔧 Local interaction guard: never animate a "jump" for an
+                  // object the user is dragging locally (the incoming position
+                  // is a stale snapshot — see the merge guard above)
+                  if (isLocallyInteracted(id)) return;
                   const pre = state.objects[id] as any;
                   // 🔥 -90000 guard: the local copy of a cursor-slot-held object
                   // sits at -999999 — animating "from" it would lock the object
@@ -668,9 +695,20 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
                 }
               });
 
+              // 🔧 Local interaction guard: objects being continuously dragged
+              // locally right now keep their local geometry (a full sync with a
+              // host snapshot would otherwise yank them back mid-drag)
+              const localInteractedObjects: Record<string, TableObject> = {};
+              Object.keys(state.objects).forEach(id => {
+                if (isLocallyInteracted(id)) {
+                  localInteractedObjects[id] = state.objects[id];
+                }
+              });
+
               finalObjects = {
                 ...incomingObjects,
-                ...localIndividualObjects
+                ...localIndividualObjects,
+                ...localInteractedObjects
               };
             }
 
@@ -1422,7 +1460,12 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       // the new position on drop.
       {
         const animUpdates: any = wrapped || flatUpdates;
+        // 🔧 _suppressMovementAnimation: a continuous local interaction (effect
+        // marker drag) streams small position steps — a fast frame crossing the
+        // 20 VU threshold is drag noise, not a remote jump, and must not turn
+        // into a glide (the effect body would lag its drag markers).
         if (!(action as any)._localOnly && !(action as any).skipNetworkSync &&
+            !(action as any)._suppressMovementAnimation &&
             animUpdates && animUpdates.x !== undefined && animUpdates.y !== undefined &&
             obj.x !== undefined && obj.y !== undefined &&
             obj.x > -90000 && obj.y > -90000 &&
@@ -8071,6 +8114,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   // Wait for sync to avoid desync
               } else {
                   hostConnectionRef.current.send({ type: 'ACTION', payload: action });
+                  // 🔧 Continuous local interactions (effect marker drags mark
+                  // themselves with _suppressMovementAnimation): apply locally
+                  // immediately — without this the effect only moved when the
+                  // host echo came back, and the whole resize arrived as one
+                  // laggy jump on slow transports (Trystero).
+                  if ((action as any)._suppressMovementAnimation) {
+                      localDispatch(action);
+                  }
                   // Optimistic: cursor-slot pickup/clear markers must render
                   // immediately. Without this, taking a card from the hand or
                   // the top deck shows nothing in the guest's cursor slot until

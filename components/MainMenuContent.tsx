@@ -42,6 +42,8 @@ import {
   createNexusBoard,
   createFireConeEffect,
   createFireExplosionEffect,
+  createLightningConeEffect,
+  createFogEffect,
   } from '../utils/objectFactories';
 
 // Get icon component for object type
@@ -1038,7 +1040,9 @@ export const MainMenuContent: React.FC<MainMenuContentProps> = ({ width: _width 
       id: 'effects', label: t({ en: 'Effect Templates', ru: 'Эффекты', be: 'Эфекты', uk: 'Ефекти', sr: 'Ефекти' }), icon: <Target size={16}/>,
       items: [
         { name: t({ en: 'Fire Cone Effect', ru: 'Огненный конус', be: 'Агністы конус', uk: 'Вогняний конус', sr: 'Ватрени конус' }), type: 'FIRE_CONE_EFFECT' },
+        { name: t({ en: 'Lightning Cone Effect', ru: 'Конус молнии', be: 'Конус маланкі', uk: 'Конус блискавки', sr: 'Конус муње' }), type: 'LIGHTNING_CONE_EFFECT' },
         { name: t({ en: 'Fire Explosion Effect', ru: 'Огненный взрыв', be: 'Агністы выбух', uk: 'Вогняний вибух', sr: 'Ватрена експлозија' }), type: 'FIRE_EXPLOSION_EFFECT' },
+        { name: t({ en: 'Fog Effect', ru: 'Эффект тумана', be: 'Эфект туману', uk: 'Ефект туману', sr: 'Ефекат магле' }), type: 'FOG_EFFECT' },
       ],
       matcher: (obj: TableObject) => obj.type === ItemType.EFFECT_TEMPLATE
     },
@@ -2302,6 +2306,16 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       }
       case 'FIRE_CONE_EFFECT': {
         const effect = createFireConeEffect({ x: worldCoords.x, y: worldCoords.y, name: item.name, pixelsPerVU });
+        dispatch({ type: 'ADD_OBJECT', payload: effect });
+        break;
+      }
+      case 'LIGHTNING_CONE_EFFECT': {
+        const effect = createLightningConeEffect({ x: worldCoords.x, y: worldCoords.y, name: item.name, pixelsPerVU });
+        dispatch({ type: 'ADD_OBJECT', payload: effect });
+        break;
+      }
+      case 'FOG_EFFECT': {
+        const effect = createFogEffect({ x: worldCoords.x, y: worldCoords.y, name: item.name, pixelsPerVU });
         dispatch({ type: 'ADD_OBJECT', payload: effect });
         break;
       }

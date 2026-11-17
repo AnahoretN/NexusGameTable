@@ -545,14 +545,57 @@ export function createNexusBoard(params: BaseObjectParams & {
 // EFFECT TEMPLATE FACTORIES
 // ============================================
 
+/** Default visuals (name, image, aspect-correct size) for each effect preset. */
+interface EffectVisualDefaults {
+  name: string;
+  content: string;
+  width: number;
+  height: number;
+}
+
+// Image aspect ratios (2026-11 refresh):
+//   cones 457×1117 → width = height × (457/1117) ≈ height × 0.409
+//   radial 770×770 → square
+const CONE_WIDTH_PER_HEIGHT = 457 / 1117;
+const CONE_HEIGHT = 350;
+const RADIAL_SIZE = 300;
+
+const FIRE_CONE_DEFAULTS: EffectVisualDefaults = {
+  name: 'Fire Cone Effect',
+  content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1794812815/FireConeEffect_vjje8b.webp',
+  width: Math.round(CONE_HEIGHT * CONE_WIDTH_PER_HEIGHT),
+  height: CONE_HEIGHT,
+};
+
+const LIGHTNING_CONE_DEFAULTS: EffectVisualDefaults = {
+  name: 'Lightning Cone Effect',
+  content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1794900812/LightningConeEffect_mjtmyd.webp',
+  width: Math.round(CONE_HEIGHT * CONE_WIDTH_PER_HEIGHT),
+  height: CONE_HEIGHT,
+};
+
+const FIRE_EXPLOSION_DEFAULTS: EffectVisualDefaults = {
+  name: 'Fire Explosion Effect',
+  content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1794812816/FireExplosionEffect_symhvd.webp',
+  width: RADIAL_SIZE,
+  height: RADIAL_SIZE,
+};
+
+const FOG_DEFAULTS: EffectVisualDefaults = {
+  name: 'Fog Effect',
+  content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1794900813/FogEffect_mzg561.webp',
+  width: RADIAL_SIZE,
+  height: RADIAL_SIZE,
+};
+
 /**
- * Create a fire cone effect template
+ * Create a cone effect template (pivot at the bottom center — origin of the cone).
  * The (x, y) point corresponds to the pivot point (origin of rotation)
  */
-export function createFireConeEffect(params: BaseObjectParams & { pixelsPerVU?: number } = {}): EffectTemplate {
-  const { x = 0, y = 0, id = generateUUID(), name = 'Fire Cone Effect', pixelsPerVU = 1, ...rest } = params;
-  const effectWidth = 200;
-  const effectHeight = 350;
+function createConeEffectTemplate(params: BaseObjectParams & { pixelsPerVU?: number } = {}, defaults: EffectVisualDefaults): EffectTemplate {
+  const { x = 0, y = 0, id = generateUUID(), name = defaults.name, pixelsPerVU = 1, ...rest } = params;
+  const effectWidth = defaults.width;
+  const effectHeight = defaults.height;
 
   return {
     id,
@@ -563,7 +606,7 @@ export function createFireConeEffect(params: BaseObjectParams & { pixelsPerVU?: 
     rotation: rest.rotation ?? 0,
     width: effectWidth,
     height: effectHeight,
-    content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1777883916/FireConeEffect_npwe4x.png',
+    content: defaults.content,
     isOnTable: rest.isOnTable ?? true,
     locked: rest.locked ?? false,
     pivot: { x: 50, y: 100 },
@@ -576,13 +619,13 @@ export function createFireConeEffect(params: BaseObjectParams & { pixelsPerVU?: 
 }
 
 /**
- * Create a fire explosion effect template
+ * Create a radial (circle / explosion) effect template (pivot at the center).
  * The (x, y) point corresponds to the pivot point (center of explosion)
  */
-export function createFireExplosionEffect(params: BaseObjectParams & { pixelsPerVU?: number } = {}): EffectTemplate {
-  const { x = 0, y = 0, id = generateUUID(), name = 'Fire Explosion Effect', pixelsPerVU = 1, ...rest } = params;
-  const effectWidth = 300;
-  const effectHeight = 300;
+function createRadialEffectTemplate(params: BaseObjectParams & { pixelsPerVU?: number } = {}, defaults: EffectVisualDefaults): EffectTemplate {
+  const { x = 0, y = 0, id = generateUUID(), name = defaults.name, pixelsPerVU = 1, ...rest } = params;
+  const effectWidth = defaults.width;
+  const effectHeight = defaults.height;
 
   return {
     id,
@@ -593,11 +636,11 @@ export function createFireExplosionEffect(params: BaseObjectParams & { pixelsPer
     rotation: rest.rotation ?? 0,
     width: effectWidth,
     height: effectHeight,
-    content: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1777884706/FireExplosionEffect_bejprf.png',
+    content: defaults.content,
     isOnTable: rest.isOnTable ?? true,
     locked: rest.locked ?? false,
     pivot: { x: 50, y: 50 },
-    rotationMarkerDistance: 150,
+    rotationMarkerDistance: defaults.height / 2,
     proportionalScaling: true,
     actionButtons: ['lock', 'delete'],
     hyperscaleLayerId: 'boards',
@@ -605,6 +648,35 @@ export function createFireExplosionEffect(params: BaseObjectParams & { pixelsPer
     opacity: 85,
     ...rest,
   };
+}
+
+export function createFireConeEffect(params: BaseObjectParams & { pixelsPerVU?: number } = {}): EffectTemplate {
+  return createConeEffectTemplate(params, FIRE_CONE_DEFAULTS);
+}
+
+export function createLightningConeEffect(params: BaseObjectParams & { pixelsPerVU?: number } = {}): EffectTemplate {
+  return createConeEffectTemplate(params, LIGHTNING_CONE_DEFAULTS);
+}
+
+export function createFireExplosionEffect(params: BaseObjectParams & { pixelsPerVU?: number } = {}): EffectTemplate {
+  return createRadialEffectTemplate(params, FIRE_EXPLOSION_DEFAULTS);
+}
+
+export function createFogEffect(params: BaseObjectParams & { pixelsPerVU?: number } = {}): EffectTemplate {
+  return createRadialEffectTemplate(params, FOG_DEFAULTS);
+}
+
+/**
+ * Create any effect template by name — routes to the matching preset factory.
+ * Used by the universal createObject switch (and anything spawning effects
+ * from a name alone, e.g. saved games / pool panels).
+ */
+export function createEffectTemplateByName(params: BaseObjectParams & { pixelsPerVU?: number } = {}): EffectTemplate {
+  const name = params.name ?? '';
+  if (name.includes('Lightning')) return createLightningConeEffect(params);
+  if (name.includes('Fog')) return createFogEffect(params);
+  if (name.includes('Cone')) return createFireConeEffect(params);
+  return createFireExplosionEffect(params);
 }
 
 // ============================================
@@ -845,10 +917,7 @@ export function createObject(params: CreateParams): Deck | Token | TokenType | D
     }
 
     case ItemType.EFFECT_TEMPLATE:
-      if (params.name?.includes('Cone')) {
-        return createFireConeEffect(params);
-      }
-      return createFireExplosionEffect(params);
+      return createEffectTemplateByName(params);
 
     default:
       return null;

@@ -2,6 +2,26 @@
 
 All notable changes to Nexus Game Table will be documented in this file.
 
+## [0.3.9] - 2026-11-17
+
+### ✨ New Features
+
+#### 🎆 Effect Templates: new art + two new effects
+- **Fire Cone** and **Fire Explosion** effect images updated to the new webp art (default cone size now matches the new image aspect: 143×350 instead of 200×350)
+- **New "Lightning Cone Effect"** — cone settings (pivot at the bottom, width marker, non-proportional scaling)
+- **New "Fog Effect"** — circle/explosion settings (center pivot, proportional scaling, no width marker)
+- **New effect setting "Unit of Measurement"** (effect settings tab): controls the numbers written on the effect's ruler labels — **VU** (default, raw virtual units + ruler-step suffix), **Ruler Step** (length in ruler-tool steps), **Custom Step** (length in this effect's own steps; unlocks a number input for VU-per-step, locked otherwise) and **Off** (no ruler numbers at all). Width ruler follows the same unit
+
+### 🛠️ Fixes
+
+- **Effect template position jumped while dragging a resize handle** (three causes, all vertical-dominant):
+  - **sync echo stomp (main cause)**: unlike cursor-slot drags (protected by the -999999 hide position), an in-place effect resize streams plain position updates — the host's throttled broadcast snapshot lags the local state and partially/full SYNC_STATE merged it over the fresh local copy, dragging the object backwards and forwards. The faster you drag, the bigger the divergence and the stronger the jumps. Objects being locally manipulated (effect marker drags mark themselves via a local-interaction tracker) now keep their geometry in incoming syncs until the drag settles (1.5 s window; non-geometry fields still sync; deletions still apply)
+  - dragging the handle across/near the pivot flipped the computed angle ~180° (`atan2` sign flip) — the effect and its rotation marker mirrored up↔down; a dead zone around the pivot now freezes rotation while size keeps updating
+  - a fast resize frame that moved the object more than 20 VU in one step was mistaken for a remote jump and started the glide animation — the effect body then lagged behind its instantly-positioned drag markers (visible solo too: the container got a `left/top` transition for 0.2 s+, and for a cone the vertical shift dominates). Local marker drags now suppress it via a `_suppressMovementAnimation` flag on the ACTION ROOT, and grabbing a handle cancels any in-flight glide
+- **Guest effect resize no longer waits for the host echo**: continuous marker drags apply optimistically on the guest — on slow transports (Trystero) the whole resize used to arrive as one laggy jump
+
+---
+
 ## [0.3.8] - 2026-10-12
 
 ### ✨ New Features
