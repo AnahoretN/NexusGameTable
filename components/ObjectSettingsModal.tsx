@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { TableObject, ItemType, Token, TokenType, Deck, Card, DiceObject, Counter, TokenShape, GridType, CardShape, CardOrientation, ContextAction, CardPile, PilePosition, PileSize, ClickAction, CardNamePosition, SearchWindowVisibility, Board, CardSpriteConfig, Drawing, AppLanguage, BattlefieldCell, DiceGroup, EffectTemplate, TokenState, TokenSlider, TokenSliderPosition } from '../types';
 
-import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, RotateCcw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile, Target, Minimize, Upload, Loader2, Sparkles, Hash, Magnet } from 'lucide-react';
+import { Check, Settings, Shield, MousePointer, Trash2, Square, RotateCw, RotateCcw, Eye, Grid3x3, Image as ImageIcon, Dices, Maximize2, Link, Unlink, Layers, Plus, FileText, Palette, Smile, Target, Minimize, Upload, Loader2, Sparkles, Hash, Magnet, Compass } from 'lucide-react';
 import { FilePickerInput } from './FilePickerInput';
 import { DiceValuesSettings } from './DiceValuesSettings';
 import { calculateHexHeight, calculateFlatHexHeight, clearBoardCellCache } from '../utils/gridUtils';
@@ -774,12 +774,30 @@ const ObjectSettingsModalComponent: React.FC<ObjectSettingsModalProps> = ({ obje
     // Empty array stays as empty array (none allowed)
 
     // Cards don't have action buttons or permissions - they inherit from deck
-    const toSave: TableObject = isCard ? data : {
+    let toSave: TableObject = isCard ? data : {
       ...data,
       allowedActions: normalizedAllowedActions,
       allowedActionsForGM: normalizedAllowedActionsForGM,
       ...(isDeck ? { actionButtons: (data as any).actionButtons || [] } : {})
     };
+
+    // For effect templates: when width/height change in the modal, scale rotationMarkerDistance
+    // so rulers, rotation markers, and display-angle markers resize proportionally with the image.
+    if (toSave.type === ItemType.EFFECT_TEMPLATE) {
+      const originalEffect = object as EffectTemplate;
+      const effectToSave = toSave as EffectTemplate;
+      const oldHeight = originalEffect.height ?? 100;
+      const newHeight = effectToSave.height ?? oldHeight;
+
+      if (oldHeight > 0 && newHeight > 0 && newHeight !== oldHeight) {
+        const heightRatio = newHeight / oldHeight;
+        if (effectToSave.rotationMarkerDistance !== undefined) {
+          effectToSave.rotationMarkerDistance = Math.max(5, effectToSave.rotationMarkerDistance * heightRatio);
+        } else if (originalEffect.rotationMarkerDistance !== undefined) {
+          effectToSave.rotationMarkerDistance = Math.max(5, originalEffect.rotationMarkerDistance * heightRatio);
+        }
+      }
+    }
     // Add piles for decks
     if (toSave.type === ItemType.DECK) {
       (toSave as Deck).piles = piles;
@@ -2228,7 +2246,7 @@ setGridDebugInfo(null);
                       </div>
 
                       {/* Display Angle Toggle + value */}
-                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 col-span-2">
+                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                         <label className="text-xs text-gray-400 flex items-center gap-1" title={t({ en: 'Show only the part of the effect between two adjustable rays from its center', ru: 'Показывать только часть эффекта между двумя настраиваемыми лучами из его центра', be: 'Паказваць толькі частку эфекту паміж двымі настроівальнымі прамянямі з яго цэнтра', uk: 'Показувати лише частину ефекту між двома налаштовуваними променями з його центру', sr: 'Приказивати само део ефекта између два подесива зрака из његовог центра' })}>
                           <Target size={12} />
                           {t({ en: 'Display Angle', ru: 'Угол отображения', be: 'Вугал адлюстравання', uk: 'Кут відображення', sr: 'Угао приказивања' })}
@@ -2254,15 +2272,15 @@ setGridDebugInfo(null);
                             }}
                             className="w-16 bg-slate-900 border border-slate-700 rounded p-1 text-white text-sm text-center disabled:opacity-50 disabled:cursor-not-allowed"
                           />
-                          <span className="text-xs text-gray-400">°</span>
+                          <span className="text-xs text-gray-400 font-bold select-none">•</span>
                           <button
                             onClick={() => {
                               const newValue = !((data as EffectTemplate).displayAngleEnabled ?? false);
                               update('displayAngleEnabled', newValue);
                               // 🔧 Apply immediately — see the ruler-unit select
                               dispatch?.({
-                                type: 'UPDATE_OBJECT',
-                                payload: { id: data.id, updates: { displayAngleEnabled: newValue } }
+                                  type: 'UPDATE_OBJECT',
+                                  payload: { id: data.id, updates: { displayAngleEnabled: newValue } }
                               });
                             }}
                             className={`w-10 h-5 rounded-full transition-colors ${(data as EffectTemplate).displayAngleEnabled ?? false ? 'bg-green-600' : 'bg-slate-700'}`}
@@ -2272,21 +2290,133 @@ setGridDebugInfo(null);
                         </div>
                       </div>
 
-                      {/* Player Control Toggle */}
-                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 col-span-2">
-                        <label className="text-xs text-gray-400 flex items-center gap-1">
-                          <Shield size={12} />
-                          {t({ en: 'Control is available to the player', ru: 'Управление доступно игроку' })}
+                      {/* Display Angle Step Toggle + value */}
+                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                        <label className="text-xs text-gray-400 flex items-center gap-1" title={t({
+                          en: 'Display Angle Step: adjust the angle in increments rather than smoothly',
+                          ru: 'Шаг угла отображения: изменять угол с заданным шагом вместо плавного изменения',
+                          be: 'Крок вугла адлюстравання: змяняць вугал з зададзеным крокам замест плаўнага змянення',
+                          uk: 'Крок кута відображення: змінювати кут із заданим кроком замість плавного змінення',
+                          sr: 'Корак угла приказивања: подешавање угла у корацима уместо глатког померања'
+                        })}>
+                          <Compass size={12} />
+                          {t({
+                            en: 'D.A. Step',
+                            ru: 'Шаг уг.от.',
+                            be: 'Крок вуг.адл.',
+                            uk: 'Крок кут.від.',
+                            sr: 'Корак уг.пр.'
+                          })}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="1"
+                            max="180"
+                            step="1"
+                            disabled={!(data as EffectTemplate).displayAngleStepEnabled}
+                            value={Math.round((data as EffectTemplate).displayAngleStep ?? 5)}
+                            onChange={e => {
+                              const v = Number(e.target.value);
+                              if (isFinite(v) && v >= 1 && v <= 180) {
+                                update('displayAngleStep', v);
+                                dispatch?.({
+                                  type: 'UPDATE_OBJECT',
+                                  payload: { id: data.id, updates: { displayAngleStep: v } }
+                                });
+                              }
+                            }}
+                            className="w-16 bg-slate-900 border border-slate-700 rounded p-1 text-white text-sm text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
+                          <span className="text-xs text-gray-400 font-bold select-none">•</span>
+                          <button
+                            onClick={() => {
+                              const newValue = !((data as EffectTemplate).displayAngleStepEnabled ?? false);
+                              update('displayAngleStepEnabled', newValue);
+                              dispatch?.({
+                                type: 'UPDATE_OBJECT',
+                                payload: { id: data.id, updates: { displayAngleStepEnabled: newValue } }
+                              });
+                            }}
+                            className={`w-10 h-5 rounded-full transition-colors ${(data as EffectTemplate).displayAngleStepEnabled ?? false ? 'bg-green-600' : 'bg-slate-700'}`}
+                          >
+                            <div className={`w-4 h-4 bg-white rounded-full transition-transform ${(data as EffectTemplate).displayAngleStepEnabled ?? false ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Player Can See Markers Toggle */}
+                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
+                        <label className="text-xs text-gray-400 flex items-center gap-1" title={t({ en: 'Allow non-GM players to see the markers used to adjust the size of the effect', ru: 'Разрешить игрокам видеть маркеры для изменения размера эффекта' })}>
+                          <Eye size={12} />
+                          {t({ en: 'Player can see markers', ru: 'Игрок видит маркеры' })}
                         </label>
                         <button
                           onClick={() => {
-                            update('playerControlEnabled', !((data as EffectTemplate).playerControlEnabled ?? false));
+                            const currentCanSee = (data as EffectTemplate).playerCanSeeMarkers ?? true;
+                            const newCanSee = !currentCanSee;
+                            if (!newCanSee) {
+                              // If markers are hidden from players, control is also disabled
+                              updateMultiple({
+                                playerCanSeeMarkers: false,
+                                playerControlEnabled: false,
+                              });
+                              dispatch?.({
+                                type: 'UPDATE_OBJECT',
+                                payload: {
+                                  id: data.id,
+                                  updates: {
+                                    playerCanSeeMarkers: false,
+                                    playerControlEnabled: false,
+                                  }
+                                }
+                              });
+                            } else {
+                              update('playerCanSeeMarkers', true);
+                              dispatch?.({
+                                type: 'UPDATE_OBJECT',
+                                payload: {
+                                  id: data.id,
+                                  updates: { playerCanSeeMarkers: true }
+                                }
+                              });
+                            }
                           }}
-                          className={`w-10 h-5 rounded-full transition-colors ${(data as EffectTemplate).playerControlEnabled ?? false ? 'bg-green-600' : 'bg-slate-700'}`}
+                          className={`w-10 h-5 rounded-full transition-colors ${(data as EffectTemplate).playerCanSeeMarkers ?? true ? 'bg-green-600' : 'bg-slate-700'}`}
                         >
-                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${(data as EffectTemplate).playerControlEnabled ?? false ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${(data as EffectTemplate).playerCanSeeMarkers ?? true ? 'translate-x-5' : 'translate-x-0.5'}`} />
                         </button>
                       </div>
+
+                      {/* Player Control Toggle */}
+                      {(() => {
+                        const canSeeMarkers = (data as EffectTemplate).playerCanSeeMarkers ?? true;
+                        const isControlEnabled = canSeeMarkers && ((data as EffectTemplate).playerControlEnabled ?? true);
+                        return (
+                          <div className={`flex items-center justify-between bg-slate-900 rounded px-3 py-2 ${!canSeeMarkers ? 'opacity-50' : ''}`}>
+                            <label className="text-xs text-gray-400 flex items-center gap-1">
+                              <Shield size={12} />
+                              {t({ en: 'Control is available to the player', ru: 'Управление доступно игроку' })}
+                            </label>
+                            <button
+                              disabled={!canSeeMarkers}
+                              onClick={() => {
+                                if (canSeeMarkers) {
+                                  const newControl = !((data as EffectTemplate).playerControlEnabled ?? true);
+                                  update('playerControlEnabled', newControl);
+                                  dispatch?.({
+                                    type: 'UPDATE_OBJECT',
+                                    payload: { id: data.id, updates: { playerControlEnabled: newControl } }
+                                  });
+                                }
+                              }}
+                              className={`w-10 h-5 rounded-full transition-colors ${isControlEnabled ? 'bg-green-600' : 'bg-slate-700'} disabled:cursor-not-allowed`}
+                            >
+                              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${isControlEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </>

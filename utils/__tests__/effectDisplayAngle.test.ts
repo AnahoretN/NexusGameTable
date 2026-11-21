@@ -3,7 +3,9 @@ import {
   DEFAULT_DISPLAY_ANGLE,
   MIN_DISPLAY_ANGLE,
   MAX_DISPLAY_ANGLE,
+  DEFAULT_DISPLAY_ANGLE_STEP,
   clampDisplayAngle,
+  snapDisplayAngleToStep,
   wedgeRayLocalAngle,
   buildWedgeClipPolygon,
   halfAngleFromLocalMouseAngle,
@@ -21,6 +23,29 @@ describe('clampDisplayAngle', () => {
     expect(clampDisplayAngle(-50)).toBe(MIN_DISPLAY_ANGLE);
     expect(clampDisplayAngle(999)).toBe(MAX_DISPLAY_ANGLE);
     expect(clampDisplayAngle(45.5)).toBe(45.5);
+  });
+});
+
+describe('snapDisplayAngleToStep', () => {
+  it('snaps angles to increments of the step', () => {
+    expect(snapDisplayAngleToStep(42, 5)).toBe(40);
+    expect(snapDisplayAngleToStep(43, 5)).toBe(45);
+    expect(snapDisplayAngleToStep(90, 15)).toBe(90);
+    expect(snapDisplayAngleToStep(97, 15)).toBe(90);
+    expect(snapDisplayAngleToStep(98, 15)).toBe(105);
+  });
+
+  it('uses default step 5 when step is undefined or invalid', () => {
+    expect(snapDisplayAngleToStep(42, undefined)).toBe(40);
+    expect(snapDisplayAngleToStep(43, 0)).toBe(45);
+    expect(snapDisplayAngleToStep(43, -5)).toBe(45);
+    expect(snapDisplayAngleToStep(43, NaN)).toBe(45);
+  });
+
+  it('clamps to valid angle bounds [1, 360]', () => {
+    expect(snapDisplayAngleToStep(0, 5)).toBe(MIN_DISPLAY_ANGLE);
+    expect(snapDisplayAngleToStep(359, 10)).toBe(MAX_DISPLAY_ANGLE);
+    expect(snapDisplayAngleToStep(400, 10)).toBe(MAX_DISPLAY_ANGLE);
   });
 });
 

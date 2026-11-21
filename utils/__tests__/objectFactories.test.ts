@@ -12,6 +12,8 @@ describe('createFireSweepEffect', () => {
     expect(effect.type).toBe(ItemType.EFFECT_TEMPLATE);
     expect(effect.displayAngleEnabled).toBe(true);
     expect(effect.displayAngle).toBe(90);
+    expect(effect.playerControlEnabled).toBe(true);
+    expect(effect.playerCanSeeMarkers).toBe(true);
   });
 
   it('pivots at the arc center (≈50%/55% of the canvas)', () => {

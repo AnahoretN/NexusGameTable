@@ -19,6 +19,18 @@ export const DEFAULT_DISPLAY_ANGLE = 90;
 export const MIN_DISPLAY_ANGLE = 1;
 export const MAX_DISPLAY_ANGLE = 360;
 
+/** Default display angle step in degrees. */
+export const DEFAULT_DISPLAY_ANGLE_STEP = 5;
+
+/**
+ * Snap an angle (degrees) to the given step, clamped to [MIN_DISPLAY_ANGLE, MAX_DISPLAY_ANGLE].
+ */
+export function snapDisplayAngleToStep(angleDeg: number, stepDeg: number | undefined): number {
+  const step = typeof stepDeg === 'number' && isFinite(stepDeg) && stepDeg > 0 ? stepDeg : DEFAULT_DISPLAY_ANGLE_STEP;
+  const snapped = Math.round(angleDeg / step) * step;
+  return clampDisplayAngle(snapped);
+}
+
 /**
  * Clamp a stored/typed wedge angle into the valid range, defaulting to 90°.
  */

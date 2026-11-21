@@ -18,6 +18,7 @@ import {
   buildWedgeClipPolygon,
   clampDisplayAngle,
   halfAngleFromLocalMouseAngle,
+  snapDisplayAngleToStep,
 } from '../utils/effectDisplayAngle';
 
 // Global image cache for Effect Templates to prevent reloading
@@ -226,7 +227,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const handlePivotMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!isGM && !(obj.playerControlEnabled ?? false)) {
+    if (!isGM && !((obj.playerCanSeeMarkers ?? true) && (obj.playerControlEnabled ?? true))) {
       return;
     }
 
@@ -392,7 +393,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const handleRotationMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!isGM && !(obj.playerControlEnabled ?? false)) {
+    if (!isGM && !((obj.playerCanSeeMarkers ?? true) && (obj.playerControlEnabled ?? true))) {
       return;
     }
 
@@ -449,7 +450,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     setIsDraggingRotation(true);
     initialWidthRef.current = currentWidth;
     initialRotationRef.current = rotation;
-  }, [isGM, obj.width, obj.height, obj.rotation, obj.pivot, obj.x, obj.y, obj.rotationMarkerDistance, obj.playerControlEnabled, pixelsPerVU]);
+  }, [isGM, obj.width, obj.height, obj.rotation, obj.pivot, obj.x, obj.y, obj.rotationMarkerDistance, obj.playerCanSeeMarkers, obj.playerControlEnabled, pixelsPerVU]);
 
   // Handle rotation marker dragging
   useEffect(() => {
@@ -594,7 +595,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const handleWidthMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!isGM && !(obj.playerControlEnabled ?? false)) {
+    if (!isGM && !((obj.playerCanSeeMarkers ?? true) && (obj.playerControlEnabled ?? true))) {
       return;
     }
 
@@ -648,7 +649,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
     setIsDraggingWidth(true);
     initialWidthRef.current = currentWidth;
-  }, [isGM, obj.width, obj.height, obj.pivot, obj.x, obj.y, obj.rotation, obj.playerControlEnabled, pixelsPerVU]);
+  }, [isGM, obj.width, obj.height, obj.pivot, obj.x, obj.y, obj.rotation, obj.playerCanSeeMarkers, obj.playerControlEnabled, pixelsPerVU]);
 
   // Handle width marker dragging
   useEffect(() => {
@@ -766,7 +767,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const handleAngleMarkerMouseDown = useCallback((e: React.MouseEvent, side: 1 | -1) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!isGM && !(obj.playerControlEnabled ?? false)) {
+    if (!isGM && !((obj.playerCanSeeMarkers ?? true) && (obj.playerControlEnabled ?? true))) {
       return;
     }
 
@@ -793,7 +794,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
     lastHalfAngleRef.current = clampDisplayAngle(obj.displayAngle) / 2;
 
     setIsDraggingAngle(true);
-  }, [isGM, obj.id, obj.x, obj.y, obj.width, obj.height, obj.pivot, obj.displayAngle, obj.playerControlEnabled]);
+  }, [isGM, obj.id, obj.x, obj.y, obj.width, obj.height, obj.pivot, obj.displayAngle, obj.playerCanSeeMarkers, obj.playerControlEnabled]);
 
   // Handle display-angle marker dragging (both rays stay symmetric around the center)
   useEffect(() => {
@@ -839,7 +840,10 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
       const half = halfAngleFromLocalMouseAngle(localAngleDeg, side);
       lastHalfAngleRef.current = half;
-      const newDisplayAngle = clampDisplayAngle(half * 2);
+      let newDisplayAngle = clampDisplayAngle(half * 2);
+      if (obj.displayAngleStepEnabled) {
+        newDisplayAngle = snapDisplayAngleToStep(newDisplayAngle, obj.displayAngleStep);
+      }
       if (newDisplayAngle === clampDisplayAngle(obj.displayAngle)) {
         return;
       }
@@ -883,7 +887,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       window.removeEventListener('blur', cleanup);
       document.removeEventListener('mouseleave', cleanup);
     };
-  }, [isDraggingAngle, obj.id, obj.pivot, obj.rotation, obj.displayAngle, obj.height, obj.rotationMarkerDistance, dispatch, pixelsPerVU]);
+  }, [isDraggingAngle, obj.id, obj.pivot, obj.rotation, obj.displayAngle, obj.displayAngleStepEnabled, obj.displayAngleStep, obj.height, obj.rotationMarkerDistance, dispatch, pixelsPerVU]);
 
   // Calculate dimensions and pivot (with fallback to prevent zero-size rendering)
   // Also protect against NaN/Infinity which can cause rendering issues
@@ -983,12 +987,13 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   });
 
   // Hide pivot marker when dragging the object (but not when dragging the pivot itself)
-  // Show to GM always, or to players when playerControlEnabled is true
-  const canControlEffect = isGM || (obj.playerControlEnabled ?? false);
-  const shouldShowPivotMarker = !isDragging && canControlEffect && !(obj as any).inCursorSlot;
+  // Show to GM always, or to players when playerCanSeeMarkers is true (default: true)
+  const canSeeMarkers = isGM || (obj.playerCanSeeMarkers ?? true);
+  const canControlEffect = isGM || (canSeeMarkers && (obj.playerControlEnabled ?? true));
+  const shouldShowPivotMarker = !isDragging && canSeeMarkers && !(obj as any).inCursorSlot;
 
-  // Show rotation marker and ruler whenever pivot marker is shown and user can control
-  const shouldShowRotationControls = shouldShowPivotMarker && canControlEffect;
+  // Show rotation marker and ruler whenever pivot marker is shown and user can see markers
+  const shouldShowRotationControls = shouldShowPivotMarker;
 
   // Show width marker only if showWidthMarker is enabled (and not when proportionalScaling is on)
   const shouldShowWidthMarker = shouldShowRotationControls && (obj.showWidthMarker ?? true) && !(obj.proportionalScaling ?? false);
@@ -1048,6 +1053,11 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
   const angleMarker1Y = pivotPixelY + markerDistance * Math.sin(angleMarker1Rad);
   const angleMarker2X = pivotPixelX + markerDistance * Math.cos(angleMarker2Rad);
   const angleMarker2Y = pivotPixelY + markerDistance * Math.sin(angleMarker2Rad);
+  // Angle label sits just behind the pivot point (opposite the center ray) so
+  // it stays near the vertex where the cropping rays meet without overlapping
+  // the pivot dot, ruler line, or length label.
+  const angleLabelX = pivotPixelX - 26 * Math.cos(centerRayRad);
+  const angleLabelY = pivotPixelY - 22 * Math.sin(centerRayRad);
 
   // Ruler label units: what number is written on the effect's rulers
   // - 'vu' (default): raw VU value + ruler-step suffix when the ruler tool
@@ -1402,11 +1412,12 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
               strokeDasharray="4,4"
             />
 
-            {/* Angle label between the rays */}
+            {/* Angle label near the pivot point */}
             <text
-              x={pivotPixelX + markerDistance * 0.7 * Math.cos(centerRayRad)}
-              y={pivotPixelY + markerDistance * 0.7 * Math.sin(centerRayRad)}
+              x={angleLabelX}
+              y={angleLabelY}
               textAnchor="middle"
+              dominantBaseline="central"
               fill="rgba(255, 255, 255, 1)"
               fontSize="12"
               fontWeight="bold"
@@ -1507,10 +1518,14 @@ export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProp
     prevProps.obj.content === nextProps.obj.content &&
     (prevProps.obj as EffectTemplate).showWidthMarker === (nextProps.obj as EffectTemplate).showWidthMarker &&
     (prevProps.obj as EffectTemplate).proportionalScaling === (nextProps.obj as EffectTemplate).proportionalScaling &&
+    (prevProps.obj as EffectTemplate).playerCanSeeMarkers === (nextProps.obj as EffectTemplate).playerCanSeeMarkers &&
+    (prevProps.obj as EffectTemplate).playerControlEnabled === (nextProps.obj as EffectTemplate).playerControlEnabled &&
     (prevProps.obj as EffectTemplate).rulerUnit === (nextProps.obj as EffectTemplate).rulerUnit &&
     (prevProps.obj as EffectTemplate).rulerCustomStep === (nextProps.obj as EffectTemplate).rulerCustomStep &&
     (prevProps.obj as EffectTemplate).displayAngleEnabled === (nextProps.obj as EffectTemplate).displayAngleEnabled &&
     (prevProps.obj as EffectTemplate).displayAngle === (nextProps.obj as EffectTemplate).displayAngle &&
+    (prevProps.obj as EffectTemplate).displayAngleStepEnabled === (nextProps.obj as EffectTemplate).displayAngleStepEnabled &&
+    (prevProps.obj as EffectTemplate).displayAngleStep === (nextProps.obj as EffectTemplate).displayAngleStep &&
     (prevProps.obj as any).inCursorSlot === (nextProps.obj as any).inCursorSlot &&
     prevProps.pixelsPerVU === nextProps.pixelsPerVU &&
     prevProps.layerInverseScale === nextProps.layerInverseScale &&

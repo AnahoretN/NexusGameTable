@@ -656,8 +656,10 @@ export interface EffectTemplate extends GameItem {
   showWidthMarker?: boolean;
   // When scaling height via rotation marker, also scale width proportionally (default: false)
   proportionalScaling?: boolean;
-  // Allow all players (including guests) to control the effect's dimensions and rotation
+  // Allow all players (including guests) to control the effect's dimensions and rotation (default: true)
   playerControlEnabled?: boolean;
+  // Allow non-GM players to see the markers used to adjust the size/rotation of the effect (default: true)
+  playerCanSeeMarkers?: boolean;
   // Unit of the numbers shown on this effect's ruler labels (default: 'vu')
   rulerUnit?: EffectRulerUnit;
   // VU per one step of this effect's ruler (used when rulerUnit === 'customStep')
@@ -670,6 +672,10 @@ export interface EffectTemplate extends GameItem {
   // the effect's local "up" direction (the rotation-marker direction) and
   // rotates together with the effect.
   displayAngle?: number;
+  // Display angle step: when enabled, angle adjusts in increments of displayAngleStep degrees (default: false)
+  displayAngleStepEnabled?: boolean;
+  // Step in degrees for display angle adjustment (default: 5)
+  displayAngleStep?: number;
 }
 
 // Text label object - transparent object containing editable text (text tool)
