@@ -505,20 +505,29 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
       // Constrain distance ratio to prevent extreme sizes (0.1x to 10x)
       const clampedRatio = Math.max(0.1, Math.min(10, distanceRatio));
-      const newHeight = initialHeight * clampedRatio;
+      let newHeight = initialHeight * clampedRatio;
+
+      // Size step snapping: if enabled, snap height to increments of sizeStep VU
+      if (obj.sizeStepEnabled) {
+        const step = (obj.sizeStep && obj.sizeStep > 0) ? obj.sizeStep : 5;
+        newHeight = Math.max(step, Math.round(newHeight / step) * step);
+      }
 
       // Additional constraint: limit maximum size in VU to prevent browser rendering issues
       // At pixelsPerVU = 3, 5000 VU = 15000px which is well below browser limits
       const MAX_SIZE_VU = 5000;
       const finalHeight = Math.min(newHeight, MAX_SIZE_VU);
 
+      // Effective scale ratio after clamping/snapping
+      const effectiveScale = finalHeight / initialHeight;
+
       // This distance becomes the new rotationMarkerDistance (in VU) - clamp it too
-      const currentDistanceVU = currentDistance / pixelsPerVU;
+      const currentDistanceVU = (currentDistance / pixelsPerVU) * (effectiveScale / clampedRatio);
       const newMarkerDistance = Math.max(5, Math.min(MAX_SIZE_VU, currentDistanceVU));
 
       // Calculate new width based on proportional scaling setting
       const useProportionalScaling = obj.proportionalScaling ?? false;
-      const newWidth = useProportionalScaling ? initialWidth * clampedRatio : initialWidth;
+      let newWidth = useProportionalScaling ? initialWidth * effectiveScale : initialWidth;
       const finalWidth = Math.min(newWidth, MAX_SIZE_VU);
 
       // Calculate new object position to keep pivot at the same world position
@@ -589,7 +598,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       window.removeEventListener('blur', cleanup);
       document.removeEventListener('mouseleave', cleanup);
     };
-  }, [isDraggingRotation, obj.id, obj.pivot, obj.proportionalScaling, dispatch, pixelsPerVU]);
+  }, [isDraggingRotation, obj.id, obj.pivot, obj.proportionalScaling, obj.sizeStepEnabled, obj.sizeStep, dispatch, pixelsPerVU]);
 
   // Handle width marker drag start
   const handleWidthMouseDown = useCallback((e: React.MouseEvent) => {
@@ -696,7 +705,13 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
 
       // Constrain distance ratio to prevent extreme sizes (0.1x to 10x)
       const clampedRatio = Math.max(0.1, Math.min(10, distanceRatio));
-      const newWidth = initialWidth * clampedRatio;
+      let newWidth = initialWidth * clampedRatio;
+
+      // Size step snapping: if enabled, snap width to increments of sizeStep VU
+      if (obj.sizeStepEnabled) {
+        const step = (obj.sizeStep && obj.sizeStep > 0) ? obj.sizeStep : 5;
+        newWidth = Math.max(step, Math.round(newWidth / step) * step);
+      }
 
       // Additional constraint: limit maximum size in VU to prevent browser rendering issues
       const MAX_SIZE_VU = 5000;
@@ -761,7 +776,7 @@ export const EffectTemplateRenderer: React.FC<EffectTemplateRendererProps> = ({
       window.removeEventListener('blur', cleanup);
       document.removeEventListener('mouseleave', cleanup);
     };
-  }, [isDraggingWidth, obj.id, obj.pivot, obj.height, obj.rotation, dispatch, pixelsPerVU]);
+  }, [isDraggingWidth, obj.id, obj.pivot, obj.height, obj.rotation, obj.sizeStepEnabled, obj.sizeStep, dispatch, pixelsPerVU]);
 
   // Handle display-angle marker drag start (side: +1 clockwise ray, -1 the other)
   const handleAngleMarkerMouseDown = useCallback((e: React.MouseEvent, side: 1 | -1) => {
@@ -1518,6 +1533,8 @@ export const EffectTemplateRendererMemo = memo(EffectTemplateRenderer, (prevProp
     prevProps.obj.content === nextProps.obj.content &&
     (prevProps.obj as EffectTemplate).showWidthMarker === (nextProps.obj as EffectTemplate).showWidthMarker &&
     (prevProps.obj as EffectTemplate).proportionalScaling === (nextProps.obj as EffectTemplate).proportionalScaling &&
+    (prevProps.obj as EffectTemplate).sizeStepEnabled === (nextProps.obj as EffectTemplate).sizeStepEnabled &&
+    (prevProps.obj as EffectTemplate).sizeStep === (nextProps.obj as EffectTemplate).sizeStep &&
     (prevProps.obj as EffectTemplate).playerCanSeeMarkers === (nextProps.obj as EffectTemplate).playerCanSeeMarkers &&
     (prevProps.obj as EffectTemplate).playerControlEnabled === (nextProps.obj as EffectTemplate).playerControlEnabled &&
     (prevProps.obj as EffectTemplate).rulerUnit === (nextProps.obj as EffectTemplate).rulerUnit &&

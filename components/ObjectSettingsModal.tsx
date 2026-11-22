@@ -2245,6 +2245,60 @@ setGridDebugInfo(null);
                         </button>
                       </div>
 
+                      {/* Size Step Toggle + value (full row) */}
+                      <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 col-span-2">
+                        <label className="text-xs text-gray-400 flex items-center gap-1" title={t({
+                          en: 'Resize Step: adjust the size in increments rather than smoothly',
+                          ru: 'Шаг изменения размера: изменять размер с заданным шагом вместо плавного изменения',
+                          be: 'Крок змянення памеру: змяняць памер з зададзеным крокам замест плаўнага змянення',
+                          uk: 'Крок зміни розміру: змінювати розмір із заданим кроком замість плавного змінення',
+                          sr: 'Корак промене величине: подешавање величине у корацима уместо глатког померања'
+                        })}>
+                          <Hash size={12} />
+                          {t({
+                            en: 'Resize Step',
+                            ru: 'Шаг изменения размера',
+                            be: 'Крок змянення памеру',
+                            uk: 'Крок зміни розміру',
+                            sr: 'Корак промене величине'
+                          })}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="0.1"
+                            step="0.5"
+                            disabled={!(data as EffectTemplate).sizeStepEnabled}
+                            value={roundToHundredths((data as EffectTemplate).sizeStep ?? 5)}
+                            onChange={e => {
+                              const v = Number(e.target.value);
+                              if (isFinite(v) && v > 0) {
+                                update('sizeStep', v);
+                                dispatch?.({
+                                  type: 'UPDATE_OBJECT',
+                                  payload: { id: data.id, updates: { sizeStep: v } }
+                                });
+                              }
+                            }}
+                            className="w-16 bg-slate-900 border border-slate-700 rounded p-1 text-white text-sm text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
+                          <span className="text-xs text-gray-400 font-bold select-none">•</span>
+                          <button
+                            onClick={() => {
+                              const newValue = !((data as EffectTemplate).sizeStepEnabled ?? false);
+                              update('sizeStepEnabled', newValue);
+                              dispatch?.({
+                                type: 'UPDATE_OBJECT',
+                                payload: { id: data.id, updates: { sizeStepEnabled: newValue } }
+                              });
+                            }}
+                            className={`w-10 h-5 rounded-full transition-colors ${(data as EffectTemplate).sizeStepEnabled ?? false ? 'bg-green-600' : 'bg-slate-700'}`}
+                          >
+                            <div className={`w-4 h-4 bg-white rounded-full transition-transform ${(data as EffectTemplate).sizeStepEnabled ?? false ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                          </button>
+                        </div>
+                      </div>
+
                       {/* Display Angle Toggle + value */}
                       <div className="flex items-center justify-between bg-slate-900 rounded px-3 py-2">
                         <label className="text-xs text-gray-400 flex items-center gap-1" title={t({ en: 'Show only the part of the effect between two adjustable rays from its center', ru: 'Показывать только часть эффекта между двумя настраиваемыми лучами из его центра', be: 'Паказваць толькі частку эфекту паміж двымі настроівальнымі прамянямі з яго цэнтра', uk: 'Показувати лише частину ефекту між двома налаштовуваними променями з його центру', sr: 'Приказивати само део ефекта између два подесива зрака из његовог центра' })}>

@@ -656,6 +656,10 @@ export interface EffectTemplate extends GameItem {
   showWidthMarker?: boolean;
   // When scaling height via rotation marker, also scale width proportionally (default: false)
   proportionalScaling?: boolean;
+  // Size step: when enabled, resizing via markers adjusts in increments of sizeStep VU (default: false)
+  sizeStepEnabled?: boolean;
+  // Step in VU for resizing effect dimensions (default: 5)
+  sizeStep?: number;
   // Allow all players (including guests) to control the effect's dimensions and rotation (default: true)
   playerControlEnabled?: boolean;
   // Allow non-GM players to see the markers used to adjust the size/rotation of the effect (default: true)
